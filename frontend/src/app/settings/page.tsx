@@ -258,12 +258,12 @@ function SettingsContent() {
                 {isInternal ? 'Internal User' : 'Supplier'}
               </span>
             </div>
-            {user?.company_name && (
+            {user?.factory_name && (
               <div>
-                <label className="block text-sm text-gray-500 mb-1">Company</label>
+                <label className="block text-sm text-gray-500 mb-1">Factory</label>
                 <p className="font-medium text-gray-900 flex items-center gap-1">
                   <Building2 className="w-4 h-4 text-gray-400" />
-                  {user.company_name}
+                  {user.factory_name}
                 </p>
               </div>
             )}
