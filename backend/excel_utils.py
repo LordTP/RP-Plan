@@ -999,12 +999,12 @@ def _export_database_to_excel_legacy(db: Session, factory_filter: str = None, is
             col_idx += 1
 
     # Auto-adjust column widths
-    for col in ws.columns:
+    for col_idx, col in enumerate(ws.columns, 1):
         max_length = 0
-        column = col[0].column_letter
+        column = get_column_letter(col_idx)
         for cell in col:
             try:
-                if cell.value:
+                if cell.value and not isinstance(cell, openpyxl.cell.cell.MergedCell):
                     max_length = max(max_length, len(str(cell.value)))
             except:
                 pass
