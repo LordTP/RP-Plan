@@ -347,7 +347,7 @@ async def get_orders(
     
     # Apply pagination
     offset = (page - 1) * page_size
-    orders = query.order_by(PurchaseOrder.created_at.desc()).offset(offset).limit(page_size).all()
+    orders = query.order_by(PurchaseOrder.system_po_number.asc()).offset(offset).limit(page_size).all()
     
     # Add comment count and unread count to each order
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
