@@ -11,6 +11,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
+  Download,
+  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Navbar } from '@/components/layout/Navbar';
@@ -18,7 +20,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { ordersApi, OrderFilters } from '@/lib/api';
+import { ordersApi, excelApi, OrderFilters } from '@/lib/api';
 import { wsClient } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
@@ -63,6 +65,8 @@ function OrdersContent() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Highlight changes state
   const [highlightChanges, setHighlightChanges] = useState(false);
@@ -238,6 +242,29 @@ function OrdersContent() {
     router.push(newUrl, { scroll: false });
   };
 
+  const handleExport = async (exportFiltered: boolean) => {
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
+      const exportFilters = exportFiltered ? filters : undefined;
+      const blob = await excelApi.exportExcel(exportFilters);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const suffix = exportFiltered ? '_filtered' : '';
+      link.download = `orderbook_export${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success(exportFiltered ? 'Filtered orders exported' : 'All orders exported');
+    } catch (error) {
+      toast.error('Export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       <Navbar />
@@ -279,6 +306,46 @@ function OrdersContent() {
               <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
               Refresh
             </button>
+
+            {/* Export Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={isExporting}
+                className="btn-primary flex items-center gap-2"
+              >
+                <Download className={cn('w-4 h-4', isExporting && 'animate-pulse')} />
+                {isExporting ? 'Exporting...' : 'Export'}
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {showExportMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowExportMenu(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                    <button
+                      onClick={() => handleExport(false)}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      All Orders
+                    </button>
+                    {hasActiveFilters && (
+                      <button
+                        onClick={() => handleExport(true)}
+                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      >
+                        <Filter className="w-4 h-4" />
+                        Filtered Orders ({totalOrders})
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

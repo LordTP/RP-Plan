@@ -306,8 +306,18 @@ export interface ImportPreviewResult {
 }
 
 export const excelApi = {
-  exportExcel: async (): Promise<Blob> => {
-    const response = await api.get('/api/excel/export', {
+  exportExcel: async (filters?: OrderFilters): Promise<Blob> => {
+    const params = new URLSearchParams();
+    if (filters) {
+      if (filters.po_number) params.append('po_number', filters.po_number);
+      if (filters.style_code) params.append('style_code', filters.style_code);
+      if (filters.factory) params.append('factory', filters.factory);
+      if (filters.customer) params.append('customer', filters.customer);
+      if (filters.status) params.append('status', filters.status);
+    }
+    const queryString = params.toString();
+    const url = queryString ? `/api/excel/export?${queryString}` : '/api/excel/export';
+    const response = await api.get(url, {
       responseType: 'blob',
     });
     return response.data;

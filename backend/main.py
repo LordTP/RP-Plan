@@ -1341,17 +1341,48 @@ async def import_excel(
 
 @app.get("/api/excel/export")
 async def export_excel(
-    current_user: User = Depends(get_current_internal_user),
+    po_number: str = None,
+    style_code: str = None,
+    factory: str = None,
+    customer: str = None,
+    status: str = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Export purchase orders to Excel file (internal users only)"""
+    """Export purchase orders to Excel file"""
     try:
-        # Generate Excel file with exact Sheet1 formatting
-        excel_file = export_database_to_excel(db, factory_filter=None, is_supplier=False)
+        # Check if user is supplier
+        role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+        is_supplier = role_str == 'supplier'
+
+        # Build filters dict
+        filters = {}
+        if po_number:
+            filters['po_number'] = po_number
+        if style_code:
+            filters['style_code'] = style_code
+        if factory:
+            filters['factory'] = factory
+        if customer:
+            filters['customer'] = customer
+        if status:
+            filters['status'] = status
+
+        # For suppliers, always filter by their factory
+        factory_filter = current_user.factory_name if is_supplier else None
+
+        # Generate Excel file
+        excel_file = export_database_to_excel(
+            db,
+            factory_filter=factory_filter,
+            is_supplier=is_supplier,
+            filters=filters if filters else None
+        )
 
         # Prepare filename
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"orderbook_export_{timestamp}.xlsx"
+        suffix = "_filtered" if filters else ""
+        filename = f"orderbook_export{suffix}_{timestamp}.xlsx"
 
         # Return as streaming response
         return StreamingResponse(

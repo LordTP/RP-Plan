@@ -820,12 +820,23 @@ FIELD_TYPES = {
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CP_-_Thomas_Enhanced.xlsx")
 
 
-def export_database_to_excel(db: Session, factory_filter: str = None, is_supplier: bool = False) -> BytesIO:
+def export_database_to_excel(
+    db: Session,
+    factory_filter: str = None,
+    is_supplier: bool = False,
+    filters: dict = None
+) -> BytesIO:
     """
     Export POs from database to Excel file using the template.
     Uses CP_-_Thomas_Enhanced.xlsx as the base template.
     Data is inserted starting at row 16 (after header and size reference rows).
     COMMENTS column is NOT exported - managed separately in the app.
+
+    Args:
+        db: Database session
+        factory_filter: Filter by specific factory (for suppliers)
+        is_supplier: Whether the user is a supplier (columns will be restricted)
+        filters: Optional dict with filter parameters (po_number, style_code, factory, customer, status)
     """
 
     # Load the template file
@@ -843,12 +854,27 @@ def export_database_to_excel(db: Session, factory_filter: str = None, is_supplie
         for col in range(1, 44):  # Columns A through AQ
             ws.cell(row, col).value = None
 
-    # Query POs
+    # Query POs with filters
     query = db.query(PurchaseOrder)
+
+    # Apply factory filter (for suppliers)
     if factory_filter:
         query = query.filter(PurchaseOrder.factory == factory_filter)
 
-    pos = query.order_by(PurchaseOrder.po_number, PurchaseOrder.style_code).all()
+    # Apply additional filters if provided
+    if filters:
+        if filters.get('po_number'):
+            query = query.filter(PurchaseOrder.po_number.ilike(f"%{filters['po_number']}%"))
+        if filters.get('style_code'):
+            query = query.filter(PurchaseOrder.style_code.ilike(f"%{filters['style_code']}%"))
+        if filters.get('factory'):
+            query = query.filter(PurchaseOrder.factory.ilike(f"%{filters['factory']}%"))
+        if filters.get('customer'):
+            query = query.filter(PurchaseOrder.customer.ilike(f"%{filters['customer']}%"))
+        if filters.get('status'):
+            query = query.filter(PurchaseOrder.status.ilike(f"%{filters['status']}%"))
+
+    pos = query.order_by(PurchaseOrder.system_po_number.asc()).all()
 
     # Data starts at row 16
     data_start_row = 16
@@ -888,6 +914,24 @@ def export_database_to_excel(db: Session, factory_filter: str = None, is_supplie
             # Center align dates
             if field_type == "date":
                 cell.alignment = Alignment(horizontal="center")
+
+    # For suppliers, delete columns they shouldn't see
+    # Must delete from right to left to preserve column indices
+    if is_supplier:
+        # Columns to hide for suppliers (these are internal-only)
+        # Based on SHEET1_COLUMNS where is_internal_only=True
+        # Column indices in reverse order (delete from right to left)
+        supplier_hidden_columns = [
+            43,  # status/LATE
+            41,  # actual_date_del_to_customer
+            30,  # order_received_date
+            29,  # total_order_value
+            28,  # trade_price
+            3,   # is_active
+            2,   # system_po_number
+        ]
+        for col_idx in sorted(supplier_hidden_columns, reverse=True):
+            ws.delete_cols(col_idx)
 
     # Save to BytesIO
     output = BytesIO()
