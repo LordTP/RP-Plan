@@ -48,9 +48,10 @@ postgres_data/
 # Claude Code
 .claude/
 
-# Data files
+# Data files (but allow template)
 *.xlsx
 *.xls
+!CP_-_Thomas_Enhanced.xlsx
 
 # Temp files
 [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]
