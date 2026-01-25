@@ -25,6 +25,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://orderbook:orderbook123@db:5432/orderbook}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - ./CP_-_Thomas_Enhanced.xlsx:/app/CP_-_Thomas_Enhanced.xlsx:ro
     depends_on:
       db:
         condition: service_healthy

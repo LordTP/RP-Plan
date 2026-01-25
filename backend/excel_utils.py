@@ -816,8 +816,8 @@ FIELD_TYPES = {
     "actual_date_del_to_customer": "date",
 }
 
-# Path to template file
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "CP_-_Thomas_Enhanced.xlsx")
+# Path to template file (mounted via docker-compose volume)
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CP_-_Thomas_Enhanced.xlsx")
 
 
 def export_database_to_excel(db: Session, factory_filter: str = None, is_supplier: bool = False) -> BytesIO:
