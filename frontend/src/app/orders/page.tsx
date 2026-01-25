@@ -1,0 +1,640 @@
+'use client';
+
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Search,
+  Filter,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Navbar } from '@/components/layout/Navbar';
+import { AuthProvider } from '@/components/layout/AuthProvider';
+import { OrderTable } from '@/components/orders/OrderTable';
+import { CommentSidebar } from '@/components/orders/CommentSidebar';
+import { useStore } from '@/store/useStore';
+import { ordersApi, OrderFilters } from '@/lib/api';
+import { wsClient } from '@/lib/websocket';
+import { cn } from '@/lib/utils';
+import type { Order } from '@/types';
+
+export default function OrdersPage() {
+  return (
+    <AuthProvider>
+      <Suspense fallback={<OrdersLoading />}>
+        <OrdersContent />
+      </Suspense>
+    </AuthProvider>
+  );
+}
+
+function OrdersLoading() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="flex items-center justify-center h-[calc(100vh-64px)]">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500">Loading orders...</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrdersContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const {
+    orders,
+    setOrders,
+    totalOrders,
+    currentPage,
+    pageSize,
+    setPage,
+    updateOrderInList,
+    user,
+  } = useStore();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Highlight changes state
+  const [highlightChanges, setHighlightChanges] = useState(false);
+  const [changedFields, setChangedFields] = useState<Record<string, string[]>>({});
+  const [changesSince, setChangesSince] = useState<string | null>(null);
+
+  // Filter state
+  const [filters, setFilters] = useState<OrderFilters>({
+    search: '',
+    po_number: searchParams.get('po_number') || '',
+    style_code: searchParams.get('style_code') || '',
+    factory: searchParams.get('factory') || '',
+    customer: searchParams.get('customer') || '',
+    status: searchParams.get('status') || '',
+  });
+
+  // Check if any filters are active
+  const hasActiveFilters = filters.po_number || filters.style_code || filters.factory || filters.customer || filters.status;
+
+  const totalPages = Math.ceil(totalOrders / pageSize);
+
+  const loadOrders = useCallback(async (page: number = currentPage, currentFilters: OrderFilters = filters) => {
+    setIsLoading(true);
+    try {
+      // Clean up empty filter values
+      const cleanFilters: OrderFilters = {};
+      if (currentFilters.search) cleanFilters.search = currentFilters.search;
+      if (currentFilters.po_number) cleanFilters.po_number = currentFilters.po_number;
+      if (currentFilters.style_code) cleanFilters.style_code = currentFilters.style_code;
+      if (currentFilters.factory) cleanFilters.factory = currentFilters.factory;
+      if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
+      if (currentFilters.status) cleanFilters.status = currentFilters.status;
+
+      const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
+      setOrders(response.orders, response.total);
+    } catch (error) {
+      console.error('Failed to load orders:', error);
+      toast.error('Failed to load orders. Please check your connection and try refreshing the page.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pageSize, setOrders]);
+
+  // Load orders when page or filters change
+  useEffect(() => {
+    loadOrders(currentPage, filters);
+  }, [currentPage]);
+
+  // Initialize from URL params
+  useEffect(() => {
+    const poNumber = searchParams.get('po_number');
+    const styleCode = searchParams.get('style_code');
+    const factory = searchParams.get('factory');
+    const customer = searchParams.get('customer');
+    const status = searchParams.get('status');
+    const shouldHighlight = searchParams.get('highlight_changes') === 'true';
+
+    if (poNumber || styleCode || factory || customer || status) {
+      const urlFilters: OrderFilters = {
+        po_number: poNumber || '',
+        style_code: styleCode || '',
+        factory: factory || '',
+        customer: customer || '',
+        status: status || '',
+      };
+      setFilters(urlFilters);
+      setShowFilters(true);
+      loadOrders(1, urlFilters);
+
+      // If highlight_changes is set, fetch recent changes
+      if (shouldHighlight && poNumber) {
+        setHighlightChanges(true);
+        ordersApi.getRecentChanges(poNumber).then((result) => {
+          setChangedFields(result.changes);
+          setChangesSince(result.since);
+        }).catch(console.error);
+      }
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    // Subscribe to WebSocket updates
+    const unsubscribe = wsClient.subscribe((data) => {
+      if (data.type === 'order_update' && data.order) {
+        updateOrderInList(data.order);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [updateOrderInList]);
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setPage(page);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadOrders(currentPage, filters);
+    toast.success('Orders refreshed');
+  };
+
+  const handleOrderUpdate = (order: Order) => {
+    updateOrderInList(order);
+  };
+
+  const handleFilterChange = (key: keyof OrderFilters, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleApplyFilters = () => {
+    setPage(1);
+    loadOrders(1, filters);
+
+    // Update URL with filters
+    const params = new URLSearchParams();
+    if (filters.po_number) params.set('po_number', filters.po_number);
+    if (filters.style_code) params.set('style_code', filters.style_code);
+    if (filters.factory) params.set('factory', filters.factory);
+    if (filters.customer) params.set('customer', filters.customer);
+    if (filters.status) params.set('status', filters.status);
+
+    const newUrl = params.toString() ? `/orders?${params.toString()}` : '/orders';
+    router.push(newUrl, { scroll: false });
+  };
+
+  const handleClearFilters = () => {
+    setFilters({
+      search: '',
+      po_number: '',
+      style_code: '',
+      factory: '',
+      customer: '',
+      status: '',
+    });
+    setPage(1);
+    loadOrders(1, {});
+    router.push('/orders', { scroll: false });
+  };
+
+  const handleRemoveFilter = (key: keyof OrderFilters) => {
+    const newFilters = { ...filters, [key]: '' };
+    setFilters(newFilters);
+    setPage(1);
+    loadOrders(1, newFilters);
+
+    // Update URL
+    const params = new URLSearchParams();
+    if (key !== 'po_number' && newFilters.po_number) params.set('po_number', newFilters.po_number);
+    if (key !== 'style_code' && newFilters.style_code) params.set('style_code', newFilters.style_code);
+    if (key !== 'factory' && newFilters.factory) params.set('factory', newFilters.factory);
+    if (key !== 'customer' && newFilters.customer) params.set('customer', newFilters.customer);
+    if (key !== 'status' && newFilters.status) params.set('status', newFilters.status);
+
+    const newUrl = params.toString() ? `/orders?${params.toString()}` : '/orders';
+    router.push(newUrl, { scroll: false });
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleApplyFilters();
+    }
+  };
+
+  const handleDismissHighlight = () => {
+    setHighlightChanges(false);
+    setChangedFields({});
+    setChangesSince(null);
+    // Remove highlight_changes from URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('highlight_changes');
+    const newUrl = params.toString() ? `/orders?${params.toString()}` : '/orders';
+    router.push(newUrl, { scroll: false });
+  };
+
+  return (
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      <Navbar />
+
+      <main className="flex-1 max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">All Orders</h1>
+            <p className="text-gray-500 mt-1">
+              {totalOrders} total order lines
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Filter Toggle */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={cn(
+                'btn-secondary flex items-center gap-2',
+                hasActiveFilters && 'bg-primary-50 border-primary-300 text-primary-700'
+              )}
+            >
+              <Filter className="w-4 h-4" />
+              Filters
+              {hasActiveFilters && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary-600 text-white rounded-full">
+                  {[filters.po_number, filters.style_code, filters.factory, filters.customer, filters.status].filter(Boolean).length}
+                </span>
+              )}
+            </button>
+
+            {/* Refresh */}
+            <button
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="card p-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+              {/* PO Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  PO Number
+                </label>
+                <input
+                  type="text"
+                  value={filters.po_number || ''}
+                  onChange={(e) => handleFilterChange('po_number', e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Filter by PO#"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Style Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Style Code
+                </label>
+                <input
+                  type="text"
+                  value={filters.style_code || ''}
+                  onChange={(e) => handleFilterChange('style_code', e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Filter by style"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Customer */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer
+                </label>
+                <input
+                  type="text"
+                  value={filters.customer || ''}
+                  onChange={(e) => handleFilterChange('customer', e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Filter by customer"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Factory */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Factory
+                </label>
+                <input
+                  type="text"
+                  value={filters.factory || ''}
+                  onChange={(e) => handleFilterChange('factory', e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Filter by factory"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <input
+                  type="text"
+                  value={filters.status || ''}
+                  onChange={(e) => handleFilterChange('status', e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Filter by status"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-end gap-2">
+                <button
+                  onClick={handleApplyFilters}
+                  className="btn-primary flex-1"
+                >
+                  Apply
+                </button>
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearFilters}
+                    className="btn-secondary px-3"
+                    title="Clear filters"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Active Filters Display */}
+            {hasActiveFilters && (
+              <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-500">Active filters:</span>
+                {filters.po_number && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
+                    PO#: {filters.po_number}
+                    <button
+                      onClick={() => handleRemoveFilter('po_number')}
+                      className="hover:text-primary-900"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.style_code && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
+                    Style: {filters.style_code}
+                    <button
+                      onClick={() => handleRemoveFilter('style_code')}
+                      className="hover:text-primary-900"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.factory && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
+                    Factory: {filters.factory}
+                    <button
+                      onClick={() => handleRemoveFilter('factory')}
+                      className="hover:text-primary-900"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.customer && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
+                    Customer: {filters.customer}
+                    <button
+                      onClick={() => handleRemoveFilter('customer')}
+                      className="hover:text-primary-900"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filters.status && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 text-primary-700 rounded-full text-sm">
+                    Status: {filters.status}
+                    <button
+                      onClick={() => handleRemoveFilter('status')}
+                      className="hover:text-primary-900"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Highlight Changes Banner */}
+        {highlightChanges && Object.keys(changedFields).length > 0 && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                <RefreshCw className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-emerald-800">
+                  Showing changes since your last login
+                </p>
+                <p className="text-xs text-emerald-600">
+                  {changesSince && `Since ${new Date(changesSince).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}`}
+                  {' • '}Changed cells are highlighted in green
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleDismissHighlight}
+              className="px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Legend */}
+        <div className="flex items-center gap-6 mb-4 text-sm">
+          {highlightChanges && Object.keys(changedFields).length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-emerald-300 rounded" />
+              <span className="text-gray-600">Changed since last login</span>
+            </div>
+          )}
+          {user?.role === 'supplier' ? (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-50 border border-green-200 rounded" />
+              <span className="text-gray-600">Editable fields (green highlight)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500">All fields are editable</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">Double-click cell to edit</span>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 min-h-0">
+          {isLoading ? (
+            <div className="card p-12 flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-gray-500">Loading orders...</p>
+              </div>
+            </div>
+          ) : (
+            <OrderTable
+              orders={orders}
+              onOrderUpdate={handleOrderUpdate}
+              highlightMode={highlightChanges}
+              changedFields={highlightChanges ? changedFields : undefined}
+            />
+          )}
+        </div>
+
+        {/* Pagination */}
+        {!isLoading && totalPages > 1 && (
+          <div className="flex items-center justify-between mt-4 flex-shrink-0">
+            <p className="text-sm text-gray-500">
+              Showing {(currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, totalOrders)} of {totalOrders} orders
+            </p>
+
+            <div className="flex items-center gap-2">
+              {/* First page */}
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="First page"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+
+              {/* Previous page */}
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Previous page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Page numbers */}
+              <div className="flex items-center gap-1">
+                {generatePageNumbers(currentPage, totalPages).map((page, index) =>
+                  page === '...' ? (
+                    <span key={`ellipsis-${index}`} className="px-2 text-gray-400">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={page}
+                      onClick={() => handlePageChange(page as number)}
+                      className={cn(
+                        'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
+                        currentPage === page
+                          ? 'bg-primary-600 text-white'
+                          : 'hover:bg-gray-100 text-gray-700'
+                      )}
+                    >
+                      {page}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* Next page */}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Next page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {/* Last page */}
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Last page"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Comment Sidebar */}
+      <CommentSidebar />
+    </div>
+  );
+}
+
+function generatePageNumbers(current: number, total: number): (number | string)[] {
+  const pages: (number | string)[] = [];
+  const showEllipsis = total > 7;
+
+  if (!showEllipsis) {
+    for (let i = 1; i <= total; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }
+
+  // Always show first page
+  pages.push(1);
+
+  if (current > 3) {
+    pages.push('...');
+  }
+
+  // Show pages around current
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  if (current < total - 2) {
+    pages.push('...');
+  }
+
+  // Always show last page
+  if (total > 1) {
+    pages.push(total);
+  }
+
+  return pages;
+}
