@@ -439,6 +439,7 @@ function AnalyticsContent() {
                 alerts?.overdue_production?.map((order: any) => (
                   <div key={order.id} className="p-2 bg-red-50 rounded-lg text-sm">
                     <div className="font-medium text-gray-900">{order.po_number}</div>
+                    <div className="text-gray-600 text-xs">{order.style_code}</div>
                     <div className="text-gray-500 text-xs">{order.factory} - {order.customer}</div>
                   </div>
                 ))
@@ -464,6 +465,7 @@ function AnalyticsContent() {
                 alerts?.stale_orders?.map((order: any) => (
                   <div key={order.id} className="p-2 bg-yellow-50 rounded-lg text-sm">
                     <div className="font-medium text-gray-900">{order.po_number}</div>
+                    <div className="text-gray-600 text-xs">{order.style_code}</div>
                     <div className="text-gray-500 text-xs">{order.factory} - {order.status || 'No status'}</div>
                   </div>
                 ))
@@ -489,6 +491,7 @@ function AnalyticsContent() {
                 alerts?.upcoming_deliveries?.map((order: any) => (
                   <div key={order.id} className="p-2 bg-green-50 rounded-lg text-sm">
                     <div className="font-medium text-gray-900">{order.po_number}</div>
+                    <div className="text-gray-600 text-xs">{order.style_code}</div>
                     <div className="text-gray-500 text-xs">
                       {order.customer} - ETA: {order.eta_to_uk ? new Date(order.eta_to_uk).toLocaleDateString() : 'N/A'}
                     </div>

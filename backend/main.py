@@ -1756,22 +1756,23 @@ async def get_analytics_overview(
     now = datetime.utcnow()
     start_date = now - relativedelta(months=months)
 
-    # Total orders and value
-    total_orders = db.query(func.count(PurchaseOrder.id)).scalar() or 0
+    # Total orders (unique PO numbers) and value
+    total_orders = db.query(func.count(func.distinct(PurchaseOrder.po_number))).scalar() or 0
+    total_lines = db.query(func.count(PurchaseOrder.id)).scalar() or 0
     total_value = db.query(func.sum(PurchaseOrder.total_order_value)).scalar() or 0
     total_quantity = db.query(func.sum(PurchaseOrder.total_quantity)).scalar() or 0
 
-    # Orders by status
+    # Orders by status (count unique PO numbers)
     status_counts = db.query(
         PurchaseOrder.status,
-        func.count(PurchaseOrder.id)
+        func.count(func.distinct(PurchaseOrder.po_number))
     ).group_by(PurchaseOrder.status).all()
 
-    # On-time vs late
-    on_time = db.query(func.count(PurchaseOrder.id)).filter(
+    # On-time vs late (unique PO numbers)
+    on_time = db.query(func.count(func.distinct(PurchaseOrder.po_number))).filter(
         or_(PurchaseOrder.is_late == False, PurchaseOrder.is_late.is_(None))
     ).scalar() or 0
-    late = db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.is_late == True).scalar() or 0
+    late = db.query(func.count(func.distinct(PurchaseOrder.po_number))).filter(PurchaseOrder.is_late == True).scalar() or 0
 
     # Average order value
     avg_order_value = db.query(func.avg(PurchaseOrder.total_order_value)).scalar() or 0
@@ -1782,6 +1783,7 @@ async def get_analytics_overview(
 
     return {
         "total_orders": total_orders,
+        "total_lines": total_lines,
         "total_value": float(total_value),
         "total_quantity": int(total_quantity) if total_quantity else 0,
         "avg_order_value": float(avg_order_value),
