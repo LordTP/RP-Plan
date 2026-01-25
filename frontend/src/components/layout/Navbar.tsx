@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Package, LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet } from 'lucide-react';
+import { Package, LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, internalOnly: false },
   { href: '/orders', label: 'Orders', icon: Table2, internalOnly: false },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3, internalOnly: true },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, internalOnly: true },
   { href: '/settings', label: 'Settings', icon: Settings, internalOnly: false },
 ];

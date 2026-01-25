@@ -454,4 +454,47 @@ export const statsApi = {
   },
 };
 
+// Analytics endpoints
+export const analyticsApi = {
+  getOverview: async (months: number = 6) => {
+    const response = await api.get('/api/analytics/overview', { params: { months } });
+    return response.data;
+  },
+
+  getOrdersOverTime: async (months: number = 12) => {
+    const response = await api.get('/api/analytics/orders-over-time', { params: { months } });
+    return response.data;
+  },
+
+  getFactoryPerformance: async () => {
+    const response = await api.get('/api/analytics/factory-performance');
+    return response.data;
+  },
+
+  getCustomerAnalytics: async (limit: number = 10) => {
+    const response = await api.get('/api/analytics/customer-analytics', { params: { limit } });
+    return response.data;
+  },
+
+  getDeliveryPerformance: async (months: number = 6) => {
+    const response = await api.get('/api/analytics/delivery-performance', { params: { months } });
+    return response.data;
+  },
+
+  getDateChanges: async (months: number = 6) => {
+    const response = await api.get('/api/analytics/date-changes', { params: { months } });
+    return response.data;
+  },
+
+  getPipeline: async () => {
+    const response = await api.get('/api/analytics/pipeline');
+    return response.data;
+  },
+
+  getAlerts: async () => {
+    const response = await api.get('/api/analytics/alerts');
+    return response.data;
+  },
+};
+
 export default api;

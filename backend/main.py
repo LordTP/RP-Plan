@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, W
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from typing import List, Optional
 from datetime import datetime, timedelta
 import json
@@ -1737,6 +1737,392 @@ async def get_po_summary(
             }
             for po in po_summary
         ]
+    }
+
+
+# =============================================================================
+# ANALYTICS ENDPOINTS
+# =============================================================================
+
+@app.get("/api/analytics/overview")
+async def get_analytics_overview(
+    months: int = Query(6, ge=1, le=24),
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get high-level analytics overview"""
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.utcnow()
+    start_date = now - relativedelta(months=months)
+
+    # Total orders and value
+    total_orders = db.query(func.count(PurchaseOrder.id)).scalar() or 0
+    total_value = db.query(func.sum(PurchaseOrder.total_order_value)).scalar() or 0
+    total_quantity = db.query(func.sum(PurchaseOrder.total_quantity)).scalar() or 0
+
+    # Orders by status
+    status_counts = db.query(
+        PurchaseOrder.status,
+        func.count(PurchaseOrder.id)
+    ).group_by(PurchaseOrder.status).all()
+
+    # On-time vs late
+    on_time = db.query(func.count(PurchaseOrder.id)).filter(
+        or_(PurchaseOrder.is_late == False, PurchaseOrder.is_late.is_(None))
+    ).scalar() or 0
+    late = db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.is_late == True).scalar() or 0
+
+    # Average order value
+    avg_order_value = db.query(func.avg(PurchaseOrder.total_order_value)).scalar() or 0
+
+    # Unique factories and customers
+    factory_count = db.query(func.count(func.distinct(PurchaseOrder.factory))).scalar() or 0
+    customer_count = db.query(func.count(func.distinct(PurchaseOrder.customer))).scalar() or 0
+
+    return {
+        "total_orders": total_orders,
+        "total_value": float(total_value),
+        "total_quantity": int(total_quantity) if total_quantity else 0,
+        "avg_order_value": float(avg_order_value),
+        "on_time_orders": on_time,
+        "late_orders": late,
+        "on_time_rate": round((on_time / total_orders * 100) if total_orders > 0 else 0, 1),
+        "factory_count": factory_count,
+        "customer_count": customer_count,
+        "status_breakdown": {s[0] or "Unknown": s[1] for s in status_counts}
+    }
+
+
+@app.get("/api/analytics/orders-over-time")
+async def get_orders_over_time(
+    months: int = Query(12, ge=1, le=24),
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get order counts and values by month"""
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.utcnow()
+    data = []
+
+    for i in range(months - 1, -1, -1):
+        month_start = (now - relativedelta(months=i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if i > 0:
+            month_end = (now - relativedelta(months=i-1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            month_end = now
+
+        order_count = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.created_at >= month_start,
+            PurchaseOrder.created_at < month_end
+        ).scalar() or 0
+
+        order_value = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
+            PurchaseOrder.created_at >= month_start,
+            PurchaseOrder.created_at < month_end
+        ).scalar() or 0
+
+        data.append({
+            "month": month_start.strftime("%b %Y"),
+            "orders": order_count,
+            "value": float(order_value)
+        })
+
+    return {"data": data}
+
+
+@app.get("/api/analytics/factory-performance")
+async def get_factory_performance(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get performance metrics by factory"""
+    factories = db.query(PurchaseOrder.factory).filter(
+        PurchaseOrder.factory.isnot(None),
+        PurchaseOrder.factory != ''
+    ).distinct().all()
+
+    performance = []
+    for (factory,) in factories:
+        # Total orders for this factory
+        total = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.factory == factory
+        ).scalar() or 0
+
+        # Late orders
+        late = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.factory == factory,
+            PurchaseOrder.is_late == True
+        ).scalar() or 0
+
+        # Total value
+        value = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
+            PurchaseOrder.factory == factory
+        ).scalar() or 0
+
+        # Date changes for this factory
+        date_changes = db.query(func.count(DateChangeHistory.id)).join(
+            PurchaseOrder, DateChangeHistory.po_id == PurchaseOrder.id
+        ).filter(PurchaseOrder.factory == factory).scalar() or 0
+
+        on_time_rate = round(((total - late) / total * 100) if total > 0 else 0, 1)
+
+        performance.append({
+            "factory": factory,
+            "total_orders": total,
+            "late_orders": late,
+            "on_time_rate": on_time_rate,
+            "total_value": float(value),
+            "date_changes": date_changes,
+            "changes_per_order": round(date_changes / total, 2) if total > 0 else 0
+        })
+
+    # Sort by total orders descending
+    performance.sort(key=lambda x: x["total_orders"], reverse=True)
+
+    return {"factories": performance}
+
+
+@app.get("/api/analytics/customer-analytics")
+async def get_customer_analytics(
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get analytics by customer"""
+    customers = db.query(
+        PurchaseOrder.customer,
+        func.count(PurchaseOrder.id).label('order_count'),
+        func.sum(PurchaseOrder.total_order_value).label('total_value'),
+        func.sum(PurchaseOrder.total_quantity).label('total_quantity'),
+        func.count(case((PurchaseOrder.is_late == True, 1))).label('late_count')
+    ).filter(
+        PurchaseOrder.customer.isnot(None),
+        PurchaseOrder.customer != ''
+    ).group_by(PurchaseOrder.customer).order_by(
+        func.sum(PurchaseOrder.total_order_value).desc()
+    ).limit(limit).all()
+
+    return {
+        "customers": [
+            {
+                "customer": c.customer,
+                "order_count": c.order_count,
+                "total_value": float(c.total_value or 0),
+                "total_quantity": int(c.total_quantity or 0),
+                "late_count": c.late_count,
+                "on_time_rate": round(((c.order_count - c.late_count) / c.order_count * 100) if c.order_count > 0 else 0, 1)
+            }
+            for c in customers
+        ]
+    }
+
+
+@app.get("/api/analytics/delivery-performance")
+async def get_delivery_performance(
+    months: int = Query(6, ge=1, le=24),
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get delivery performance metrics over time"""
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.utcnow()
+    data = []
+
+    for i in range(months - 1, -1, -1):
+        month_start = (now - relativedelta(months=i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if i > 0:
+            month_end = (now - relativedelta(months=i-1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            month_end = now
+
+        on_time = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.created_at >= month_start,
+            PurchaseOrder.created_at < month_end,
+            or_(PurchaseOrder.is_late == False, PurchaseOrder.is_late.is_(None))
+        ).scalar() or 0
+
+        late = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.created_at >= month_start,
+            PurchaseOrder.created_at < month_end,
+            PurchaseOrder.is_late == True
+        ).scalar() or 0
+
+        total = on_time + late
+
+        data.append({
+            "month": month_start.strftime("%b %Y"),
+            "on_time": on_time,
+            "late": late,
+            "total": total,
+            "on_time_rate": round((on_time / total * 100) if total > 0 else 0, 1)
+        })
+
+    return {"data": data}
+
+
+@app.get("/api/analytics/date-changes")
+async def get_date_change_analytics(
+    months: int = Query(6, ge=1, le=24),
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get date change analytics"""
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.utcnow()
+    start_date = now - relativedelta(months=months)
+
+    # Total date changes
+    total_changes = db.query(func.count(DateChangeHistory.id)).filter(
+        DateChangeHistory.created_at >= start_date
+    ).scalar() or 0
+
+    # Changes by field
+    changes_by_field = db.query(
+        DateChangeHistory.field_name,
+        func.count(DateChangeHistory.id)
+    ).filter(
+        DateChangeHistory.created_at >= start_date
+    ).group_by(DateChangeHistory.field_name).all()
+
+    # Changes by factory
+    changes_by_factory = db.query(
+        PurchaseOrder.factory,
+        func.count(DateChangeHistory.id).label('change_count')
+    ).join(
+        PurchaseOrder, DateChangeHistory.po_id == PurchaseOrder.id
+    ).filter(
+        DateChangeHistory.created_at >= start_date,
+        PurchaseOrder.factory.isnot(None)
+    ).group_by(PurchaseOrder.factory).order_by(
+        func.count(DateChangeHistory.id).desc()
+    ).limit(10).all()
+
+    # Changes over time
+    changes_over_time = []
+    for i in range(months - 1, -1, -1):
+        month_start = (now - relativedelta(months=i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if i > 0:
+            month_end = (now - relativedelta(months=i-1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            month_end = now
+
+        count = db.query(func.count(DateChangeHistory.id)).filter(
+            DateChangeHistory.created_at >= month_start,
+            DateChangeHistory.created_at < month_end
+        ).scalar() or 0
+
+        changes_over_time.append({
+            "month": month_start.strftime("%b %Y"),
+            "changes": count
+        })
+
+    return {
+        "total_changes": total_changes,
+        "changes_by_field": {f[0]: f[1] for f in changes_by_field},
+        "changes_by_factory": [{"factory": f[0], "changes": f[1]} for f in changes_by_factory],
+        "changes_over_time": changes_over_time
+    }
+
+
+@app.get("/api/analytics/pipeline")
+async def get_order_pipeline(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get order pipeline/funnel data"""
+    # Define pipeline stages
+    stages = [
+        ("Pending", ["Pending", "Pending Approval", "New"]),
+        ("In Production", ["In Production", "Production", "Manufacturing"]),
+        ("Shipped", ["Shipped", "In Transit", "Dispatched"]),
+        ("Delivered", ["Delivered", "Complete", "Completed"]),
+        ("Delayed", ["Delayed", "Late", "On Hold"]),
+        ("Cancelled", ["Cancelled", "Canceled"])
+    ]
+
+    pipeline = []
+    for stage_name, statuses in stages:
+        count = db.query(func.count(PurchaseOrder.id)).filter(
+            PurchaseOrder.status.in_(statuses)
+        ).scalar() or 0
+
+        value = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
+            PurchaseOrder.status.in_(statuses)
+        ).scalar() or 0
+
+        pipeline.append({
+            "stage": stage_name,
+            "count": count,
+            "value": float(value)
+        })
+
+    # Also count orders without status
+    no_status = db.query(func.count(PurchaseOrder.id)).filter(
+        or_(PurchaseOrder.status.is_(None), PurchaseOrder.status == '')
+    ).scalar() or 0
+
+    if no_status > 0:
+        no_status_value = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
+            or_(PurchaseOrder.status.is_(None), PurchaseOrder.status == '')
+        ).scalar() or 0
+        pipeline.append({
+            "stage": "No Status",
+            "count": no_status,
+            "value": float(no_status_value or 0)
+        })
+
+    return {"pipeline": pipeline}
+
+
+@app.get("/api/analytics/alerts")
+async def get_analytics_alerts(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get orders that need attention"""
+    now = datetime.utcnow()
+
+    # Orders with ex-factory date in past but not shipped
+    overdue_production = db.query(PurchaseOrder).filter(
+        PurchaseOrder.revised_po_ex_factory < now,
+        ~PurchaseOrder.status.in_(["Shipped", "Delivered", "Complete", "Completed", "Cancelled"])
+    ).order_by(PurchaseOrder.revised_po_ex_factory.asc()).limit(10).all()
+
+    # Orders with no updates in 14 days
+    stale_date = now - timedelta(days=14)
+    stale_orders = db.query(PurchaseOrder).filter(
+        PurchaseOrder.updated_at < stale_date,
+        ~PurchaseOrder.status.in_(["Delivered", "Complete", "Completed", "Cancelled"])
+    ).order_by(PurchaseOrder.updated_at.asc()).limit(10).all()
+
+    # Deliveries expected this week
+    week_end = now + timedelta(days=7)
+    upcoming_deliveries = db.query(PurchaseOrder).filter(
+        PurchaseOrder.eta_to_uk >= now,
+        PurchaseOrder.eta_to_uk <= week_end
+    ).order_by(PurchaseOrder.eta_to_uk.asc()).limit(10).all()
+
+    def order_to_dict(o):
+        return {
+            "id": o.id,
+            "po_number": o.po_number,
+            "style_code": o.style_code,
+            "customer": o.customer,
+            "factory": o.factory,
+            "status": o.status,
+            "revised_po_ex_factory": o.revised_po_ex_factory.isoformat() if o.revised_po_ex_factory else None,
+            "eta_to_uk": o.eta_to_uk.isoformat() if o.eta_to_uk else None,
+            "updated_at": o.updated_at.isoformat() if o.updated_at else None
+        }
+
+    return {
+        "overdue_production": [order_to_dict(o) for o in overdue_production],
+        "stale_orders": [order_to_dict(o) for o in stale_orders],
+        "upcoming_deliveries": [order_to_dict(o) for o in upcoming_deliveries]
     }
 
 
