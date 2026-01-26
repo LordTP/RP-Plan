@@ -36,7 +36,7 @@ export function Navbar() {
                 <Package className="w-5 h-5 text-white" />
               </div>
               <span className="font-semibold text-gray-900 hidden sm:block">
-                PO Management
+                Critical Path
               </span>
             </Link>
 

@@ -3,8 +3,8 @@ import { Toaster } from 'react-hot-toast';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PO Management System',
-  description: 'Purchase Order Management System',
+  title: 'Critical Path',
+  description: 'Critical Path Management System',
 };
 
 export default function RootLayout({
