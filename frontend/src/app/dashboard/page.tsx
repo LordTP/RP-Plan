@@ -226,7 +226,7 @@ function DashboardContent() {
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
-                Changes Since Your Last Login
+                Changes This Session
               </h2>
               <span className="text-sm text-gray-500">
                 Since {new Date(activitySummary.since).toLocaleDateString('en-GB', {
