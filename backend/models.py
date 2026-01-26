@@ -28,6 +28,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+    previous_login = Column(DateTime, nullable=True)
     
     # Relationships
     comments = relationship("Comment", back_populates="user")

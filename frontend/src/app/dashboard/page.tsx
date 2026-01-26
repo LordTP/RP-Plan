@@ -24,7 +24,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { statsApi, ActivitySummary } from '@/lib/api';
+import { statsApi, ActivitySummary, MissedActivity } from '@/lib/api';
 import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import type { DashboardStats, POSummary } from '@/types';
 
@@ -42,6 +42,7 @@ function DashboardContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [poSummaries, setPOSummaries] = useState<POSummary[]>([]);
   const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
+  const [missedActivity, setMissedActivity] = useState<MissedActivity | null>(null);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
 
@@ -59,12 +60,14 @@ function DashboardContent() {
 
       // Load activity summary for all users
       promises.push(statsApi.getActivitySummary());
+      promises.push(statsApi.getMissedActivity());
 
-      const [stats, poSummaryResponse, activity] = await Promise.all(promises);
+      const [stats, poSummaryResponse, activity, missed] = await Promise.all(promises);
 
       setDashboardStats(stats);
       setPOSummaries(poSummaryResponse.po_summaries);
       setActivitySummary(activity);
+      setMissedActivity(missed);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast.error('Failed to load dashboard data. Please refresh the page or try again later.');
@@ -327,6 +330,132 @@ function DashboardContent() {
                         <div className="text-purple-600">{comment.style_code}</div>
                         <div className="text-purple-500 truncate">{comment.comment_text}</div>
                         <div className="text-purple-400 mt-1">by {comment.username}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No new comments</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* While You Were Away - Changes between previous login and last login */}
+        {missedActivity && missedActivity.since && (missedActivity.new_orders.count > 0 || missedActivity.updated_orders.count > 0 || missedActivity.new_comments.count > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                While You Were Away
+              </h2>
+              <span className="text-sm text-gray-500">
+                {new Date(missedActivity.since).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+                {' — '}
+                {missedActivity.until && new Date(missedActivity.until).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* New Orders */}
+              <div className="card p-4 border-l-4 border-l-amber-400">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
+                    <PlusCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">New Orders</h3>
+                    <p className="text-xs text-gray-500">{missedActivity.new_orders.count} rows in {missedActivity.new_orders.po_count} POs</p>
+                  </div>
+                </div>
+                {missedActivity.new_orders.orders.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {missedActivity.new_orders.orders.map((order) => (
+                      <div
+                        key={order.po_number}
+                        onClick={() => handlePOClick(order.po_number)}
+                        className="p-2 bg-amber-50 rounded text-xs cursor-pointer hover:bg-amber-100 transition-colors"
+                      >
+                        <div className="font-medium text-amber-800">PO# {order.po_number}</div>
+                        <div className="text-amber-600">{order.customer}</div>
+                        <div className="text-amber-500">{order.styles.length} style(s)</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No new orders</p>
+                )}
+              </div>
+
+              {/* Updated Orders */}
+              <div className="card p-4 border-l-4 border-l-orange-400">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">Updated Orders</h3>
+                    <p className="text-xs text-gray-500">{missedActivity.updated_orders.count} rows in {missedActivity.updated_orders.po_count} POs</p>
+                  </div>
+                </div>
+                {missedActivity.updated_orders.orders.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {missedActivity.updated_orders.orders.map((order) => (
+                      <div
+                        key={order.po_number}
+                        onClick={() => handlePOClick(order.po_number, true)}
+                        className="p-2 bg-orange-50 rounded text-xs cursor-pointer hover:bg-orange-100 transition-colors"
+                      >
+                        <div className="font-medium text-orange-800">PO# {order.po_number}</div>
+                        <div className="text-orange-600">{order.customer}</div>
+                        <div className="text-orange-500">{order.styles.length} style(s) updated</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No updated orders</p>
+                )}
+              </div>
+
+              {/* New Comments */}
+              <div className="card p-4 border-l-4 border-l-yellow-400">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-yellow-100 text-yellow-600 flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">New Comments</h3>
+                    <p className="text-xs text-gray-500">{missedActivity.new_comments.count} comment(s)</p>
+                  </div>
+                </div>
+                {missedActivity.new_comments.comments.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {missedActivity.new_comments.comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        onClick={() => handlePOClick(comment.po_number)}
+                        className="p-2 bg-yellow-50 rounded text-xs cursor-pointer hover:bg-yellow-100 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-yellow-800">PO# {comment.po_number}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            comment.source === 'Sourcelab' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {comment.source}
+                          </span>
+                        </div>
+                        <div className="text-yellow-600">{comment.style_code}</div>
+                        <div className="text-yellow-500 truncate">{comment.comment_text}</div>
+                        <div className="text-yellow-400 mt-1">by {comment.username}</div>
                       </div>
                     ))}
                   </div>

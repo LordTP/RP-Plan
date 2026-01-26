@@ -50,4 +50,15 @@ def init_db():
     """
     from models import Base
     Base.metadata.create_all(bind=engine)
+
+    # Migrate: add previous_login column if it doesn't exist
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    if 'users' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('users')]
+        if 'previous_login' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN previous_login DATETIME"))
+            print("✓ Added previous_login column to users table")
+
     print("✓ Database tables created successfully")

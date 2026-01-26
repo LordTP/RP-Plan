@@ -150,7 +150,8 @@ async def login(
             detail="Login failed. Please check your username and password are correct. Passwords are case-sensitive."
         )
     
-    # Update last login
+    # Preserve previous login time, then update last login
+    user.previous_login = user.last_login
     user.last_login = datetime.utcnow()
     db.commit()
     
@@ -1657,6 +1658,122 @@ async def get_activity_summary(
 
     return {
         "since": since.isoformat(),
+        "new_orders": {
+            "count": len(new_orders),
+            "po_count": len(new_po_summary),
+            "orders": list(new_po_summary.values())[:10]
+        },
+        "updated_orders": {
+            "count": len(updated_orders),
+            "po_count": len(updated_po_summary),
+            "orders": list(updated_po_summary.values())[:10]
+        },
+        "new_comments": {
+            "count": len(new_comments),
+            "comments": comment_details[:15]
+        }
+    }
+
+
+@app.get("/api/stats/missed-activity")
+async def get_missed_activity(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get summary of changes that happened while the user was logged out (between previous_login and last_login)"""
+    # Need both timestamps to define the window
+    if not current_user.previous_login or not current_user.last_login:
+        return {
+            "since": None,
+            "until": None,
+            "new_orders": {"count": 0, "po_count": 0, "orders": []},
+            "updated_orders": {"count": 0, "po_count": 0, "orders": []},
+            "new_comments": {"count": 0, "comments": []},
+        }
+
+    since = current_user.previous_login
+    until = current_user.last_login
+
+    # Build base filter for supplier users
+    base_filter = []
+    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+
+    # New orders created in the window
+    new_orders_query = db.query(PurchaseOrder).filter(
+        PurchaseOrder.created_at > since,
+        PurchaseOrder.created_at <= until,
+    )
+    for f in base_filter:
+        new_orders_query = new_orders_query.filter(f)
+    new_orders = new_orders_query.order_by(PurchaseOrder.created_at.desc()).limit(20).all()
+
+    # Orders updated in the window (but not newly created in that window)
+    updated_orders_query = db.query(PurchaseOrder).filter(
+        PurchaseOrder.updated_at > since,
+        PurchaseOrder.updated_at <= until,
+        PurchaseOrder.created_at <= since,
+    )
+    for f in base_filter:
+        updated_orders_query = updated_orders_query.filter(f)
+    updated_orders = updated_orders_query.order_by(PurchaseOrder.updated_at.desc()).limit(20).all()
+
+    # New comments in the window
+    comments_query = db.query(Comment).filter(
+        Comment.created_at > since,
+        Comment.created_at <= until,
+    )
+    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+        comments_query = comments_query.join(PurchaseOrder).filter(
+            PurchaseOrder.factory == current_user.factory_name
+        )
+    new_comments = comments_query.order_by(Comment.created_at.desc()).limit(30).all()
+
+    # Build comment summary with PO info
+    comment_details = []
+    for comment in new_comments:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == comment.po_id).first()
+        user = db.query(User).filter(User.id == comment.user_id).first()
+        if order:
+            comment_details.append({
+                "id": comment.id,
+                "po_number": order.po_number,
+                "style_code": order.style_code,
+                "comment_text": comment.comment_text[:100] + "..." if len(comment.comment_text) > 100 else comment.comment_text,
+                "source": comment.source,
+                "username": user.username if user else "Unknown",
+                "created_at": comment.created_at.isoformat()
+            })
+
+    # Group new orders by PO number
+    new_po_summary = {}
+    for order in new_orders:
+        if order.po_number not in new_po_summary:
+            new_po_summary[order.po_number] = {
+                "po_number": order.po_number,
+                "customer": order.customer,
+                "factory": order.factory,
+                "styles": [],
+                "created_at": order.created_at.isoformat()
+            }
+        new_po_summary[order.po_number]["styles"].append(order.style_code)
+
+    # Group updated orders by PO number
+    updated_po_summary = {}
+    for order in updated_orders:
+        if order.po_number not in updated_po_summary:
+            updated_po_summary[order.po_number] = {
+                "po_number": order.po_number,
+                "customer": order.customer,
+                "factory": order.factory,
+                "styles": [],
+                "updated_at": order.updated_at.isoformat()
+            }
+        updated_po_summary[order.po_number]["styles"].append(order.style_code)
+
+    return {
+        "since": since.isoformat(),
+        "until": until.isoformat(),
         "new_orders": {
             "count": len(new_orders),
             "po_count": len(new_po_summary),

@@ -434,6 +434,45 @@ export interface ActivitySummary {
   };
 }
 
+export interface MissedActivity {
+  since: string | null;
+  until: string | null;
+  new_orders: {
+    count: number;
+    po_count: number;
+    orders: {
+      po_number: string;
+      customer: string;
+      factory: string;
+      styles: string[];
+      created_at: string;
+    }[];
+  };
+  updated_orders: {
+    count: number;
+    po_count: number;
+    orders: {
+      po_number: string;
+      customer: string;
+      factory: string;
+      styles: string[];
+      updated_at: string;
+    }[];
+  };
+  new_comments: {
+    count: number;
+    comments: {
+      id: number;
+      po_number: string;
+      style_code: string;
+      comment_text: string;
+      source: string;
+      username: string;
+      created_at: string;
+    }[];
+  };
+}
+
 // Stats endpoints
 export const statsApi = {
   getDashboardStats: async (): Promise<DashboardStats> => {
@@ -450,6 +489,11 @@ export const statsApi = {
 
   getActivitySummary: async (): Promise<ActivitySummary> => {
     const response = await api.get<ActivitySummary>('/api/stats/activity-summary');
+    return response.data;
+  },
+
+  getMissedActivity: async (): Promise<MissedActivity> => {
+    const response = await api.get<MissedActivity>('/api/stats/missed-activity');
     return response.data;
   },
 };
