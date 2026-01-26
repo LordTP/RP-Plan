@@ -139,7 +139,8 @@ function OrdersContent() {
       // If highlight_changes is set, fetch recent changes
       if (shouldHighlight && poNumber) {
         setHighlightChanges(true);
-        ordersApi.getRecentChanges(poNumber).then((result) => {
+        const highlightSince = searchParams.get('highlight_since') || undefined;
+        ordersApi.getRecentChanges(poNumber, highlightSince).then((result) => {
           setChangedFields(result.changes);
           setChangesSince(result.since);
         }).catch(console.error);

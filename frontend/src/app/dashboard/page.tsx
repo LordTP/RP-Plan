@@ -76,11 +76,14 @@ function DashboardContent() {
     }
   };
 
-  const handlePOClick = (poNumber: string, highlightChanges: boolean = false) => {
+  const handlePOClick = (poNumber: string, highlightChanges: boolean = false, highlightSince?: string) => {
     const params = new URLSearchParams();
     params.set('po_number', poNumber);
     if (highlightChanges) {
       params.set('highlight_changes', 'true');
+    }
+    if (highlightSince) {
+      params.set('highlight_since', highlightSince);
     }
     router.push(`/orders?${params.toString()}`);
   };
@@ -292,7 +295,7 @@ function DashboardContent() {
                     {missedActivity.updated_orders.orders.map((order) => (
                       <div
                         key={order.po_number}
-                        onClick={() => handlePOClick(order.po_number, true)}
+                        onClick={() => handlePOClick(order.po_number, true, missedActivity.since!)}
                         className="p-2 bg-orange-50 rounded text-xs cursor-pointer hover:bg-orange-100 transition-colors"
                       >
                         <div className="font-medium text-orange-800">PO# {order.po_number}</div>
