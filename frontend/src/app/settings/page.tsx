@@ -13,6 +13,7 @@ import {
   Trash2,
   Edit2,
   X,
+  KeyRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Navbar } from '@/components/layout/Navbar';
@@ -48,6 +49,10 @@ function SettingsContent() {
     role: 'supplier' as 'admin' | 'internal' | 'supplier',
     factory_name: '',
   });
+
+  // Password reset state
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState('');
 
   // Role column settings state
   const [supplierColumns, setSupplierColumns] = useState<ColumnSetting[]>([]);
@@ -217,6 +222,22 @@ function SettingsContent() {
       loadUsers();
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Failed to delete user';
+      toast.error(message);
+    }
+  };
+
+  const handleResetPassword = async (userId: number) => {
+    if (!newPassword || newPassword.length < 4) {
+      toast.error('Password must be at least 4 characters');
+      return;
+    }
+    try {
+      await usersApi.updateUser(userId, { password: newPassword });
+      toast.success('Password reset successfully');
+      setResetPasswordUserId(null);
+      setNewPassword('');
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Failed to reset password';
       toast.error(message);
     }
   };
@@ -419,6 +440,7 @@ function SettingsContent() {
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Role</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Factory</th>
                       <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Status</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Last Login</th>
                       <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -473,6 +495,17 @@ function SettingsContent() {
                             {u.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {u.last_login
+                            ? new Date(u.last_login).toLocaleDateString('en-GB', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : 'Never'}
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-center gap-2">
                             {editingUser?.id === u.id ? (
@@ -507,6 +540,21 @@ function SettingsContent() {
                                 >
                                   <Edit2 className="w-4 h-4" />
                                 </button>
+                                <button
+                                  onClick={() => {
+                                    setResetPasswordUserId(resetPasswordUserId === u.id ? null : u.id);
+                                    setNewPassword('');
+                                  }}
+                                  className={cn(
+                                    "p-1 rounded",
+                                    resetPasswordUserId === u.id
+                                      ? "text-amber-600 bg-amber-50"
+                                      : "text-gray-400 hover:text-amber-600 hover:bg-amber-50"
+                                  )}
+                                  title="Reset password"
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </button>
                                 {u.id !== user?.id && (
                                   <button
                                     onClick={() => handleDeleteUser(u.id, u.username)}
@@ -521,6 +569,38 @@ function SettingsContent() {
                           </div>
                         </td>
                       </tr>
+                      {resetPasswordUserId === u.id && (
+                        <tr className="bg-amber-50">
+                          <td colSpan={7} className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-medium text-gray-700">
+                                New password for {u.username}:
+                              </span>
+                              <input
+                                type="password"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleResetPassword(u.id)}
+                                placeholder="Enter new password"
+                                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 w-48"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleResetPassword(u.id)}
+                                className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700"
+                              >
+                                Reset
+                              </button>
+                              <button
+                                onClick={() => { setResetPasswordUserId(null); setNewPassword(''); }}
+                                className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     ))}
                   </tbody>
                 </table>

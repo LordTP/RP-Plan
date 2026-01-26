@@ -5,6 +5,7 @@ export interface User {
   role: 'admin' | 'internal' | 'supplier';
   factory_name?: string;
   is_active: boolean;
+  last_login?: string;
 }
 
 export interface Order {
