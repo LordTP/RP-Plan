@@ -221,126 +221,6 @@ function DashboardContent() {
           })}
         </div>
 
-        {/* Activity Summary - Changes since last login */}
-        {activitySummary && (activitySummary.new_orders.count > 0 || activitySummary.updated_orders.count > 0 || activitySummary.new_comments.count > 0) && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Changes This Session
-              </h2>
-              <span className="text-sm text-gray-500">
-                Since {new Date(activitySummary.since).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* New Orders */}
-              <div className="card p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center">
-                    <PlusCircle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">New Orders</h3>
-                    <p className="text-xs text-gray-500">{activitySummary.new_orders.count} rows in {activitySummary.new_orders.po_count} POs</p>
-                  </div>
-                </div>
-                {activitySummary.new_orders.orders.length > 0 ? (
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {activitySummary.new_orders.orders.map((order) => (
-                      <div
-                        key={order.po_number}
-                        onClick={() => handlePOClick(order.po_number)}
-                        className="p-2 bg-green-50 rounded text-xs cursor-pointer hover:bg-green-100 transition-colors"
-                      >
-                        <div className="font-medium text-green-800">PO# {order.po_number}</div>
-                        <div className="text-green-600">{order.customer}</div>
-                        <div className="text-green-500">{order.styles.length} style(s)</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400">No new orders</p>
-                )}
-              </div>
-
-              {/* Updated Orders */}
-              <div className="card p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-                    <RefreshCw className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">Updated Orders</h3>
-                    <p className="text-xs text-gray-500">{activitySummary.updated_orders.count} rows in {activitySummary.updated_orders.po_count} POs</p>
-                  </div>
-                </div>
-                {activitySummary.updated_orders.orders.length > 0 ? (
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {activitySummary.updated_orders.orders.map((order) => (
-                      <div
-                        key={order.po_number}
-                        onClick={() => handlePOClick(order.po_number, true)}
-                        className="p-2 bg-blue-50 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors"
-                      >
-                        <div className="font-medium text-blue-800">PO# {order.po_number}</div>
-                        <div className="text-blue-600">{order.customer}</div>
-                        <div className="text-blue-500">{order.styles.length} style(s) updated</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400">No updated orders</p>
-                )}
-              </div>
-
-              {/* New Comments */}
-              <div className="card p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">New Comments</h3>
-                    <p className="text-xs text-gray-500">{activitySummary.new_comments.count} comment(s)</p>
-                  </div>
-                </div>
-                {activitySummary.new_comments.comments.length > 0 ? (
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {activitySummary.new_comments.comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        onClick={() => handlePOClick(comment.po_number)}
-                        className="p-2 bg-purple-50 rounded text-xs cursor-pointer hover:bg-purple-100 transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-purple-800">PO# {comment.po_number}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            comment.source === 'Sourcelab' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                          }`}>
-                            {comment.source}
-                          </span>
-                        </div>
-                        <div className="text-purple-600">{comment.style_code}</div>
-                        <div className="text-purple-500 truncate">{comment.comment_text}</div>
-                        <div className="text-purple-400 mt-1">by {comment.username}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400">No new comments</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* While You Were Away - Changes between previous login and last login */}
         {missedActivity && missedActivity.since && (missedActivity.new_orders.count > 0 || missedActivity.updated_orders.count > 0 || missedActivity.new_comments.count > 0) && (
           <div className="mb-8">
@@ -456,6 +336,126 @@ function DashboardContent() {
                         <div className="text-yellow-600">{comment.style_code}</div>
                         <div className="text-yellow-500 truncate">{comment.comment_text}</div>
                         <div className="text-yellow-400 mt-1">by {comment.username}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No new comments</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Activity Summary - Changes this session */}
+        {activitySummary && (activitySummary.new_orders.count > 0 || activitySummary.updated_orders.count > 0 || activitySummary.new_comments.count > 0) && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Changes This Session
+              </h2>
+              <span className="text-sm text-gray-500">
+                Since {new Date(activitySummary.since).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* New Orders */}
+              <div className="card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center">
+                    <PlusCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">New Orders</h3>
+                    <p className="text-xs text-gray-500">{activitySummary.new_orders.count} rows in {activitySummary.new_orders.po_count} POs</p>
+                  </div>
+                </div>
+                {activitySummary.new_orders.orders.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {activitySummary.new_orders.orders.map((order) => (
+                      <div
+                        key={order.po_number}
+                        onClick={() => handlePOClick(order.po_number)}
+                        className="p-2 bg-green-50 rounded text-xs cursor-pointer hover:bg-green-100 transition-colors"
+                      >
+                        <div className="font-medium text-green-800">PO# {order.po_number}</div>
+                        <div className="text-green-600">{order.customer}</div>
+                        <div className="text-green-500">{order.styles.length} style(s)</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No new orders</p>
+                )}
+              </div>
+
+              {/* Updated Orders */}
+              <div className="card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">Updated Orders</h3>
+                    <p className="text-xs text-gray-500">{activitySummary.updated_orders.count} rows in {activitySummary.updated_orders.po_count} POs</p>
+                  </div>
+                </div>
+                {activitySummary.updated_orders.orders.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {activitySummary.updated_orders.orders.map((order) => (
+                      <div
+                        key={order.po_number}
+                        onClick={() => handlePOClick(order.po_number, true)}
+                        className="p-2 bg-blue-50 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors"
+                      >
+                        <div className="font-medium text-blue-800">PO# {order.po_number}</div>
+                        <div className="text-blue-600">{order.customer}</div>
+                        <div className="text-blue-500">{order.styles.length} style(s) updated</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">No updated orders</p>
+                )}
+              </div>
+
+              {/* New Comments */}
+              <div className="card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">New Comments</h3>
+                    <p className="text-xs text-gray-500">{activitySummary.new_comments.count} comment(s)</p>
+                  </div>
+                </div>
+                {activitySummary.new_comments.comments.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {activitySummary.new_comments.comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        onClick={() => handlePOClick(comment.po_number)}
+                        className="p-2 bg-purple-50 rounded text-xs cursor-pointer hover:bg-purple-100 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-purple-800">PO# {comment.po_number}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            comment.source === 'Sourcelab' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {comment.source}
+                          </span>
+                        </div>
+                        <div className="text-purple-600">{comment.style_code}</div>
+                        <div className="text-purple-500 truncate">{comment.comment_text}</div>
+                        <div className="text-purple-400 mt-1">by {comment.username}</div>
                       </div>
                     ))}
                   </div>
