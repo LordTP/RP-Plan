@@ -40,12 +40,12 @@ export function CommentSidebar() {
     }
   }, [selectedOrder?.id, canViewHistory]);
 
-  // Reload history when the order is updated (e.g., after an edit)
+  // Reload history when the order is updated or when switching to history tab
   useEffect(() => {
-    if (selectedOrder?.id && selectedOrder?.updated_at && canViewHistory) {
+    if (selectedOrder?.id && canViewHistory && activeTab === 'history') {
       loadHistory();
     }
-  }, [selectedOrder?.updated_at, canViewHistory]);
+  }, [selectedOrder?.updated_at, canViewHistory, activeTab]);
 
   useEffect(() => {
     // Scroll to bottom when new comments are added
