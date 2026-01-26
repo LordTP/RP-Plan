@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Upload,
   Download,
@@ -16,6 +16,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  Undo2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Navbar } from '@/components/layout/Navbar';
@@ -49,12 +50,33 @@ function ImportContent() {
     rows_updated: number;
   } | null>(null);
 
+  // Undo state
+  const [lastImport, setLastImport] = useState<{
+    batch_id: string;
+    username: string;
+    filename: string;
+    rows_created: number;
+    rows_updated: number;
+    created_at: string;
+  } | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
+
   // Expandable sections
   const [showNewOrders, setShowNewOrders] = useState(true);
   const [showUpdatedOrders, setShowUpdatedOrders] = useState(true);
   const [showUnchangedOrders, setShowUnchangedOrders] = useState(false);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+
+  // Fetch last import on mount
+  useEffect(() => {
+    if (isInternal) {
+      excelApi.getLastImport().then((data) => {
+        setLastImport(data.batch);
+      }).catch(() => {});
+    }
+  }, [isInternal]);
 
   const handleFileSelect = (file: File) => {
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xlsm')) {
@@ -104,11 +126,35 @@ function ImportContent() {
         rows_updated: result.rows_updated,
       });
       toast.success(`Import complete: ${result.rows_created} created, ${result.rows_updated} updated`);
+      // Refresh last import info for undo button
+      if (result.batch_id) {
+        excelApi.getLastImport().then((data) => {
+          setLastImport(data.batch);
+        }).catch(() => {});
+      }
     } catch (error: any) {
       const detail = error.response?.data?.detail;
       toast.error(detail || 'Import failed. Please check the file and try again.');
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    setIsUndoing(true);
+    try {
+      const result = await excelApi.undoLastImport();
+      toast.success(`Import undone: ${result.orders_deleted} orders deleted, ${result.orders_reverted} orders reverted`);
+      setLastImport(null);
+      setShowUndoConfirm(false);
+      // If we just undid the import we completed on this page, reset the success state
+      setImportComplete(false);
+      setImportResult(null);
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(detail || 'Failed to undo import.');
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -259,6 +305,73 @@ function ImportContent() {
                   >
                     Import another file
                   </button>
+                </div>
+              )}
+
+              {/* Undo Last Import */}
+              {lastImport && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  {!showUndoConfirm ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">Last Import</p>
+                          <p className="text-xs text-amber-600 mt-0.5">
+                            {lastImport.filename || 'Unknown file'} by {lastImport.username}
+                          </p>
+                          <p className="text-xs text-amber-600">
+                            {lastImport.rows_created} created, {lastImport.rows_updated} updated
+                            {lastImport.created_at && (
+                              <> &middot; {new Date(lastImport.created_at).toLocaleString()}</>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setShowUndoConfirm(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
+                        >
+                          <Undo2 className="w-4 h-4" />
+                          Undo
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-amber-800 mb-2">
+                        <AlertCircle className="w-5 h-5" />
+                        <span className="font-medium">Are you sure?</span>
+                      </div>
+                      <p className="text-sm text-amber-700 mb-3">
+                        This will delete {lastImport.rows_created} newly created orders and revert {lastImport.rows_updated} updated orders to their previous values.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowUndoConfirm(false)}
+                          disabled={isUndoing}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleUndo}
+                          disabled={isUndoing}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                        >
+                          {isUndoing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Undoing...
+                            </>
+                          ) : (
+                            <>
+                              <Undo2 className="w-4 h-4" />
+                              Confirm Undo
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

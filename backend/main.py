@@ -12,7 +12,7 @@ import json
 import os
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings
+from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
@@ -1307,7 +1307,7 @@ async def preview_excel_import(
     return result
 
 
-@app.post("/api/excel/import", response_model=ExcelUploadResponse)
+@app.post("/api/excel/import")
 async def import_excel(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_internal_user),
@@ -1323,8 +1323,25 @@ async def import_excel(
     # Read file content
     content = await file.read()
 
+    # Generate batch ID for undo tracking
+    import uuid
+    batch_id = str(uuid.uuid4())
+
     # Import to database
-    result = import_excel_to_database(content, db, current_user)
+    result = import_excel_to_database(content, db, current_user, import_batch_id=batch_id)
+
+    # Create ImportBatch record if import was successful
+    if result.rows_created > 0 or result.rows_updated > 0:
+        batch = ImportBatch(
+            batch_id=batch_id,
+            user_id=current_user.id,
+            username=current_user.username,
+            filename=file.filename,
+            rows_created=result.rows_created,
+            rows_updated=result.rows_updated,
+        )
+        db.add(batch)
+        db.commit()
 
     # Broadcast update
     await manager.broadcast({
@@ -1337,7 +1354,14 @@ async def import_excel(
         "timestamp": datetime.utcnow().isoformat()
     })
 
-    return result
+    return {
+        "success": result.success,
+        "rows_processed": result.rows_processed,
+        "rows_created": result.rows_created,
+        "rows_updated": result.rows_updated,
+        "errors": result.errors,
+        "batch_id": batch_id if (result.rows_created > 0 or result.rows_updated > 0) else None,
+    }
 
 
 @app.get("/api/excel/export")
@@ -1437,6 +1461,132 @@ async def download_template(current_user: User = Depends(get_current_internal_us
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=orderbook_template.xlsx"}
     )
+
+
+# ============================================================================
+# IMPORT UNDO ENDPOINTS
+# ============================================================================
+
+@app.get("/api/excel/last-import")
+async def get_last_import(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get the most recent import batch info (for showing undo button)"""
+    batch = db.query(ImportBatch).filter(
+        ImportBatch.is_undone == False
+    ).order_by(ImportBatch.created_at.desc()).first()
+
+    if not batch:
+        return {"batch": None}
+
+    return {
+        "batch": {
+            "batch_id": batch.batch_id,
+            "username": batch.username,
+            "filename": batch.filename,
+            "rows_created": batch.rows_created,
+            "rows_updated": batch.rows_updated,
+            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+        }
+    }
+
+
+@app.post("/api/excel/undo")
+async def undo_last_import(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Undo the most recent Excel import"""
+    # Find the latest non-undone batch
+    batch = db.query(ImportBatch).filter(
+        ImportBatch.is_undone == False
+    ).order_by(ImportBatch.created_at.desc()).first()
+
+    if not batch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No import found to undo"
+        )
+
+    batch_id = batch.batch_id
+    orders_deleted = 0
+    orders_reverted = 0
+
+    # 1. Delete all PurchaseOrders created by this import
+    new_orders = db.query(PurchaseOrder).filter(
+        PurchaseOrder.import_batch_id == batch_id
+    ).all()
+
+    for order in new_orders:
+        db.delete(order)
+        orders_deleted += 1
+
+    # 2. Revert all field changes from this import using DateChangeHistory
+    history_entries = db.query(DateChangeHistory).filter(
+        DateChangeHistory.import_batch_id == batch_id
+    ).all()
+
+    # Group history entries by PO to count reverted orders
+    reverted_po_ids = set()
+    for entry in history_entries:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == entry.po_id).first()
+        if po:
+            # Restore the old value
+            field_name = entry.field_name
+            old_value_str = entry.old_value
+
+            # Parse old_value back to the correct type
+            if old_value_str is None:
+                setattr(po, field_name, None)
+            elif field_name in ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
+                                'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+                                'total_quantity']:
+                try:
+                    setattr(po, field_name, int(float(old_value_str)))
+                except (ValueError, TypeError):
+                    setattr(po, field_name, None)
+            elif field_name in ['trade_price', 'total_order_value']:
+                try:
+                    setattr(po, field_name, float(old_value_str))
+                except (ValueError, TypeError):
+                    setattr(po, field_name, None)
+            elif field_name in ['order_received_date', 'order_sent_to_factory_date',
+                                'original_po_ex_factory', 'date_approved_to_production',
+                                'revised_po_ex_factory', 'original_del_date_to_customer',
+                                'eta_to_uk', 'actual_date_del_to_uk',
+                                'eta_to_customer', 'actual_date_del_to_customer']:
+                from excel_utils import parse_date
+                setattr(po, field_name, parse_date(old_value_str))
+            else:
+                setattr(po, field_name, old_value_str)
+
+            po.updated_at = datetime.utcnow()
+            reverted_po_ids.add(entry.po_id)
+
+        # Delete the history entry
+        db.delete(entry)
+
+    orders_reverted = len(reverted_po_ids)
+
+    # 3. Mark the batch as undone
+    batch.is_undone = True
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to undo import: {str(e)}"
+        )
+
+    return {
+        "success": True,
+        "orders_deleted": orders_deleted,
+        "orders_reverted": orders_reverted,
+        "batch_id": batch_id,
+    }
 
 
 # ============================================================================

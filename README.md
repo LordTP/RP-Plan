@@ -50,11 +50,13 @@ A web application for managing purchase orders, tracking shipments, and collabor
   - Admin: Full access to all features
   - Internal: View and edit all orders
   - Supplier: Limited view of their factory's orders only
-- **Excel Import/Export:** Bulk import orders from Excel files
+- **Excel Import/Export:** Bulk import orders from Excel files with undo support
+- **Import Undo:** Revert the last Excel import — deletes newly created orders and restores updated orders to their pre-import values
 - **Real-Time Updates:** WebSocket support for live data sync
 - **Comments System:** Add comments to orders with read/unread tracking
 - **Change History:** Track all modifications to orders
-- **Dashboard:** Overview statistics and recent activity
+- **Dashboard:** Overview statistics, recent activity, and "While You Were Away" summary of changes between login sessions
+- **User Management:** Admin panel with last login tracking and password reset
 
 ## Local Development
 
@@ -118,6 +120,16 @@ git pull
 docker-compose up -d --build
 ```
 
+### Troubleshooting Docker
+
+If you encounter `ContainerConfig` errors during rebuild:
+```bash
+docker stop $(docker ps -aq) && docker rm $(docker ps -aq)
+docker-compose up -d --build
+```
+
+Database migrations run automatically on startup — no manual steps needed after updating.
+
 ## Backup & Restore
 
 ### Manual Backup
@@ -154,5 +166,11 @@ cat backup.sql | docker-compose exec -T db psql -U orderbook orderbook
 | `/api/orders/{id}/comments` | GET/POST | Order comments |
 | `/api/excel/import` | POST | Import Excel file |
 | `/api/excel/export` | GET | Export to Excel |
+| `/api/excel/last-import` | GET | Get last import batch info |
+| `/api/excel/undo` | POST | Undo the last Excel import |
 | `/api/stats/dashboard` | GET | Dashboard statistics |
+| `/api/stats/activity-summary` | GET | Recent activity summary |
+| `/api/stats/missed-activity` | GET | Changes since last logout |
+| `/api/users` | GET/POST | List or create users |
+| `/api/users/{id}` | PUT/DELETE | Update or delete user |
 | `/ws` | WebSocket | Real-time updates |

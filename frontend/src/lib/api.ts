@@ -341,6 +341,7 @@ export const excelApi = {
     rows_created: number;
     rows_updated: number;
     errors: string[];
+    batch_id?: string;
   }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -350,6 +351,30 @@ export const excelApi = {
         'Content-Type': 'multipart/form-data',
       },
     });
+    return response.data;
+  },
+
+  getLastImport: async (): Promise<{
+    batch: {
+      batch_id: string;
+      username: string;
+      filename: string;
+      rows_created: number;
+      rows_updated: number;
+      created_at: string;
+    } | null;
+  }> => {
+    const response = await api.get('/api/excel/last-import');
+    return response.data;
+  },
+
+  undoLastImport: async (): Promise<{
+    success: boolean;
+    orders_deleted: number;
+    orders_reverted: number;
+    batch_id: string;
+  }> => {
+    const response = await api.post('/api/excel/undo');
     return response.data;
   },
 };

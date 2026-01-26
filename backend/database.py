@@ -61,4 +61,20 @@ def init_db():
                 conn.execute(text("ALTER TABLE users ADD COLUMN previous_login TIMESTAMP"))
             print("✓ Added previous_login column to users table")
 
+    # Migrate: add import_batch_id to purchase_orders
+    if 'purchase_orders' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('purchase_orders')]
+        if 'import_batch_id' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN import_batch_id VARCHAR(36)"))
+            print("✓ Added import_batch_id column to purchase_orders table")
+
+    # Migrate: add import_batch_id to date_change_history
+    if 'date_change_history' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('date_change_history')]
+        if 'import_batch_id' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE date_change_history ADD COLUMN import_batch_id VARCHAR(36)"))
+            print("✓ Added import_batch_id column to date_change_history table")
+
     print("✓ Database tables created successfully")

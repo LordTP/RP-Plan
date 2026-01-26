@@ -72,7 +72,7 @@ export interface Comment {
   user_id: number;
   username: string;
   comment_text: string;
-  source: 'internal' | 'supplier';
+  source: string;
   created_at: string;
 }
 

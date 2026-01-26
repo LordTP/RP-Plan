@@ -319,7 +319,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                             onClick={() => setStatusDropdownOrder(statusDropdownOrder === order.id ? null : order.id)}
                             className={cn(
                               'px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1',
-                              getStatusColor(order.status)
+                              getStatusColor(order.status || '')
                             )}
                           >
                             {order.status || 'Set Status'}

@@ -85,10 +85,11 @@ export function CommentSidebar() {
         setAddToAllOnPO(false);
       } else {
         // Add to single order
+        const source = user.role === 'supplier' ? 'supplier' : 'internal';
         const comment = await ordersApi.addOrderComment(
           selectedOrder.id,
           newComment.trim(),
-          user.role
+          source
         );
         addComment(comment);
         toast.success('Comment added');

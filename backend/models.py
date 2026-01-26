@@ -94,10 +94,13 @@ class PurchaseOrder(Base):
     status = Column(String(50), nullable=True)  # Active, On Hold, Cancelled, etc.
     is_late = Column(Boolean, default=False)
     
+    # Import tracking
+    import_batch_id = Column(String(36), nullable=True, index=True)
+
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     comments = relationship("Comment", back_populates="purchase_order", cascade="all, delete-orphan")
     date_changes = relationship("DateChangeHistory", back_populates="purchase_order", cascade="all, delete-orphan")
@@ -167,9 +170,25 @@ class DateChangeHistory(Base):
     old_value = Column(Text, nullable=True)  # String representation of old value
     new_value = Column(Text, nullable=True)  # String representation of new value
     source = Column(String(50), default="Supplier")  # "Sourcelab" or "Supplier"
+    import_batch_id = Column(String(36), nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     purchase_order = relationship("PurchaseOrder", back_populates="date_changes")
     user = relationship("User", back_populates="date_changes")
+
+
+class ImportBatch(Base):
+    """Tracks each Excel import for undo capability"""
+    __tablename__ = "import_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(String(36), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    username = Column(String(50), nullable=False)
+    filename = Column(String(255), nullable=True)
+    rows_created = Column(Integer, default=0)
+    rows_updated = Column(Integer, default=0)
+    is_undone = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

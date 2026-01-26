@@ -137,7 +137,7 @@ def format_date(value: Any) -> Optional[str]:
 # IMPORT FUNCTIONS
 # =============================================================================
 
-def import_excel_to_database(file_bytes: bytes, db: Session, user: User) -> ExcelUploadResponse:
+def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None) -> ExcelUploadResponse:
     """
     Import POs from Excel file into database.
 
@@ -295,7 +295,8 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User) -> Exce
                             field_name=field,
                             old_value=old_value_str,
                             new_value=new_value_str,
-                            source="Excel Import"
+                            source="Excel Import",
+                            import_batch_id=import_batch_id
                         )
                         db.add(history_entry)
 
@@ -310,6 +311,8 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User) -> Exce
             else:
                 # Create new PO
                 new_po = PurchaseOrder(**po_data)
+                if import_batch_id:
+                    new_po.import_batch_id = import_batch_id
                 # Auto-calculate totals
                 _calculate_order_totals(new_po)
                 db.add(new_po)
