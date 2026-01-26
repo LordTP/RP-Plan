@@ -42,7 +42,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const [statusDropdownOrder, setStatusDropdownOrder] = useState<number | null>(null);
   const [bulkStatusUpdate, setBulkStatusUpdate] = useState(false);
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<ColumnSetting[]>([]);
-  const [showSizeReference, setShowSizeReference] = useState(true);
+  const [showSizeReference, setShowSizeReference] = useState(false);
 
   const isSupplier = user?.role === 'supplier';
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
@@ -206,36 +206,22 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       </th>
                     );
                   } else {
-                    // Compact mode - show column numbers 1-10
+                    // Compact mode - merged "SIZE QTYS" header
                     return (
                       <th
-                        key={column.key}
-                        className="px-1 py-1 text-center border border-gray-300 font-semibold bg-blue-100 text-[10px]"
-                        style={{ minWidth: column.width }}
+                        key="size-range-header-compact"
+                        colSpan={10}
+                        className="px-1 py-1 text-center border border-gray-300 font-semibold bg-blue-100"
                       >
-                        1
+                        SIZE QTYS
                       </th>
                     );
                   }
                 }
 
-                // Other size columns - skip when showing reference (covered by colSpan), show numbers when compact
+                // Other size columns - skip (covered by colSpan in both modes)
                 if (isSizeCol && !isFirstSizeCol && hasSizeColumns) {
-                  if (showingReference) {
-                    return null;
-                  } else {
-                    // Compact mode - show column numbers
-                    const sizeIndex = sizeColumns.indexOf(column.key) + 1;
-                    return (
-                      <th
-                        key={column.key}
-                        className="px-1 py-1 text-center border border-gray-300 font-semibold bg-blue-100 text-[10px]"
-                        style={{ minWidth: column.width }}
-                      >
-                        {sizeIndex}
-                      </th>
-                    );
-                  }
+                  return null;
                 }
 
                 // Regular columns (not gender, not size) - span all reference rows
