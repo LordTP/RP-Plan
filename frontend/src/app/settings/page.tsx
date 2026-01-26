@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   CheckCircle,
@@ -446,7 +446,8 @@ function SettingsContent() {
                   </thead>
                   <tbody>
                     {users.map((u) => (
-                      <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <React.Fragment key={u.id}>
+                      <tr className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">{u.username}</td>
                         <td className="px-4 py-3 text-gray-600">{u.email}</td>
                         <td className="px-4 py-3">
@@ -601,6 +602,7 @@ function SettingsContent() {
                           </td>
                         </tr>
                       )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
