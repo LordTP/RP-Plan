@@ -386,6 +386,84 @@ async def get_orders(
         }
 
 
+@app.get("/api/orders/recent-changes")
+async def get_recent_changes(
+    po_number: Optional[str] = Query(None),
+    since: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent date changes for orders, optionally filtered by PO number.
+    Used to highlight changed cells in the UI.
+    """
+    # Default to last login time or 24 hours ago
+    since_date = None
+    if since:
+        try:
+            since_date = datetime.fromisoformat(since.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+
+    if not since_date:
+        since_date = current_user.last_login or (datetime.utcnow() - timedelta(hours=24))
+
+    # Build query for recent changes
+    query = db.query(DateChangeHistory).filter(DateChangeHistory.created_at > since_date)
+
+    # Filter by PO number if provided
+    if po_number:
+        # Get order IDs for this PO number
+        order_ids_query = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == str(po_number))
+
+        # Filter by factory for supplier users
+        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+            order_ids_query = order_ids_query.filter(PurchaseOrder.factory == current_user.factory_name)
+
+        order_ids = [o[0] for o in order_ids_query.all()]
+
+        # If no orders found, return empty result
+        if not order_ids:
+            return {
+                "since": since_date.isoformat(),
+                "changes": {}
+            }
+
+        query = query.filter(DateChangeHistory.po_id.in_(order_ids))
+    else:
+        # Filter by factory for supplier users
+        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+            order_ids = db.query(PurchaseOrder.id).filter(
+                PurchaseOrder.factory == current_user.factory_name
+            ).all()
+            order_ids = [o[0] for o in order_ids]
+
+            if not order_ids:
+                return {
+                    "since": since_date.isoformat(),
+                    "changes": {}
+                }
+
+            query = query.filter(DateChangeHistory.po_id.in_(order_ids))
+
+    changes = query.order_by(DateChangeHistory.created_at.desc()).all()
+
+    # Group changes by order_id and field_name
+    # Return: { order_id: [field_name, ...] }
+    changes_by_order: dict = {}
+    for change in changes:
+        order_id = change.po_id
+        if order_id not in changes_by_order:
+            changes_by_order[order_id] = set()
+        changes_by_order[order_id].add(change.field_name)
+
+    # Convert sets to lists for JSON serialization
+    return {
+        "since": since_date.isoformat(),
+        "changes": {str(k): list(v) for k, v in changes_by_order.items()}
+    }
+
+
 @app.get("/api/orders/{order_id}")
 async def get_order(
     order_id: int,
@@ -771,84 +849,6 @@ async def add_comment(
         read_by_supplier=new_comment.read_by_supplier or False,
         created_at=new_comment.created_at
     )
-
-
-@app.get("/api/orders/recent-changes")
-async def get_recent_changes(
-    po_number: Optional[str] = Query(None),
-    since: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get recent date changes for orders, optionally filtered by PO number.
-    Used to highlight changed cells in the UI.
-    """
-    # Default to last login time or 24 hours ago
-    since_date = None
-    if since:
-        try:
-            since_date = datetime.fromisoformat(since.replace('Z', '+00:00'))
-        except ValueError:
-            pass
-
-    if not since_date:
-        since_date = current_user.last_login or (datetime.utcnow() - timedelta(hours=24))
-
-    # Build query for recent changes
-    query = db.query(DateChangeHistory).filter(DateChangeHistory.created_at > since_date)
-
-    # Filter by PO number if provided
-    if po_number:
-        # Get order IDs for this PO number
-        order_ids_query = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == str(po_number))
-
-        # Filter by factory for supplier users
-        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-            order_ids_query = order_ids_query.filter(PurchaseOrder.factory == current_user.factory_name)
-
-        order_ids = [o[0] for o in order_ids_query.all()]
-
-        # If no orders found, return empty result
-        if not order_ids:
-            return {
-                "since": since_date.isoformat(),
-                "changes": {}
-            }
-
-        query = query.filter(DateChangeHistory.po_id.in_(order_ids))
-    else:
-        # Filter by factory for supplier users
-        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-            order_ids = db.query(PurchaseOrder.id).filter(
-                PurchaseOrder.factory == current_user.factory_name
-            ).all()
-            order_ids = [o[0] for o in order_ids]
-
-            if not order_ids:
-                return {
-                    "since": since_date.isoformat(),
-                    "changes": {}
-                }
-
-            query = query.filter(DateChangeHistory.po_id.in_(order_ids))
-
-    changes = query.order_by(DateChangeHistory.created_at.desc()).all()
-
-    # Group changes by order_id and field_name
-    # Return: { order_id: [field_name, ...] }
-    changes_by_order: dict = {}
-    for change in changes:
-        order_id = change.po_id
-        if order_id not in changes_by_order:
-            changes_by_order[order_id] = set()
-        changes_by_order[order_id].add(change.field_name)
-
-    # Convert sets to lists for JSON serialization
-    return {
-        "since": since_date.isoformat(),
-        "changes": {str(k): list(v) for k, v in changes_by_order.items()}
-    }
 
 
 @app.get("/api/orders/{order_id}/history", response_model=List[DateChangeResponse])
