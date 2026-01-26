@@ -58,7 +58,7 @@ def init_db():
         columns = [col['name'] for col in inspector.get_columns('users')]
         if 'previous_login' not in columns:
             with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE users ADD COLUMN previous_login DATETIME"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN previous_login TIMESTAMP"))
             print("✓ Added previous_login column to users table")
 
     print("✓ Database tables created successfully")
