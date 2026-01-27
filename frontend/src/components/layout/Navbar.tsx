@@ -31,13 +31,13 @@ export function Navbar() {
           {/* Left side - Logo and Nav */}
           <div className="flex items-center gap-8">
             {/* Logo */}
-            <Link href="/dashboard" className="flex items-center gap-3">
+            <Link href="/dashboard" className="flex flex-col items-start justify-center">
               <img
                 src="/sourcelab-logo.png"
                 alt="Source Lab"
-                className="h-7"
+                className="h-5"
               />
-              <span className="font-semibold text-gray-900 hidden sm:block">
+              <span className="text-[10px] font-semibold text-gray-400 tracking-wide uppercase">
                 Critical Path
               </span>
             </Link>
