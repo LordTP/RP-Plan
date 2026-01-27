@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Package, LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
@@ -31,10 +31,12 @@ export function Navbar() {
           {/* Left side - Logo and Nav */}
           <div className="flex items-center gap-8">
             {/* Logo */}
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <Package className="w-5 h-5 text-white" />
-              </div>
+            <Link href="/dashboard" className="flex items-center gap-3">
+              <img
+                src="/sourcelab-logo.png"
+                alt="Source Lab"
+                className="h-7"
+              />
               <span className="font-semibold text-gray-900 hidden sm:block">
                 Critical Path
               </span>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { LogIn, Package, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Eye, EyeOff } from 'lucide-react';
 import { authApi, getErrorMessage } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 
@@ -52,9 +52,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl mb-4">
-            <Package className="w-8 h-8 text-white" />
-          </div>
+          <img
+            src="/sourcelab-logo.png"
+            alt="Source Lab"
+            className="h-10 mx-auto mb-4"
+          />
           <h1 className="text-2xl font-bold text-gray-900">Critical Path</h1>
           <p className="text-gray-500 mt-1">Sign in to your account</p>
         </div>
