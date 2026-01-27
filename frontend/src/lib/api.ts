@@ -28,9 +28,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for error handling
+// Response interceptor for token refresh and error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Pick up refreshed token from backend
+    const newToken = response.headers['x-refresh-token'];
+    if (newToken) {
+      localStorage.setItem('access_token', newToken);
+    }
+    return response;
+  },
   (error: AxiosError) => {
     // Don't auto-redirect on 401 - let components handle auth state
     if (error.response?.status === 401) {

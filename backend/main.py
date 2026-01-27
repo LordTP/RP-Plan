@@ -1,9 +1,10 @@
 """
 Main FastAPI application for China Orderbook Portal
 """
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, case
 from typing import List, Optional
@@ -43,7 +44,34 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Refresh-Token"],
 )
+
+# Token refresh middleware - issues a fresh token on every authenticated request
+class TokenRefreshMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Skip for non-API routes, websocket, and auth endpoints
+        path = request.url.path
+        if not path.startswith("/api/") or path in ["/api/auth/login"]:
+            return response
+        # Check if request had a valid Bearer token
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                from auth import decode_access_token, create_access_token
+                payload = decode_access_token(token)
+                username = payload.get("sub")
+                if username:
+                    new_token = create_access_token(data={"sub": username})
+                    response.headers["X-Refresh-Token"] = new_token
+            except Exception:
+                pass  # Token invalid/expired - don't refresh
+        return response
+
+app.add_middleware(TokenRefreshMiddleware)
+
 
 # WebSocket connection manager
 class ConnectionManager:
