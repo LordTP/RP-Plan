@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, Rows3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
-import { ordersApi, statusesApi, settingsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
+import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import type { ColumnDef, Order } from '@/types';
@@ -43,6 +43,13 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const [bulkStatusUpdate, setBulkStatusUpdate] = useState(false);
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<ColumnSetting[]>([]);
   const [showSizeReference, setShowSizeReference] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState<Record<number, Record<string, {
+    current_value: string | null;
+    proposed_value: string | null;
+    reason: string;
+    submitted_by: string;
+    submitted_at: string | null;
+  }>>>({});
 
   const isSupplier = user?.role === 'supplier';
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
@@ -63,6 +70,37 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
         .catch(console.error);
     }
   }, [isSupplier]);
+
+  // Fetch pending changes for visible orders
+  useEffect(() => {
+    const fetchPendingChanges = async () => {
+      const pendingMap: typeof pendingChanges = {};
+      for (const order of orders) {
+        try {
+          const result = await approvalsApi.getOrderPendingChanges(order.id);
+          if (result.pending_changes.length > 0) {
+            pendingMap[order.id] = {};
+            for (const change of result.pending_changes) {
+              pendingMap[order.id][change.field_name] = {
+                current_value: change.current_value,
+                proposed_value: change.proposed_value,
+                reason: change.reason,
+                submitted_by: change.submitted_by,
+                submitted_at: change.submitted_at,
+              };
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to fetch pending changes for order ${order.id}:`, error);
+        }
+      }
+      setPendingChanges(pendingMap);
+    };
+
+    if (orders.length > 0 && !isDashboard) {
+      fetchPendingChanges();
+    }
+  }, [orders, isDashboard]);
 
   // Filter columns based on view type and user role
   const getVisibleColumns = (): ColumnDef[] => {
@@ -102,9 +140,42 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const lastSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_5xl');
   const hasSizeColumns = firstSizeColIndex >= 0 && lastSizeColIndex >= 0 && genderColIndex >= 0;
 
-  const handleSave = async (orderId: number, field: string, value: any) => {
+  const handleSave = async (orderId: number, field: string, value: any, changeReason?: string) => {
     try {
-      const updatedOrder = await ordersApi.updateOrder(orderId, { [field]: value });
+      const updateData: any = { [field]: value };
+      if (changeReason) {
+        updateData.change_reason = changeReason;
+      }
+
+      const result = await ordersApi.updateOrder(orderId, updateData);
+
+      // Check if this was a pending approval response
+      if (result && typeof result === 'object' && 'pending_approval' in result && result.pending_approval) {
+        toast.success(result.message || 'Date change submitted for approval');
+        // Refresh pending changes for this order
+        try {
+          const pendingResult = await approvalsApi.getOrderPendingChanges(orderId);
+          if (pendingResult.pending_changes.length > 0) {
+            const orderPending: Record<string, any> = {};
+            for (const change of pendingResult.pending_changes) {
+              orderPending[change.field_name] = {
+                current_value: change.current_value,
+                proposed_value: change.proposed_value,
+                reason: change.reason,
+                submitted_by: change.submitted_by,
+                submitted_at: change.submitted_at,
+              };
+            }
+            setPendingChanges(prev => ({ ...prev, [orderId]: orderPending }));
+          }
+        } catch (e) {
+          console.error('Failed to refresh pending changes:', e);
+        }
+        return;
+      }
+
+      // Normal update response
+      const updatedOrder = result as any;
       updateOrderInList(updatedOrder);
       onOrderUpdate?.(updatedOrder);
       toast.success('Updated successfully');
@@ -369,6 +440,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                             window.location.reload();
                           }}
                           isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
+                          pendingChange={pendingChanges[order.id]?.[column.key]}
                         />
                       )}
                     </td>

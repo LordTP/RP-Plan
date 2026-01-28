@@ -15,6 +15,14 @@ interface StyleOnPO {
   colour: string;
 }
 
+interface PendingChangeInfo {
+  current_value: string | null;
+  proposed_value: string | null;
+  reason: string;
+  submitted_by: string;
+  submitted_at: string | null;
+}
+
 interface EditableCellProps {
   value: any;
   column: ColumnDef;
@@ -22,9 +30,10 @@ interface EditableCellProps {
   isEditable: boolean;
   isSupplierEditable: boolean;
   userRole: 'admin' | 'internal' | 'supplier';
-  onSave: (orderId: number, field: string, value: any) => Promise<void>;
+  onSave: (orderId: number, field: string, value: any, changeReason?: string) => Promise<void>;
   onBulkSave?: () => void;
   isChanged?: boolean;
+  pendingChange?: PendingChangeInfo;
 }
 
 export function EditableCell({
@@ -37,11 +46,15 @@ export function EditableCell({
   onSave,
   onBulkSave,
   isChanged = false,
+  pendingChange,
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [changeReason, setChangeReason] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  const isSupplierDateEdit = userRole === 'supplier' && column.type === 'date' && isSupplierEditable;
 
   // Bulk update state for date fields
   const [applyMode, setApplyMode] = useState<ApplyMode>('single');
@@ -141,7 +154,8 @@ export function EditableCell({
         }
       } else {
         // Single order update (existing behavior)
-        await onSave(order.id, column.key, saveValue);
+        // Pass change reason for supplier date edits
+        await onSave(order.id, column.key, saveValue, isSupplierDateEdit ? changeReason : undefined);
       }
 
       setIsEditing(false);
@@ -156,6 +170,7 @@ export function EditableCell({
   const handleCancel = () => {
     setIsEditing(false);
     setEditValue('');
+    setChangeReason('');
     setApplyMode('single');
     setSelectedOrderIds([]);
     setStylesOnPO([]);
@@ -191,6 +206,14 @@ export function EditableCell({
     }
   };
 
+  // Build tooltip for pending changes
+  const getPendingTooltip = () => {
+    if (!pendingChange) return undefined;
+    const fromDate = pendingChange.current_value ? formatDate(pendingChange.current_value) : 'Not set';
+    const toDate = pendingChange.proposed_value ? formatDate(pendingChange.proposed_value) : 'Not set';
+    return `Pending Approval\n${fromDate} → ${toDate}\nReason: ${pendingChange.reason}\nBy: ${pendingChange.submitted_by}`;
+  };
+
   return (
     <>
       <div
@@ -199,11 +222,13 @@ export function EditableCell({
           'px-3 py-2 data-cell truncate',
           canEdit && 'editable-cell cursor-pointer',
           userRole === 'supplier' && isSupplierEditable && 'supplier-editable-cell',
-          isChanged && 'bg-emerald-300 font-semibold text-emerald-900'
+          isChanged && 'bg-emerald-300 font-semibold text-emerald-900',
+          pendingChange && '!bg-orange-200 !text-orange-900 font-medium'
         )}
-        title={isChanged ? 'Changed since last login - Double-click to edit' : (canEdit ? 'Double-click to edit' : undefined)}
+        title={pendingChange ? getPendingTooltip() : (isChanged ? 'Changed since last login - Double-click to edit' : (canEdit ? 'Double-click to edit' : undefined))}
       >
         {formatDisplayValue()}
+        {pendingChange && <span className="ml-1 text-orange-600">*</span>}
       </div>
 
       {/* Edit Modal */}
@@ -259,6 +284,26 @@ export function EditableCell({
                 />
               )}
             </div>
+
+            {/* Reason input for supplier date changes */}
+            {isSupplierDateEdit && (
+              <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <label className="block text-sm font-medium text-orange-800 mb-2">
+                  Reason for date change <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm resize-none"
+                  disabled={isSaving}
+                  placeholder="e.g., Factory delay due to material shortage"
+                />
+                <p className="text-xs text-orange-600 mt-1">
+                  This change will require approval from Sourcelab
+                </p>
+              </div>
+            )}
 
             {/* Bulk update options for date fields */}
             {isDateField && stylesOnPO.length > 1 && (
@@ -362,7 +407,7 @@ export function EditableCell({
               </button>
               <button
                 onClick={handleSave}
-                disabled={isSaving || (applyMode === 'selected' && selectedOrderIds.length === 0)}
+                disabled={isSaving || (applyMode === 'selected' && selectedOrderIds.length === 0) || (isSupplierDateEdit && !changeReason.trim())}
                 className="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSaving ? (

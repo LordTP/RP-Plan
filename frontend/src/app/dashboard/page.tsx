@@ -14,17 +14,22 @@ import {
   Calendar,
   ArrowRight,
   ChevronRight,
+  ChevronDown,
   MessageSquare,
   PlusCircle,
   RefreshCw,
   XCircle,
+  Check,
+  X,
+  FileWarning,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Navbar } from '@/components/layout/Navbar';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { statsApi, ActivitySummary, MissedActivity } from '@/lib/api';
+import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange } from '@/lib/api';
 import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import type { DashboardStats, POSummary } from '@/types';
 
@@ -43,8 +48,16 @@ function DashboardContent() {
   const [poSummaries, setPOSummaries] = useState<POSummary[]>([]);
   const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
   const [missedActivity, setMissedActivity] = useState<MissedActivity | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalGroup[]>([]);
+  const [rejectedChanges, setRejectedChanges] = useState<RejectedChange[]>([]);
+  const [selectedApprovals, setSelectedApprovals] = useState<number[]>([]);
+  const [expandedPOs, setExpandedPOs] = useState<string[]>([]);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+  const isSupplier = user?.role === 'supplier';
 
   useEffect(() => {
     loadData();
@@ -68,6 +81,18 @@ function DashboardContent() {
       setPOSummaries(poSummaryResponse.po_summaries);
       setActivitySummary(activity);
       setMissedActivity(missed);
+
+      // Load pending approvals for internal users, rejected changes for suppliers
+      try {
+        const [pendingResult, rejectedResult] = await Promise.all([
+          approvalsApi.getPendingApprovals(),
+          approvalsApi.getRejectedChanges(),
+        ]);
+        setPendingApprovals(pendingResult.pending_approvals);
+        setRejectedChanges(rejectedResult.rejected_changes);
+      } catch (e) {
+        console.error('Failed to load approval data:', e);
+      }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast.error('Failed to load dashboard data. Please refresh the page or try again later.');
@@ -96,6 +121,62 @@ function DashboardContent() {
     } else {
       router.push('/orders');
     }
+  };
+
+  const togglePOExpanded = (poNumber: string) => {
+    setExpandedPOs(prev =>
+      prev.includes(poNumber)
+        ? prev.filter(p => p !== poNumber)
+        : [...prev, poNumber]
+    );
+  };
+
+  const toggleApprovalSelection = (id: number) => {
+    setSelectedApprovals(prev =>
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
+    );
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedApprovals.length === 0) return;
+    setIsProcessing(true);
+    try {
+      const result = await approvalsApi.bulkApprove(selectedApprovals);
+      toast.success(`Approved ${result.approved_count} date change(s)`);
+      setSelectedApprovals([]);
+      loadData(); // Refresh
+    } catch (error: any) {
+      toast.error('Failed to approve changes');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    if (!rejectReason.trim()) {
+      toast.error('Please provide a rejection reason');
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      await approvalsApi.rejectChange(id, rejectReason);
+      toast.success('Date change rejected');
+      setRejectingId(null);
+      setRejectReason('');
+      loadData(); // Refresh
+    } catch (error: any) {
+      toast.error('Failed to reject change');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const formatFieldName = (field: string): string => {
+    return field
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase());
   };
 
   const statCards = [
@@ -223,6 +304,200 @@ function DashboardContent() {
             );
           })}
         </div>
+
+        {/* Pending Date Approvals - For Sourcelab users */}
+        {isInternal && pendingApprovals.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Pending Date Approvals
+                <span className="ml-2 px-2 py-0.5 text-sm bg-orange-100 text-orange-700 rounded-full">
+                  {pendingApprovals.reduce((sum, po) => sum + po.changes.length, 0)}
+                </span>
+              </h2>
+              {selectedApprovals.length > 0 && (
+                <button
+                  onClick={handleBulkApprove}
+                  disabled={isProcessing}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Approve Selected ({selectedApprovals.length})
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {pendingApprovals.map((poGroup) => (
+                <div key={poGroup.po_number} className="card overflow-hidden">
+                  {/* PO Header - Clickable */}
+                  <div
+                    onClick={() => togglePOExpanded(poGroup.po_number)}
+                    className="flex items-center justify-between p-4 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {expandedPOs.includes(poGroup.po_number) ? (
+                        <ChevronDown className="w-5 h-5 text-orange-600" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-orange-600" />
+                      )}
+                      <div>
+                        <span className="font-semibold text-orange-800">PO# {poGroup.po_number}</span>
+                        <span className="ml-3 text-sm text-orange-600">{poGroup.customer}</span>
+                        <span className="ml-3 text-sm text-orange-500">{poGroup.factory}</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 bg-orange-200 text-orange-800 rounded text-sm font-medium">
+                      {poGroup.changes.length} pending
+                    </span>
+                  </div>
+
+                  {/* Changes List - Expandable */}
+                  {expandedPOs.includes(poGroup.po_number) && (
+                    <div className="divide-y divide-gray-100">
+                      {poGroup.changes.map((change) => (
+                        <div key={change.id} className="p-4 hover:bg-gray-50">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedApprovals.includes(change.id)}
+                                onChange={() => toggleApprovalSelection(change.id)}
+                                className="mt-1 w-4 h-4 rounded text-green-600 focus:ring-green-500"
+                              />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-gray-900">{formatFieldName(change.field_name)}</span>
+                                  <span className="text-xs text-gray-500">({change.style_code})</span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 text-sm">
+                                  <span className="text-gray-500">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
+                                  <ArrowRight className="w-4 h-4 text-gray-400" />
+                                  <span className="font-medium text-orange-600">{change.proposed_value ? formatDate(change.proposed_value) : 'Not set'}</span>
+                                </div>
+                                <div className="mt-2 text-sm text-gray-600 bg-gray-100 p-2 rounded">
+                                  <strong>Reason:</strong> {change.reason}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-400">
+                                  Submitted by {change.submitted_by} {change.submitted_at && `on ${new Date(change.submitted_at).toLocaleString('en-GB')}`}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {rejectingId === change.id ? (
+                                <div className="flex flex-col gap-2">
+                                  <input
+                                    type="text"
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    placeholder="Rejection reason..."
+                                    className="px-2 py-1 text-sm border rounded w-48"
+                                    autoFocus
+                                  />
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleReject(change.id)}
+                                      disabled={isProcessing}
+                                      className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                                    >
+                                      Confirm
+                                    </button>
+                                    <button
+                                      onClick={() => { setRejectingId(null); setRejectReason(''); }}
+                                      className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={async () => {
+                                      setIsProcessing(true);
+                                      try {
+                                        await approvalsApi.approveChange(change.id);
+                                        toast.success('Date change approved');
+                                        loadData();
+                                      } catch (e) {
+                                        toast.error('Failed to approve');
+                                      } finally {
+                                        setIsProcessing(false);
+                                      }
+                                    }}
+                                    disabled={isProcessing}
+                                    className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
+                                    title="Approve"
+                                  >
+                                    <Check className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setRejectingId(change.id)}
+                                    disabled={isProcessing}
+                                    className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                                    title="Reject"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rejected Date Changes - For Suppliers */}
+        {isSupplier && rejectedChanges.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Rejected Date Changes
+                <span className="ml-2 px-2 py-0.5 text-sm bg-red-100 text-red-700 rounded-full">
+                  {rejectedChanges.length}
+                </span>
+              </h2>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="divide-y divide-gray-100">
+                {rejectedChanges.slice(0, 10).map((change) => (
+                  <div key={change.id} className="p-4 hover:bg-gray-50">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
+                        <FileWarning className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">PO# {change.po_number}</span>
+                          <span className="text-xs text-gray-500">({change.style_code})</span>
+                          <span className="text-sm text-gray-600">{formatFieldName(change.field_name)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-sm">
+                          <span className="text-gray-500">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
+                          <ArrowRight className="w-4 h-4 text-gray-400" />
+                          <span className="line-through text-red-400">{change.proposed_value ? formatDate(change.proposed_value) : 'Not set'}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                          <strong>Rejection reason:</strong> {change.rejection_reason}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-400">
+                          Rejected by {change.rejected_by} {change.rejected_at && `on ${new Date(change.rejected_at).toLocaleString('en-GB')}`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* While You Were Away - Changes between previous login and last login */}
         {missedActivity && missedActivity.since && (missedActivity.new_orders.count > 0 || missedActivity.updated_orders.count > 0 || missedActivity.new_comments.count > 0) && (

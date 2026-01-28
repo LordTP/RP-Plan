@@ -192,3 +192,28 @@ class ImportBatch(Base):
     rows_updated = Column(Integer, default=0)
     is_undone = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PendingDateChange(Base):
+    """Tracks date changes from suppliers awaiting approval"""
+    __tablename__ = "pending_date_changes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("purchase_orders.id"), nullable=False)
+    field_name = Column(String(100), nullable=False)
+    current_value = Column(String(50), nullable=True)
+    proposed_value = Column(String(50), nullable=True)
+    reason = Column(Text, nullable=False)  # Supplier must provide a reason
+
+    submitted_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    submitted_by_username = Column(String(50), nullable=False)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+
+    status = Column(String(20), default="pending")  # pending, approved, rejected
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_by_username = Column(String(50), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
+    # Relationships
+    order = relationship("PurchaseOrder")

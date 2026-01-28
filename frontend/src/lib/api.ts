@@ -160,8 +160,13 @@ export const ordersApi = {
     return response.data;
   },
 
-  updateOrder: async (id: number, data: Partial<Order>): Promise<Order> => {
-    const response = await api.put<Order>(`/api/orders/${id}`, data);
+  updateOrder: async (id: number, data: Partial<Order> & { change_reason?: string }): Promise<Order | {
+    order: Order;
+    pending_approval: boolean;
+    pending_fields: string[];
+    message: string;
+  }> => {
+    const response = await api.put(`/api/orders/${id}`, data);
     return response.data;
   },
 
@@ -569,6 +574,84 @@ export const analyticsApi = {
 
   getAlerts: async () => {
     const response = await api.get('/api/analytics/alerts');
+    return response.data;
+  },
+};
+
+// Pending date change approval types
+export interface PendingChange {
+  id: number;
+  order_id: number;
+  style_code: string;
+  field_name: string;
+  current_value: string | null;
+  proposed_value: string | null;
+  reason: string;
+  submitted_by: string;
+  submitted_at: string | null;
+}
+
+export interface PendingApprovalGroup {
+  po_number: string;
+  factory: string;
+  customer: string;
+  changes: PendingChange[];
+}
+
+export interface RejectedChange {
+  id: number;
+  po_number: string;
+  style_code: string;
+  field_name: string;
+  current_value: string | null;
+  proposed_value: string | null;
+  reason: string;
+  submitted_by: string;
+  submitted_at: string | null;
+  rejected_by: string;
+  rejected_at: string | null;
+  rejection_reason: string;
+}
+
+// Approval endpoints
+export const approvalsApi = {
+  getPendingApprovals: async (): Promise<{ pending_approvals: PendingApprovalGroup[] }> => {
+    const response = await api.get('/api/approvals/pending');
+    return response.data;
+  },
+
+  getRejectedChanges: async (): Promise<{ rejected_changes: RejectedChange[] }> => {
+    const response = await api.get('/api/approvals/rejected');
+    return response.data;
+  },
+
+  getOrderPendingChanges: async (orderId: number): Promise<{
+    pending_changes: Array<{
+      id: number;
+      field_name: string;
+      current_value: string | null;
+      proposed_value: string | null;
+      reason: string;
+      submitted_by: string;
+      submitted_at: string | null;
+    }>;
+  }> => {
+    const response = await api.get(`/api/orders/${orderId}/pending-changes`);
+    return response.data;
+  },
+
+  approveChange: async (approvalId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/api/approvals/${approvalId}/approve`);
+    return response.data;
+  },
+
+  rejectChange: async (approvalId: number, reason: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/api/approvals/${approvalId}/reject`, { reason });
+    return response.data;
+  },
+
+  bulkApprove: async (ids: number[]): Promise<{ success: boolean; approved_count: number }> => {
+    const response = await api.post('/api/approvals/bulk-approve', { ids });
     return response.data;
   },
 };

@@ -13,7 +13,7 @@ import json
 import os
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch
+from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
@@ -587,17 +587,21 @@ async def update_order(
                 detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
             )
         
-        # Suppliers can ONLY update these 3 date fields
+        # Suppliers can ONLY update these 3 date fields - BUT changes require approval
         allowed_fields = [
             'date_approved_to_production',
             'revised_po_ex_factory',
             'actual_date_del_to_uk'
         ]
-        
+
+        # Supplier must provide a reason for date changes
+        change_reason = order_data.get('change_reason', '').strip()
+        pending_changes_created = []
+
         for field in allowed_fields:
             if field in order_data and order_data[field] is not None:
                 new_value_str = order_data[field]
-                
+
                 # Parse datetime if it's a string
                 if isinstance(new_value_str, str):
                     try:
@@ -608,24 +612,61 @@ async def update_order(
                     new_value = new_value_str
                 else:
                     continue
-                
+
                 old_value = getattr(order, field)
 
-                # Only update and track if value actually changed
+                # Only create pending change if value actually changed
                 if old_value != new_value:
-                    # Track the change (store as strings)
-                    date_change = DateChangeHistory(
-                        po_id=order.id,
-                        user_id=current_user.id,
-                        field_name=field,
-                        old_value=str(old_value) if old_value is not None else None,
-                        new_value=str(new_value) if new_value is not None else None,
-                        source="Supplier"
-                    )
-                    db.add(date_change)
+                    if not change_reason:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Please provide a reason for the date change"
+                        )
 
-                    # Update the field
-                    setattr(order, field, new_value)
+                    # Check for existing pending change on this field - replace it
+                    existing_pending = db.query(PendingDateChange).filter(
+                        PendingDateChange.order_id == order.id,
+                        PendingDateChange.field_name == field,
+                        PendingDateChange.status == "pending"
+                    ).first()
+
+                    if existing_pending:
+                        # Update existing pending change
+                        existing_pending.proposed_value = new_value.strftime('%Y-%m-%d') if new_value else None
+                        existing_pending.reason = change_reason
+                        existing_pending.submitted_at = datetime.utcnow()
+                    else:
+                        # Create new pending change
+                        pending_change = PendingDateChange(
+                            order_id=order.id,
+                            field_name=field,
+                            current_value=old_value.strftime('%Y-%m-%d') if old_value else None,
+                            proposed_value=new_value.strftime('%Y-%m-%d') if new_value else None,
+                            reason=change_reason,
+                            submitted_by_id=current_user.id,
+                            submitted_by_username=current_user.username,
+                            status="pending"
+                        )
+                        db.add(pending_change)
+
+                    pending_changes_created.append(field)
+
+        # If only pending changes were created (no direct updates), commit and return early
+        if pending_changes_created:
+            db.commit()
+            db.refresh(order)
+            # Return with pending info
+            order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+            order.unread_comment_count = db.query(Comment).filter(
+                Comment.po_id == order.id,
+                Comment.read_by_supplier == False
+            ).count()
+            return {
+                "order": PurchaseOrderSupplierResponse.from_orm(order),
+                "pending_approval": True,
+                "pending_fields": pending_changes_created,
+                "message": "Date change(s) submitted for approval"
+            }
     
     else:  # Internal/Admin users can update everything
         # Fields to skip tracking (internal/meta fields)
@@ -1615,6 +1656,251 @@ async def undo_last_import(
         "orders_reverted": orders_reverted,
         "batch_id": batch_id,
     }
+
+
+# ============================================================================
+# DATE CHANGE APPROVAL ENDPOINTS
+# ============================================================================
+
+@app.get("/api/approvals/pending")
+async def get_pending_approvals(
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Get all pending date change approvals (for Sourcelab dashboard)"""
+    pending = db.query(PendingDateChange).filter(
+        PendingDateChange.status == "pending"
+    ).order_by(PendingDateChange.submitted_at.desc()).all()
+
+    # Group by PO number for easier display
+    result = {}
+    for p in pending:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == p.order_id).first()
+        if not order:
+            continue
+        po_number = order.po_number
+        if po_number not in result:
+            result[po_number] = {
+                "po_number": po_number,
+                "factory": order.factory,
+                "customer": order.customer,
+                "changes": []
+            }
+        result[po_number]["changes"].append({
+            "id": p.id,
+            "order_id": p.order_id,
+            "style_code": order.style_code,
+            "field_name": p.field_name,
+            "current_value": p.current_value,
+            "proposed_value": p.proposed_value,
+            "reason": p.reason,
+            "submitted_by": p.submitted_by_username,
+            "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None
+        })
+
+    return {"pending_approvals": list(result.values())}
+
+
+@app.get("/api/approvals/rejected")
+async def get_rejected_approvals(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get rejected date changes for the current supplier"""
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+
+    if role_str == 'supplier':
+        # Supplier sees their own rejected changes
+        rejected = db.query(PendingDateChange).filter(
+            PendingDateChange.submitted_by_id == current_user.id,
+            PendingDateChange.status == "rejected"
+        ).order_by(PendingDateChange.reviewed_at.desc()).limit(50).all()
+    else:
+        # Internal users see all recent rejected changes
+        rejected = db.query(PendingDateChange).filter(
+            PendingDateChange.status == "rejected"
+        ).order_by(PendingDateChange.reviewed_at.desc()).limit(50).all()
+
+    result = []
+    for r in rejected:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == r.order_id).first()
+        if not order:
+            continue
+        result.append({
+            "id": r.id,
+            "po_number": order.po_number,
+            "style_code": order.style_code,
+            "field_name": r.field_name,
+            "current_value": r.current_value,
+            "proposed_value": r.proposed_value,
+            "reason": r.reason,
+            "submitted_by": r.submitted_by_username,
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            "rejected_by": r.reviewed_by_username,
+            "rejected_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            "rejection_reason": r.rejection_reason
+        })
+
+    return {"rejected_changes": result}
+
+
+@app.get("/api/orders/{order_id}/pending-changes")
+async def get_order_pending_changes(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get pending date changes for a specific order"""
+    pending = db.query(PendingDateChange).filter(
+        PendingDateChange.order_id == order_id,
+        PendingDateChange.status == "pending"
+    ).all()
+
+    return {
+        "pending_changes": [
+            {
+                "id": p.id,
+                "field_name": p.field_name,
+                "current_value": p.current_value,
+                "proposed_value": p.proposed_value,
+                "reason": p.reason,
+                "submitted_by": p.submitted_by_username,
+                "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None
+            }
+            for p in pending
+        ]
+    }
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+async def approve_date_change(
+    approval_id: int,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Approve a pending date change"""
+    pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
+    if not pending:
+        raise HTTPException(status_code=404, detail="Pending change not found")
+    if pending.status != "pending":
+        raise HTTPException(status_code=400, detail="This change has already been processed")
+
+    # Get the order
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == pending.order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Parse and apply the new value
+    from excel_utils import parse_date
+    new_value = parse_date(pending.proposed_value)
+    old_value = getattr(order, pending.field_name)
+
+    # Update the order
+    setattr(order, pending.field_name, new_value)
+    order.updated_at = datetime.utcnow()
+
+    # Create history entry
+    history = DateChangeHistory(
+        po_id=order.id,
+        user_id=pending.submitted_by_id,
+        field_name=pending.field_name,
+        old_value=pending.current_value,
+        new_value=pending.proposed_value,
+        source="Supplier (Approved)"
+    )
+    db.add(history)
+
+    # Update pending status
+    pending.status = "approved"
+    pending.reviewed_by_id = current_user.id
+    pending.reviewed_by_username = current_user.username
+    pending.reviewed_at = datetime.utcnow()
+
+    db.commit()
+
+    return {"success": True, "message": "Date change approved"}
+
+
+@app.post("/api/approvals/{approval_id}/reject")
+async def reject_date_change(
+    approval_id: int,
+    rejection_data: dict,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Reject a pending date change"""
+    pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
+    if not pending:
+        raise HTTPException(status_code=404, detail="Pending change not found")
+    if pending.status != "pending":
+        raise HTTPException(status_code=400, detail="This change has already been processed")
+
+    rejection_reason = rejection_data.get("reason", "").strip()
+    if not rejection_reason:
+        raise HTTPException(status_code=400, detail="Please provide a reason for rejection")
+
+    # Update pending status
+    pending.status = "rejected"
+    pending.reviewed_by_id = current_user.id
+    pending.reviewed_by_username = current_user.username
+    pending.reviewed_at = datetime.utcnow()
+    pending.rejection_reason = rejection_reason
+
+    db.commit()
+
+    return {"success": True, "message": "Date change rejected"}
+
+
+@app.post("/api/approvals/bulk-approve")
+async def bulk_approve_date_changes(
+    approval_data: dict,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Approve multiple pending date changes at once"""
+    approval_ids = approval_data.get("ids", [])
+    if not approval_ids:
+        raise HTTPException(status_code=400, detail="No approval IDs provided")
+
+    approved_count = 0
+    from excel_utils import parse_date
+
+    for approval_id in approval_ids:
+        pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
+        if not pending or pending.status != "pending":
+            continue
+
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == pending.order_id).first()
+        if not order:
+            continue
+
+        # Apply the change
+        new_value = parse_date(pending.proposed_value)
+        setattr(order, pending.field_name, new_value)
+        order.updated_at = datetime.utcnow()
+
+        # Create history entry
+        history = DateChangeHistory(
+            po_id=order.id,
+            user_id=pending.submitted_by_id,
+            field_name=pending.field_name,
+            old_value=pending.current_value,
+            new_value=pending.proposed_value,
+            source="Supplier (Approved)"
+        )
+        db.add(history)
+
+        # Update pending status
+        pending.status = "approved"
+        pending.reviewed_by_id = current_user.id
+        pending.reviewed_by_username = current_user.username
+        pending.reviewed_at = datetime.utcnow()
+
+        approved_count += 1
+
+    db.commit()
+
+    return {"success": True, "approved_count": approved_count}
 
 
 # ============================================================================
