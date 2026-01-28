@@ -30,7 +30,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange, MyPendingChange, MyApprovedChange } from '@/lib/api';
-import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
+import { formatCurrency, formatNumber, formatDate, cn } from '@/lib/utils';
 import type { DashboardStats, POSummary } from '@/types';
 
 export default function DashboardPage() {
