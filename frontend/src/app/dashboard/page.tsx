@@ -29,7 +29,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange } from '@/lib/api';
+import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange, MyPendingChange, MyApprovedChange } from '@/lib/api';
 import { formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import type { DashboardStats, POSummary } from '@/types';
 
@@ -57,6 +57,10 @@ function DashboardContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showBulkRejectModal, setShowBulkRejectModal] = useState(false);
   const [bulkRejectReason, setBulkRejectReason] = useState('');
+  // Supplier-specific state
+  const [myPendingChanges, setMyPendingChanges] = useState<MyPendingChange[]>([]);
+  const [myApprovedChanges, setMyApprovedChanges] = useState<MyApprovedChange[]>([]);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
   const isSupplier = user?.role === 'supplier';
@@ -84,14 +88,18 @@ function DashboardContent() {
       setActivitySummary(activity);
       setMissedActivity(missed);
 
-      // Load pending approvals for internal users, rejected changes for suppliers
+      // Load approval data
       try {
-        const [pendingResult, rejectedResult] = await Promise.all([
+        const [pendingResult, rejectedResult, myPendingResult, myApprovedResult] = await Promise.all([
           approvalsApi.getPendingApprovals(),
           approvalsApi.getRejectedChanges(),
+          approvalsApi.getMyPendingChanges(),
+          approvalsApi.getMyApprovedChanges(),
         ]);
         setPendingApprovals(pendingResult.pending_approvals);
         setRejectedChanges(rejectedResult.rejected_changes);
+        setMyPendingChanges(myPendingResult.pending_changes);
+        setMyApprovedChanges(myApprovedResult.approved_changes);
       } catch (e) {
         console.error('Failed to load approval data:', e);
       }
@@ -193,6 +201,19 @@ function DashboardContent() {
       toast.error('Failed to reject change');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleCancelPending = async (id: number) => {
+    setCancellingId(id);
+    try {
+      await approvalsApi.cancelPendingChange(id);
+      toast.success('Pending change cancelled');
+      loadData(); // Refresh
+    } catch (error: any) {
+      toast.error('Failed to cancel pending change');
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -486,47 +507,143 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* Rejected Date Changes - For Suppliers */}
-        {isSupplier && rejectedChanges.length > 0 && (
+        {/* Supplier Date Change Dashboard */}
+        {isSupplier && (myPendingChanges.length > 0 || myApprovedChanges.length > 0 || rejectedChanges.length > 0) && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Rejected Date Changes
-                <span className="ml-2 px-2 py-0.5 text-sm bg-red-100 text-red-700 rounded-full">
-                  {rejectedChanges.length}
-                </span>
-              </h2>
-            </div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Date Change Requests</h2>
 
-            <div className="card overflow-hidden">
-              <div className="divide-y divide-gray-100">
-                {rejectedChanges.slice(0, 10).map((change) => (
-                  <div key={change.id} className="p-4 hover:bg-gray-50">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
-                        <FileWarning className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">PO# {change.po_number}</span>
-                          <span className="text-xs text-gray-500">({change.style_code})</span>
-                          <span className="text-sm text-gray-600">{formatFieldName(change.field_name)}</span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Pending Approval */}
+              <div className="card overflow-hidden">
+                <div className="p-3 bg-orange-50 border-b border-orange-100">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-orange-600" />
+                    <h3 className="font-medium text-orange-800">Pending Approval</h3>
+                    <span className="ml-auto px-2 py-0.5 text-xs bg-orange-200 text-orange-800 rounded-full">
+                      {myPendingChanges.length}
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                  {myPendingChanges.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500 text-sm">
+                      No pending changes
+                    </div>
+                  ) : (
+                    myPendingChanges.map((change) => (
+                      <div key={change.id} className="p-3 hover:bg-gray-50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900 text-sm">PO# {change.po_number}</span>
+                              <span className="text-xs text-gray-500 truncate">({change.style_code})</span>
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">{formatFieldName(change.field_name)}</div>
+                            <div className="flex items-center gap-1 mt-1 text-xs">
+                              <span className="text-gray-400">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
+                              <ArrowRight className="w-3 h-3 text-gray-400" />
+                              <span className="font-medium text-orange-600">{change.proposed_value ? formatDate(change.proposed_value) : 'Not set'}</span>
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1 truncate" title={change.reason}>
+                              {change.reason}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleCancelPending(change.id)}
+                            disabled={cancellingId === change.id}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                            title="Cancel this request"
+                          >
+                            {cancellingId === change.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <X className="w-4 h-4" />
+                            )}
+                          </button>
                         </div>
-                        <div className="flex items-center gap-2 mt-1 text-sm">
-                          <span className="text-gray-500">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
-                          <ArrowRight className="w-4 h-4 text-gray-400" />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Recently Approved */}
+              <div className="card overflow-hidden">
+                <div className="p-3 bg-green-50 border-b border-green-100">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <h3 className="font-medium text-green-800">Recently Approved</h3>
+                    <span className="ml-auto px-2 py-0.5 text-xs bg-green-200 text-green-800 rounded-full">
+                      {myApprovedChanges.length}
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                  {myApprovedChanges.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500 text-sm">
+                      No approved changes yet
+                    </div>
+                  ) : (
+                    myApprovedChanges.slice(0, 10).map((change) => (
+                      <div key={change.id} className="p-3 hover:bg-gray-50">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900 text-sm">PO# {change.po_number}</span>
+                          <span className="text-xs text-gray-500 truncate">({change.style_code})</span>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">{formatFieldName(change.field_name)}</div>
+                        <div className="flex items-center gap-1 mt-1 text-xs">
+                          <span className="text-gray-400">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
+                          <ArrowRight className="w-3 h-3 text-gray-400" />
+                          <span className="font-medium text-green-600">{change.proposed_value ? formatDate(change.proposed_value) : 'Not set'}</span>
+                        </div>
+                        <div className="text-xs text-green-600 mt-1">
+                          Approved by {change.approved_by}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Rejected */}
+              <div className="card overflow-hidden">
+                <div className="p-3 bg-red-50 border-b border-red-100">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-5 h-5 text-red-600" />
+                    <h3 className="font-medium text-red-800">Rejected</h3>
+                    <span className="ml-auto px-2 py-0.5 text-xs bg-red-200 text-red-800 rounded-full">
+                      {rejectedChanges.length}
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                  {rejectedChanges.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500 text-sm">
+                      No rejected changes
+                    </div>
+                  ) : (
+                    rejectedChanges.slice(0, 10).map((change) => (
+                      <div key={change.id} className="p-3 hover:bg-gray-50">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900 text-sm">PO# {change.po_number}</span>
+                          <span className="text-xs text-gray-500 truncate">({change.style_code})</span>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">{formatFieldName(change.field_name)}</div>
+                        <div className="flex items-center gap-1 mt-1 text-xs">
+                          <span className="text-gray-400">{change.current_value ? formatDate(change.current_value) : 'Not set'}</span>
+                          <ArrowRight className="w-3 h-3 text-gray-400" />
                           <span className="line-through text-red-400">{change.proposed_value ? formatDate(change.proposed_value) : 'Not set'}</span>
                         </div>
-                        <div className="mt-2 text-sm text-red-700 bg-red-50 p-2 rounded border border-red-200">
-                          <strong>Rejection reason:</strong> {change.rejection_reason}
+                        <div className="mt-1 p-1.5 bg-red-100 rounded text-xs text-red-700 truncate" title={change.rejection_reason}>
+                          {change.rejection_reason}
                         </div>
-                        <div className="mt-1 text-xs text-gray-400">
-                          Rejected by {change.rejected_by} {change.rejected_at && `on ${new Date(change.rejected_at).toLocaleString('en-GB')}`}
+                        <div className="text-xs text-gray-400 mt-1">
+                          Rejected by {change.rejected_by}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>

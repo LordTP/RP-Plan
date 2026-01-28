@@ -2022,6 +2022,98 @@ async def bulk_reject_date_changes(
 
 
 # ============================================================================
+# SUPPLIER APPROVAL DASHBOARD ENDPOINTS
+# ============================================================================
+
+@app.get("/api/approvals/my-pending")
+async def get_my_pending_changes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get pending date changes submitted by the current user (for suppliers)"""
+    pending = db.query(PendingDateChange).filter(
+        PendingDateChange.submitted_by_id == current_user.id,
+        PendingDateChange.status == "pending"
+    ).order_by(PendingDateChange.submitted_at.desc()).limit(50).all()
+
+    result = []
+    for p in pending:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == p.order_id).first()
+        if order:
+            result.append({
+                "id": p.id,
+                "order_id": p.order_id,
+                "po_number": order.po_number,
+                "style_code": order.style_code,
+                "field_name": p.field_name,
+                "current_value": p.current_value,
+                "proposed_value": p.proposed_value,
+                "reason": p.reason,
+                "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None
+            })
+
+    return {"pending_changes": result}
+
+
+@app.get("/api/approvals/my-approved")
+async def get_my_approved_changes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get recently approved date changes submitted by the current user"""
+    approved = db.query(PendingDateChange).filter(
+        PendingDateChange.submitted_by_id == current_user.id,
+        PendingDateChange.status == "approved"
+    ).order_by(PendingDateChange.reviewed_at.desc()).limit(50).all()
+
+    result = []
+    for p in approved:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == p.order_id).first()
+        if order:
+            result.append({
+                "id": p.id,
+                "order_id": p.order_id,
+                "po_number": order.po_number,
+                "style_code": order.style_code,
+                "field_name": p.field_name,
+                "current_value": p.current_value,
+                "proposed_value": p.proposed_value,
+                "reason": p.reason,
+                "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None,
+                "approved_by": p.reviewed_by_username,
+                "approved_at": p.reviewed_at.isoformat() if p.reviewed_at else None
+            })
+
+    return {"approved_changes": result}
+
+
+@app.delete("/api/approvals/{approval_id}/cancel")
+async def cancel_pending_change(
+    approval_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancel a pending date change (only the submitter can cancel)"""
+    pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
+
+    if not pending:
+        raise HTTPException(status_code=404, detail="Pending change not found")
+
+    if pending.status != "pending":
+        raise HTTPException(status_code=400, detail="This change has already been processed")
+
+    # Only the submitter or internal users can cancel
+    if pending.submitted_by_id != current_user.id and current_user.role == UserRole.SUPPLIER:
+        raise HTTPException(status_code=403, detail="You can only cancel your own pending changes")
+
+    # Delete the pending change
+    db.delete(pending)
+    db.commit()
+
+    return {"success": True, "message": "Pending change cancelled"}
+
+
+# ============================================================================
 # WEBSOCKET ENDPOINT FOR REAL-TIME UPDATES
 # ============================================================================
 

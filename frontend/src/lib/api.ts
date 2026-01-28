@@ -615,6 +615,33 @@ export interface RejectedChange {
   rejection_reason: string;
 }
 
+// Supplier's own pending/approved changes
+export interface MyPendingChange {
+  id: number;
+  order_id: number;
+  po_number: string;
+  style_code: string;
+  field_name: string;
+  current_value: string | null;
+  proposed_value: string | null;
+  reason: string;
+  submitted_at: string | null;
+}
+
+export interface MyApprovedChange {
+  id: number;
+  order_id: number;
+  po_number: string;
+  style_code: string;
+  field_name: string;
+  current_value: string | null;
+  proposed_value: string | null;
+  reason: string;
+  submitted_at: string | null;
+  approved_by: string;
+  approved_at: string | null;
+}
+
 // Approval endpoints
 export const approvalsApi = {
   getPendingApprovals: async (): Promise<{ pending_approvals: PendingApprovalGroup[] }> => {
@@ -659,6 +686,22 @@ export const approvalsApi = {
 
   bulkReject: async (ids: number[], reason: string): Promise<{ success: boolean; rejected_count: number }> => {
     const response = await api.post('/api/approvals/bulk-reject', { ids, reason });
+    return response.data;
+  },
+
+  // Supplier-specific endpoints
+  getMyPendingChanges: async (): Promise<{ pending_changes: MyPendingChange[] }> => {
+    const response = await api.get('/api/approvals/my-pending');
+    return response.data;
+  },
+
+  getMyApprovedChanges: async (): Promise<{ approved_changes: MyApprovedChange[] }> => {
+    const response = await api.get('/api/approvals/my-approved');
+    return response.data;
+  },
+
+  cancelPendingChange: async (approvalId: number): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(`/api/approvals/${approvalId}/cancel`);
     return response.data;
   },
 };
