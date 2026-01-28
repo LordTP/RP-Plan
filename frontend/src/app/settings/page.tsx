@@ -246,7 +246,7 @@ function SettingsContent() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-8">Settings</h1>
 
         {/* User Info Card */}
@@ -432,25 +432,25 @@ function SettingsContent() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Username</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Email</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Role</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Factory</th>
-                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Status</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Last Login</th>
-                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-gray-600 whitespace-nowrap">Username</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-gray-600 whitespace-nowrap">Email</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-gray-600 whitespace-nowrap">Role</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-gray-600 whitespace-nowrap">Factory</th>
+                      <th className="px-3 py-2.5 text-center font-medium text-gray-600 whitespace-nowrap">Status</th>
+                      <th className="px-3 py-2.5 text-left font-medium text-gray-600 whitespace-nowrap">Last Login</th>
+                      <th className="px-3 py-2.5 text-center font-medium text-gray-600 whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {users.map((u) => (
                       <React.Fragment key={u.id}>
                       <tr className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">{u.username}</td>
-                        <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{u.username}</td>
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{u.email}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
                           {editingUser?.id === u.id ? (
                             <select
                               value={editingUser.role}
@@ -472,7 +472,7 @@ function SettingsContent() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-600">
+                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
                           {editingUser?.id === u.id ? (
                             <select
                               value={editingFactory}
@@ -488,7 +488,7 @@ function SettingsContent() {
                             u.factory_name || '-'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
                           <span className={cn(
                             'px-2 py-1 rounded-full text-xs font-medium',
                             u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -496,7 +496,7 @@ function SettingsContent() {
                             {u.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
+                        <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
                           {u.last_login
                             ? new Date(u.last_login).toLocaleDateString('en-GB', {
                                 day: 'numeric',
@@ -507,7 +507,7 @@ function SettingsContent() {
                               })
                             : 'Never'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5 whitespace-nowrap">
                           <div className="flex items-center justify-center gap-2">
                             {editingUser?.id === u.id ? (
                               <>
