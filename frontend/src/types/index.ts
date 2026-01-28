@@ -58,6 +58,8 @@ export interface Order {
   // Status
   status?: string;
   is_late?: boolean;
+  // Shipping
+  tracking_reference?: string;
   // Comments
   comment_count?: number;
   unread_comment_count?: number;
@@ -183,6 +185,16 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'actual_date_del_to_customer', label: 'Actual Del Cust', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'date' },
   { key: 'status', label: 'Status', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
 ];
+
+export const TRACKING_REF_COLUMN: ColumnDef = {
+  key: 'tracking_reference' as keyof Order,
+  label: 'Tracking Ref',
+  width: 130,
+  editable: true,
+  supplierEditable: false,
+  supplierHidden: true,
+  type: 'text',
+};
 
 // Dashboard columns (subset for summary view)
 export const DASHBOARD_COLUMNS: ColumnDef[] = [

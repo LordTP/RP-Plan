@@ -8,7 +8,7 @@ import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, Col
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import type { ColumnDef, Order } from '@/types';
-import { COLUMNS, DASHBOARD_COLUMNS } from '@/types';
+import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN } from '@/types';
 
 // Size reference mapping - matches Excel rows 2-14
 const SIZE_REFERENCE = [
@@ -33,9 +33,11 @@ interface OrderTableProps {
   onOrderUpdate?: (order: Order) => void;
   highlightMode?: boolean;
   changedFields?: Record<string, string[]>;
+  showTrackingRef?: boolean;
+  onShippedStatusRequest?: (order: Order, isBulk: boolean) => void;
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -117,6 +119,16 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
       columns = columns.filter((col) => !col.supplierHidden);
     }
 
+    // Insert tracking reference column after status for shipped tab
+    if (showTrackingRef && !isSupplier) {
+      const statusIndex = columns.findIndex(c => c.key === 'status');
+      if (statusIndex >= 0) {
+        columns = [...columns.slice(0, statusIndex + 1), TRACKING_REF_COLUMN, ...columns.slice(statusIndex + 1)];
+      } else {
+        columns = [...columns, TRACKING_REF_COLUMN];
+      }
+    }
+
     return columns;
   };
 
@@ -187,6 +199,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   };
 
   const handleStatusChange = async (order: Order, newStatus: string) => {
+    // Intercept "Shipped" status - require tracking reference via modal
+    if (newStatus === 'Shipped' && onShippedStatusRequest) {
+      setStatusDropdownOrder(null);
+      onShippedStatusRequest(order, bulkStatusUpdate);
+      setBulkStatusUpdate(false);
+      return;
+    }
+
     try {
       if (bulkStatusUpdate) {
         // Update all orders with same PO number

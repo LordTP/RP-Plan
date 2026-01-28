@@ -137,6 +137,7 @@ export interface OrderFilters {
   factory?: string;
   customer?: string;
   status?: string;
+  tab?: string;
 }
 
 export const ordersApi = {
@@ -192,10 +193,28 @@ export const ordersApi = {
     await api.post(`/api/orders/${id}/comments/mark-read`);
   },
 
-  bulkUpdateStatus: async (poNumber: string, status: string): Promise<{ orders_updated: number }> => {
+  bulkUpdateStatus: async (poNumber: string, status: string, trackingReference?: string): Promise<{ orders_updated: number }> => {
     const response = await api.post('/api/orders/bulk-update-status', {
       po_number: poNumber,
       status,
+      ...(trackingReference ? { tracking_reference: trackingReference } : {}),
+    });
+    return response.data;
+  },
+
+  setShippedStatus: async (orderId: number, trackingRef: string): Promise<Order> => {
+    const response = await api.put(`/api/orders/${orderId}`, {
+      status: 'Shipped',
+      tracking_reference: trackingRef,
+    });
+    return response.data;
+  },
+
+  bulkSetShippedStatus: async (poNumber: string, trackingRef: string): Promise<{ orders_updated: number }> => {
+    const response = await api.post('/api/orders/bulk-update-status', {
+      po_number: poNumber,
+      status: 'Shipped',
+      tracking_reference: trackingRef,
     });
     return response.data;
   },

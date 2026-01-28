@@ -94,6 +94,9 @@ class PurchaseOrder(Base):
     status = Column(String(50), nullable=True)  # Active, On Hold, Cancelled, etc.
     is_late = Column(Boolean, default=False)
     
+    # Shipping
+    tracking_reference = Column(String(100), nullable=True, index=True)
+
     # Import tracking
     import_batch_id = Column(String(36), nullable=True, index=True)
 

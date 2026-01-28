@@ -97,6 +97,7 @@ class PurchaseOrderBase(BaseModel):
     
     status: Optional[str] = None
     is_late: bool = False
+    tracking_reference: Optional[str] = None
 
 
 class PurchaseOrderCreate(PurchaseOrderBase):

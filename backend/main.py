@@ -326,6 +326,7 @@ async def get_orders(
     status: Optional[str] = None,
     po_number: Optional[str] = None,
     style_code: Optional[str] = None,
+    tab: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -333,12 +334,21 @@ async def get_orders(
     Get paginated list of purchase orders
     - Internal users see all orders with ALL fields
     - Supplier users only see their factory's orders with LIMITED fields (no pricing/internal data)
+    - tab=shipped: filter where tracking_reference IS NOT NULL (internal only)
+    - tab=orders (default for internal): filter where tracking_reference IS NULL
     """
     query = db.query(PurchaseOrder)
 
     # Filter by factory for supplier users
     if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
         query = query.filter(PurchaseOrder.factory == current_user.factory_name)
+
+    # Tab filtering for internal/admin users only
+    if current_user.role != UserRole.SUPPLIER and tab:
+        if tab == 'shipped':
+            query = query.filter(PurchaseOrder.tracking_reference.isnot(None))
+        elif tab == 'orders':
+            query = query.filter(PurchaseOrder.tracking_reference.is_(None))
 
     # Apply filters
     if search:
@@ -669,6 +679,13 @@ async def update_order(
             }
     
     else:  # Internal/Admin users can update everything
+        # If status is being set to "Shipped", require tracking_reference
+        if order_data.get('status') == 'Shipped' and not order_data.get('tracking_reference') and not order.tracking_reference:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A tracking reference is required when setting status to Shipped"
+            )
+
         # Fields to skip tracking (internal/meta fields)
         skip_tracking = ['id', 'created_at', 'updated_at']
 
@@ -1125,12 +1142,16 @@ async def bulk_update_status(
     """Update status for all orders with the same PO number"""
     po_number = data.get("po_number")
     new_status = data.get("status")
+    tracking_reference = data.get("tracking_reference")
 
     if not po_number or not new_status:
         raise HTTPException(status_code=400, detail="po_number and status are required")
 
     if new_status not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {ORDER_STATUSES}")
+
+    if new_status == "Shipped" and not tracking_reference:
+        raise HTTPException(status_code=400, detail="A tracking reference is required when setting status to Shipped")
 
     # Update all orders with this PO number
     orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
@@ -1140,6 +1161,8 @@ async def bulk_update_status(
 
     for order in orders:
         order.status = new_status
+        if tracking_reference is not None:
+            order.tracking_reference = tracking_reference
         order.updated_at = datetime.utcnow()
 
     db.commit()

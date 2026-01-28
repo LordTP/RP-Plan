@@ -94,4 +94,12 @@ def init_db():
                 conn.execute(text("ALTER TABLE date_change_history ADD COLUMN rejection_reason TEXT"))
             print("✓ Added rejection_reason column to date_change_history table")
 
+    # Migrate: add tracking_reference to purchase_orders
+    if 'purchase_orders' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('purchase_orders')]
+        if 'tracking_reference' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN tracking_reference VARCHAR(100)"))
+            print("✓ Added tracking_reference column to purchase_orders table")
+
     print("✓ Database tables created successfully")

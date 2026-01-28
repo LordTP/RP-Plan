@@ -19,6 +19,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
+import { TrackingRefModal } from '@/components/orders/TrackingRefModal';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, OrderFilters } from '@/lib/api';
 import { wsClient } from '@/lib/websocket';
@@ -68,6 +69,16 @@ function OrdersContent() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // Tab state (internal/admin only)
+  const [activeTab, setActiveTab] = useState<'orders' | 'shipped'>('orders');
+
+  // Tracking reference modal state
+  const [trackingModalOpen, setTrackingModalOpen] = useState(false);
+  const [trackingModalOrder, setTrackingModalOrder] = useState<Order | null>(null);
+  const [trackingModalBulk, setTrackingModalBulk] = useState(false);
+
+  const isInternal = user?.role === 'internal' || user?.role === 'admin';
+
   // Highlight changes state
   const [highlightChanges, setHighlightChanges] = useState(false);
   const [changedFields, setChangedFields] = useState<Record<string, string[]>>({});
@@ -88,7 +99,7 @@ function OrdersContent() {
 
   const totalPages = Math.ceil(totalOrders / pageSize);
 
-  const loadOrders = useCallback(async (page: number = currentPage, currentFilters: OrderFilters = filters) => {
+  const loadOrders = useCallback(async (page: number = currentPage, currentFilters: OrderFilters = filters, tab?: 'orders' | 'shipped') => {
     setIsLoading(true);
     try {
       // Clean up empty filter values
@@ -100,6 +111,12 @@ function OrdersContent() {
       if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
       if (currentFilters.status) cleanFilters.status = currentFilters.status;
 
+      // Add tab filter for internal users
+      const resolvedTab = tab ?? activeTab;
+      if (isInternal) {
+        cleanFilters.tab = resolvedTab;
+      }
+
       const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
       setOrders(response.orders, response.total);
     } catch (error) {
@@ -108,7 +125,7 @@ function OrdersContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [pageSize, setOrders]);
+  }, [pageSize, setOrders, activeTab, isInternal]);
 
   // Load orders when page or filters change
   useEffect(() => {
@@ -243,6 +260,38 @@ function OrdersContent() {
     router.push(newUrl, { scroll: false });
   };
 
+  const handleTabChange = (tab: 'orders' | 'shipped') => {
+    setActiveTab(tab);
+    setPage(1);
+    loadOrders(1, filters, tab);
+  };
+
+  const handleShippedStatusRequest = (order: Order, isBulk: boolean) => {
+    setTrackingModalOrder(order);
+    setTrackingModalBulk(isBulk);
+    setTrackingModalOpen(true);
+  };
+
+  const handleTrackingRefConfirm = async (trackingRef: string) => {
+    if (!trackingModalOrder) return;
+    try {
+      if (trackingModalBulk) {
+        const result = await ordersApi.bulkSetShippedStatus(trackingModalOrder.po_number, trackingRef);
+        toast.success(`Shipped ${result.orders_updated} orders with tracking ref`);
+      } else {
+        await ordersApi.setShippedStatus(trackingModalOrder.id, trackingRef);
+        toast.success('Order marked as shipped');
+      }
+      setTrackingModalOpen(false);
+      setTrackingModalOrder(null);
+      // Reload to reflect the change (order moves between tabs)
+      loadOrders(currentPage, filters);
+    } catch (error: any) {
+      const msg = error?.response?.data?.detail || 'Failed to update status';
+      toast.error(msg);
+    }
+  };
+
   const handleExport = async (exportFiltered: boolean) => {
     setIsExporting(true);
     setShowExportMenu(false);
@@ -274,7 +323,9 @@ function OrdersContent() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">All Orders</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isInternal && activeTab === 'shipped' ? 'Shipped Orders' : 'All Orders'}
+            </h1>
             <p className="text-gray-500 mt-1">
               {totalOrders} total order lines
             </p>
@@ -349,6 +400,34 @@ function OrdersContent() {
             </div>
           </div>
         </div>
+
+        {/* Tab Navigation (internal/admin only) */}
+        {isInternal && (
+          <div className="flex items-center gap-1 mb-4 border-b border-gray-200">
+            <button
+              onClick={() => handleTabChange('orders')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+                activeTab === 'orders'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              )}
+            >
+              Orders
+            </button>
+            <button
+              onClick={() => handleTabChange('shipped')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+                activeTab === 'shipped'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              )}
+            >
+              Shipped
+            </button>
+          </div>
+        )}
 
         {/* Filter Panel */}
         {showFilters && (
@@ -582,6 +661,8 @@ function OrdersContent() {
               onOrderUpdate={handleOrderUpdate}
               highlightMode={highlightChanges}
               changedFields={highlightChanges ? changedFields : undefined}
+              showTrackingRef={isInternal && activeTab === 'shipped'}
+              onShippedStatusRequest={isInternal ? handleShippedStatusRequest : undefined}
             />
           )}
         </div>
@@ -665,6 +746,18 @@ function OrdersContent() {
 
       {/* Comment Sidebar */}
       <CommentSidebar />
+
+      {/* Tracking Reference Modal */}
+      <TrackingRefModal
+        isOpen={trackingModalOpen}
+        poNumber={trackingModalOrder?.po_number || ''}
+        isBulk={trackingModalBulk}
+        onConfirm={handleTrackingRefConfirm}
+        onCancel={() => {
+          setTrackingModalOpen(false);
+          setTrackingModalOrder(null);
+        }}
+      />
     </div>
   );
 }
