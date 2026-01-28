@@ -210,16 +210,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const visibleColumns = getVisibleColumns();
 
   // Compute sticky left offsets for pinned columns
+  // po_number sticks at left:0; style_code sticks at left:<po_number width>
+  // so it scrolls normally until it bumps into the PO# column, then pins beside it
   const STICKY_COLUMNS = ['po_number', 'style_code'] as const;
   const stickyLeftMap: Record<string, number> = {};
   {
-    let cumulativeLeft = 0;
-    for (const col of visibleColumns) {
-      if ((STICKY_COLUMNS as readonly string[]).includes(col.key)) {
-        stickyLeftMap[col.key] = cumulativeLeft;
-      }
-      cumulativeLeft += col.width;
-    }
+    const poCol = visibleColumns.find(c => c.key === 'po_number');
+    stickyLeftMap['po_number'] = 0;
+    stickyLeftMap['style_code'] = poCol ? poCol.width : 0;
   }
   const lastStickyKey = (() => {
     for (let i = visibleColumns.length - 1; i >= 0; i--) {
