@@ -2530,8 +2530,10 @@ async def get_po_summary(
         PurchaseOrder.factory,
         func.count(PurchaseOrder.id).label('line_count'),
         func.sum(PurchaseOrder.total_quantity).label('total_qty'),
+        func.sum(PurchaseOrder.total_order_value).label('total_value'),
         func.min(PurchaseOrder.original_po_ex_factory).label('earliest_ex_factory'),
-        func.max(PurchaseOrder.created_at).label('latest_update')
+        func.max(PurchaseOrder.created_at).label('latest_update'),
+        func.max(PurchaseOrder.status).label('status'),
     )
 
     # Apply factory filter for suppliers
@@ -2553,8 +2555,10 @@ async def get_po_summary(
                 "factory": po.factory,
                 "line_count": po.line_count,
                 "total_qty": po.total_qty or 0,
+                "total_value": float(po.total_value or 0),
                 "earliest_ex_factory": po.earliest_ex_factory.isoformat() if po.earliest_ex_factory else None,
-                "latest_update": po.latest_update.isoformat() if po.latest_update else None
+                "latest_update": po.latest_update.isoformat() if po.latest_update else None,
+                "status": po.status,
             }
             for po in po_summary
         ]

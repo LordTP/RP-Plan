@@ -30,7 +30,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange, MyPendingChange, MyApprovedChange } from '@/lib/api';
-import { formatCurrency, formatNumber, formatDate, cn } from '@/lib/utils';
+import { formatCurrency, formatNumber, formatDate, cn, getStatusColor } from '@/lib/utils';
 import type { DashboardStats, POSummary } from '@/types';
 
 export default function DashboardPage() {
@@ -923,22 +923,26 @@ function DashboardContent() {
           </div>
 
           <div className="card overflow-hidden overflow-x-auto">
-            <table className="w-full min-w-[600px]">
+            <table className="w-full min-w-[700px] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">PO#</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Customer</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Factory</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-600 whitespace-nowrap">Lines</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-600 whitespace-nowrap">Total Qty</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Ex-Factory</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-600"></th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-600 whitespace-nowrap">PO#</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-600 whitespace-nowrap">Customer</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-600 whitespace-nowrap">Factory</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-600 whitespace-nowrap">Lines</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-600 whitespace-nowrap">Total Qty</th>
+                  {isInternal && (
+                    <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-600 whitespace-nowrap">Value</th>
+                  )}
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-600 whitespace-nowrap">Ex-Factory</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-600 whitespace-nowrap">Status</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-medium text-gray-600"></th>
                 </tr>
               </thead>
               <tbody>
                 {poSummaries.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={isInternal ? 9 : 8} className="px-3 py-8 text-center text-gray-500">
                       No purchase orders found
                     </td>
                   </tr>
@@ -949,21 +953,36 @@ function DashboardContent() {
                       onClick={() => handlePOClick(po.po_number)}
                       className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
                     >
-                      <td className="px-4 py-3 font-medium text-primary-600">{po.po_number}</td>
-                      <td className="px-4 py-3 text-gray-900">{po.customer}</td>
-                      <td className="px-4 py-3 text-gray-600">{po.factory}</td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-3 py-2.5 font-medium text-primary-600 whitespace-nowrap">{po.po_number}</td>
+                      <td className="px-3 py-2.5 text-gray-900">{po.customer}</td>
+                      <td className="px-3 py-2.5 text-gray-600">{po.factory}</td>
+                      <td className="px-3 py-2.5 text-center">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                          {po.line_count} {po.line_count === 1 ? 'line' : 'lines'}
+                          {po.line_count}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-gray-900">
+                      <td className="px-3 py-2.5 text-right font-mono text-gray-900">
                         {formatNumber(po.total_qty)}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      {isInternal && (
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-900 whitespace-nowrap">
+                          {formatCurrency(po.total_value)}
+                        </td>
+                      )}
+                      <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
                         {po.earliest_ex_factory ? formatDate(po.earliest_ex_factory) : '-'}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-3 py-2.5 text-center">
+                        {po.status && (
+                          <span className={cn(
+                            'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap',
+                            getStatusColor(po.status)
+                          )}>
+                            {po.status}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                       </td>
                     </tr>

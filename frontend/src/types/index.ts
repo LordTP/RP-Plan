@@ -111,8 +111,10 @@ export interface POSummary {
   factory: string;
   line_count: number;
   total_qty: number;
+  total_value: number;
   earliest_ex_factory: string | null;
   latest_update: string | null;
+  status: string | null;
 }
 
 export interface PaginatedResponse<T> {
