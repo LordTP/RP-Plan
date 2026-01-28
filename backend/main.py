@@ -1951,6 +1951,42 @@ async def bulk_approve_date_changes(
     return {"success": True, "approved_count": approved_count}
 
 
+@app.post("/api/approvals/bulk-reject")
+async def bulk_reject_date_changes(
+    rejection_data: dict,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Reject multiple pending date changes at once"""
+    approval_ids = rejection_data.get("ids", [])
+    reason = rejection_data.get("reason", "").strip()
+
+    if not approval_ids:
+        raise HTTPException(status_code=400, detail="No approval IDs provided")
+    if not reason:
+        raise HTTPException(status_code=400, detail="Rejection reason is required")
+
+    rejected_count = 0
+
+    for approval_id in approval_ids:
+        pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
+        if not pending or pending.status != "pending":
+            continue
+
+        # Update pending status to rejected
+        pending.status = "rejected"
+        pending.reviewed_by_id = current_user.id
+        pending.reviewed_by_username = current_user.username
+        pending.reviewed_at = datetime.utcnow()
+        pending.rejection_reason = reason
+
+        rejected_count += 1
+
+    db.commit()
+
+    return {"success": True, "rejected_count": rejected_count}
+
+
 # ============================================================================
 # WEBSOCKET ENDPOINT FOR REAL-TIME UPDATES
 # ============================================================================

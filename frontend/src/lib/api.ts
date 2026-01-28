@@ -656,6 +656,11 @@ export const approvalsApi = {
     const response = await api.post('/api/approvals/bulk-approve', { ids });
     return response.data;
   },
+
+  bulkReject: async (ids: number[], reason: string): Promise<{ success: boolean; rejected_count: number }> => {
+    const response = await api.post('/api/approvals/bulk-reject', { ids, reason });
+    return response.data;
+  },
 };
 
 export default api;
