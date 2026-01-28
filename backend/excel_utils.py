@@ -545,6 +545,14 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
                                 PendingDateChange.status == "pending"
                             ).first()
                             if pending:
+                                # Format the pending proposed value to dd/mm/yyyy
+                                pending_display = pending.proposed_value
+                                try:
+                                    parsed = parse_date(pending.proposed_value)
+                                    if parsed:
+                                        pending_display = parsed.strftime("%d/%m/%Y")
+                                except Exception:
+                                    pass
                                 conflicts.append({
                                     "order_id": existing_po.id,
                                     "po_number": po_number,
@@ -552,7 +560,7 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
                                     "field_name": field,
                                     "pending_change_id": pending.id,
                                     "current_value": old_display,
-                                    "pending_proposed_value": pending.proposed_value,
+                                    "pending_proposed_value": pending_display,
                                     "excel_value": new_display,
                                     "submitted_by": pending.submitted_by_username,
                                     "reason": pending.reason,
