@@ -210,11 +210,12 @@ export const ordersApi = {
     return response.data;
   },
 
-  bulkSetShippedStatus: async (poNumber: string, trackingRef: string): Promise<{ orders_updated: number }> => {
+  bulkSetShippedStatus: async (poNumber: string, trackingRef: string, orderIds?: number[]): Promise<{ orders_updated: number }> => {
     const response = await api.post('/api/orders/bulk-update-status', {
       po_number: poNumber,
       status: 'Shipped',
       tracking_reference: trackingRef,
+      ...(orderIds && orderIds.length > 0 ? { order_ids: orderIds } : {}),
     });
     return response.data;
   },

@@ -34,7 +34,7 @@ interface OrderTableProps {
   highlightMode?: boolean;
   changedFields?: Record<string, string[]>;
   showTrackingRef?: boolean;
-  onShippedStatusRequest?: (order: Order, isBulk: boolean) => void;
+  onShippedStatusRequest?: (order: Order) => void;
 }
 
 export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest }: OrderTableProps) {
@@ -202,8 +202,8 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     // Intercept "Shipped" status - require tracking reference via modal
     if (newStatus === 'Shipped' && onShippedStatusRequest) {
       setStatusDropdownOrder(null);
-      onShippedStatusRequest(order, bulkStatusUpdate);
       setBulkStatusUpdate(false);
+      onShippedStatusRequest(order);
       return;
     }
 

@@ -1139,10 +1139,11 @@ async def bulk_update_status(
     current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db)
 ):
-    """Update status for all orders with the same PO number"""
+    """Update status for all orders (or selected order IDs) with the same PO number"""
     po_number = data.get("po_number")
     new_status = data.get("status")
     tracking_reference = data.get("tracking_reference")
+    order_ids = data.get("order_ids", [])  # Empty list = all orders on PO
 
     if not po_number or not new_status:
         raise HTTPException(status_code=400, detail="po_number and status are required")
@@ -1153,8 +1154,11 @@ async def bulk_update_status(
     if new_status == "Shipped" and not tracking_reference:
         raise HTTPException(status_code=400, detail="A tracking reference is required when setting status to Shipped")
 
-    # Update all orders with this PO number
-    orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
+    # Update all orders with this PO number, or only the selected IDs
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number)
+    if order_ids:
+        query = query.filter(PurchaseOrder.id.in_(order_ids))
+    orders = query.all()
 
     if not orders:
         raise HTTPException(status_code=404, detail="No orders found with this PO number")

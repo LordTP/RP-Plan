@@ -75,7 +75,6 @@ function OrdersContent() {
   // Tracking reference modal state
   const [trackingModalOpen, setTrackingModalOpen] = useState(false);
   const [trackingModalOrder, setTrackingModalOrder] = useState<Order | null>(null);
-  const [trackingModalBulk, setTrackingModalBulk] = useState(false);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
 
@@ -266,21 +265,22 @@ function OrdersContent() {
     loadOrders(1, filters, tab);
   };
 
-  const handleShippedStatusRequest = (order: Order, isBulk: boolean) => {
+  const handleShippedStatusRequest = (order: Order) => {
     setTrackingModalOrder(order);
-    setTrackingModalBulk(isBulk);
     setTrackingModalOpen(true);
   };
 
-  const handleTrackingRefConfirm = async (trackingRef: string) => {
+  const handleTrackingRefConfirm = async (trackingRef: string, applyMode: 'single' | 'all' | 'selected', selectedOrderIds: number[]) => {
     if (!trackingModalOrder) return;
     try {
-      if (trackingModalBulk) {
-        const result = await ordersApi.bulkSetShippedStatus(trackingModalOrder.po_number, trackingRef);
-        toast.success(`Shipped ${result.orders_updated} orders with tracking ref`);
-      } else {
+      if (applyMode === 'single') {
         await ordersApi.setShippedStatus(trackingModalOrder.id, trackingRef);
         toast.success('Order marked as shipped');
+      } else {
+        // all = empty orderIds (backend updates all on PO), selected = specific IDs
+        const orderIds = applyMode === 'selected' ? selectedOrderIds : undefined;
+        const result = await ordersApi.bulkSetShippedStatus(trackingModalOrder.po_number, trackingRef, orderIds);
+        toast.success(`Shipped ${result.orders_updated} orders with tracking ref`);
       }
       setTrackingModalOpen(false);
       setTrackingModalOrder(null);
@@ -751,7 +751,8 @@ function OrdersContent() {
       <TrackingRefModal
         isOpen={trackingModalOpen}
         poNumber={trackingModalOrder?.po_number || ''}
-        isBulk={trackingModalBulk}
+        orderId={trackingModalOrder?.id || 0}
+        styleCode={trackingModalOrder?.style_code}
         onConfirm={handleTrackingRefConfirm}
         onCancel={() => {
           setTrackingModalOpen(false);
