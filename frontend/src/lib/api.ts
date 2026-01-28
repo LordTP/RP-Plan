@@ -212,13 +212,15 @@ export const ordersApi = {
     poNumber: string,
     fieldName: string,
     value: string | null,
-    orderIds?: number[]
-  ): Promise<{ orders_updated: number }> => {
+    orderIds?: number[],
+    changeReason?: string
+  ): Promise<{ orders_updated?: number; pending_approval?: boolean; pending_count?: number; message?: string }> => {
     const response = await api.post('/api/orders/bulk-update-date', {
       po_number: poNumber,
       field_name: fieldName,
       new_value: value,
       order_ids: orderIds || [],
+      change_reason: changeReason,
     });
     return response.data;
   },

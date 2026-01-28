@@ -141,12 +141,24 @@ export function EditableCell({
           ? [] // Empty array means all orders on PO
           : selectedOrderIds;
 
-        await ordersApi.bulkUpdateDate(
+        const result = await ordersApi.bulkUpdateDate(
           order.po_number,
           column.key,
           saveValue,
-          orderIdsToUpdate
+          orderIdsToUpdate,
+          isSupplierDateEdit ? changeReason : undefined
         );
+
+        // Check if this was a pending approval response
+        if (result.pending_approval) {
+          // Show pending message and refresh
+          if (onBulkSave) {
+            onBulkSave();
+          }
+          setIsEditing(false);
+          setChangeReason('');
+          return;
+        }
 
         // Notify parent to refresh data
         if (onBulkSave) {

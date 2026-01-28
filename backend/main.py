@@ -1224,9 +1224,57 @@ async def bulk_update_date(
 
     # Determine source tag based on role
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    change_source = "Sourcelab" if role_str != 'supplier' else "Supplier"
+    is_supplier = role_str == 'supplier'
 
-    # Update each order and track changes
+    # For suppliers, create pending changes instead of updating directly
+    if is_supplier:
+        change_reason = data.get("change_reason", "").strip()
+        if not change_reason:
+            raise HTTPException(status_code=400, detail="Please provide a reason for the date change")
+
+        pending_count = 0
+        for order in orders:
+            old_value = getattr(order, field_name)
+
+            # Only create pending if value actually changed
+            if old_value != new_value:
+                # Check for existing pending change on this field - replace it
+                existing_pending = db.query(PendingDateChange).filter(
+                    PendingDateChange.order_id == order.id,
+                    PendingDateChange.field_name == field_name,
+                    PendingDateChange.status == "pending"
+                ).first()
+
+                if existing_pending:
+                    existing_pending.proposed_value = new_value.strftime('%Y-%m-%d') if new_value else None
+                    existing_pending.reason = change_reason
+                    existing_pending.submitted_at = datetime.utcnow()
+                else:
+                    pending_change = PendingDateChange(
+                        order_id=order.id,
+                        field_name=field_name,
+                        current_value=old_value.strftime('%Y-%m-%d') if old_value else None,
+                        proposed_value=new_value.strftime('%Y-%m-%d') if new_value else None,
+                        reason=change_reason,
+                        submitted_by_id=current_user.id,
+                        submitted_by_username=current_user.username,
+                        status="pending"
+                    )
+                    db.add(pending_change)
+
+                pending_count += 1
+
+        db.commit()
+
+        return {
+            "success": True,
+            "pending_approval": True,
+            "pending_count": pending_count,
+            "message": f"Date change(s) submitted for approval ({pending_count} orders)"
+        }
+
+    # For internal/admin users, update directly
+    change_source = "Sourcelab"
     updated_count = 0
     for order in orders:
         old_value = getattr(order, field_name)
