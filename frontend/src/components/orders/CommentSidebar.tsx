@@ -203,12 +203,13 @@ export function CommentSidebar() {
                 history.map((item) => {
                   const isImport = item.source === 'Excel Import';
                   const isSupplierSource = item.source === 'Supplier';
+                  const isSupplierApproved = item.source === 'Supplier (Approved)';
                   return (
                     <div
                       key={item.id}
                       className={cn(
                         "rounded-lg p-3 text-sm",
-                        isImport ? "bg-purple-50" : isSupplierSource ? "bg-orange-50" : "bg-gray-50"
+                        isImport ? "bg-purple-50" : (isSupplierSource || isSupplierApproved) ? "bg-orange-50" : "bg-gray-50"
                       )}
                     >
                       <div className="flex items-center justify-between mb-1">
@@ -221,6 +222,8 @@ export function CommentSidebar() {
                               "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
                               isImport
                                 ? "bg-purple-100 text-purple-700"
+                                : isSupplierApproved
+                                ? "bg-green-100 text-green-700"
                                 : isSupplierSource
                                 ? "bg-orange-100 text-orange-700"
                                 : "bg-blue-100 text-blue-700"
@@ -242,6 +245,9 @@ export function CommentSidebar() {
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
                         Changed by {item.username}
+                        {item.approved_by && (
+                          <span className="text-green-600"> • Approved by {item.approved_by}</span>
+                        )}
                       </p>
                     </div>
                   );

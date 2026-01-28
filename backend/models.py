@@ -172,6 +172,10 @@ class DateChangeHistory(Base):
     source = Column(String(50), default="Supplier")  # "Sourcelab" or "Supplier"
     import_batch_id = Column(String(36), nullable=True, index=True)
 
+    # For approved supplier changes - who approved it
+    approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_by_username = Column(String(50), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

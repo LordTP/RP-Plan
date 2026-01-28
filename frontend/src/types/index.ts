@@ -85,6 +85,7 @@ export interface DateHistory {
   old_value: string | null;
   new_value: string | null;
   source: string;
+  approved_by: string | null;
   created_at: string;
 }
 
