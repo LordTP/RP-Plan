@@ -327,26 +327,27 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 mb-8">
-          {allStats.map((stat) => {
+        {/* Stats Bar */}
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-8 flex items-center gap-1 overflow-x-auto">
+          {allStats.map((stat, index) => {
             const Icon = stat.icon;
             const isClickable = 'statusFilter' in stat;
             return (
-              <div
-                key={stat.label}
-                className={`card p-4 ${isClickable ? 'cursor-pointer hover:shadow-md hover:border-primary-200 transition-all' : ''}`}
-                onClick={() => isClickable && handleStatusClick((stat as any).statusFilter)}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}>
-                    <Icon className="w-5 h-5" />
+              <div key={stat.label} className="flex items-center">
+                {index > 0 && <div className="w-px h-8 bg-gray-200 mx-1 flex-shrink-0" />}
+                <div
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg flex-shrink-0 transition-colors',
+                    isClickable ? 'cursor-pointer hover:bg-gray-50' : ''
+                  )}
+                  onClick={() => isClickable && handleStatusClick((stat as any).statusFilter)}
+                >
+                  <div className={cn('w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0', stat.color)}>
+                    <Icon className="w-3.5 h-3.5" />
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-500">{stat.label}</p>
-                    <p className="text-xl font-semibold text-gray-900 font-mono">
-                      {stat.value}
-                    </p>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                    <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
                   </div>
                 </div>
               </div>
