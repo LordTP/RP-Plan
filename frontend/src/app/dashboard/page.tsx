@@ -88,18 +88,23 @@ function DashboardContent() {
       setActivitySummary(activity);
       setMissedActivity(missed);
 
-      // Load approval data
+      // Load approval data based on user role
       try {
-        const [pendingResult, rejectedResult, myPendingResult, myApprovedResult] = await Promise.all([
-          approvalsApi.getPendingApprovals(),
-          approvalsApi.getRejectedChanges(),
+        // Supplier-specific data (available to all users)
+        const [myPendingResult, myApprovedResult, rejectedResult] = await Promise.all([
           approvalsApi.getMyPendingChanges(),
           approvalsApi.getMyApprovedChanges(),
+          approvalsApi.getRejectedChanges(),
         ]);
-        setPendingApprovals(pendingResult.pending_approvals);
-        setRejectedChanges(rejectedResult.rejected_changes);
         setMyPendingChanges(myPendingResult.pending_changes);
         setMyApprovedChanges(myApprovedResult.approved_changes);
+        setRejectedChanges(rejectedResult.rejected_changes);
+
+        // Internal-only data (pending approvals for review)
+        if (user?.role === 'internal' || user?.role === 'admin') {
+          const pendingResult = await approvalsApi.getPendingApprovals();
+          setPendingApprovals(pendingResult.pending_approvals);
+        }
       } catch (e) {
         console.error('Failed to load approval data:', e);
       }
