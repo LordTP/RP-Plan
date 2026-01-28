@@ -62,12 +62,19 @@ function ImportContent() {
   const [isUndoing, setIsUndoing] = useState(false);
   const [showUndoConfirm, setShowUndoConfirm] = useState(false);
 
+  // Conflict resolution state
+  const [conflictResolutions, setConflictResolutions] = useState<Record<number, 'use_excel' | 'use_pending'>>({});
+
   // Expandable sections
   const [showNewOrders, setShowNewOrders] = useState(true);
   const [showUpdatedOrders, setShowUpdatedOrders] = useState(true);
   const [showUnchangedOrders, setShowUnchangedOrders] = useState(false);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+
+  const allConflictsResolved = preview?.conflicts?.length
+    ? preview.conflicts.every(c => conflictResolutions[c.pending_change_id] != null)
+    : true;
 
   // Fetch last import on mount
   useEffect(() => {
@@ -87,6 +94,7 @@ function ImportContent() {
     setPreview(null);
     setImportComplete(false);
     setImportResult(null);
+    setConflictResolutions({});
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -117,9 +125,18 @@ function ImportContent() {
   const handleImport = async () => {
     if (!selectedFile) return;
 
+    // Build conflict resolutions array
+    const resolutions = preview?.conflicts?.map(c => ({
+      pending_change_id: c.pending_change_id,
+      resolution: conflictResolutions[c.pending_change_id],
+    })).filter(r => r.resolution != null) || [];
+
     setIsImporting(true);
     try {
-      const result = await excelApi.importExcel(selectedFile);
+      const result = await excelApi.importExcel(
+        selectedFile,
+        resolutions.length > 0 ? resolutions as Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }> : undefined
+      );
       setImportComplete(true);
       setImportResult({
         rows_created: result.rows_created,
@@ -183,6 +200,7 @@ function ImportContent() {
     setPreview(null);
     setImportComplete(false);
     setImportResult(null);
+    setConflictResolutions({});
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -452,6 +470,12 @@ function ImportContent() {
                         <div className="w-3 h-3 rounded-full bg-blue-500" />
                         <span>{preview.summary?.update_count || 0} Updates</span>
                       </div>
+                      {(preview.summary?.conflict_count || 0) > 0 && (
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded-full bg-amber-500" />
+                          <span>{preview.summary?.conflict_count} Conflict{preview.summary?.conflict_count !== 1 ? 's' : ''}</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-1">
                         <div className="w-3 h-3 rounded-full bg-gray-300" />
                         <span>{preview.summary?.unchanged_count || 0} Unchanged</span>
@@ -558,6 +582,86 @@ function ImportContent() {
                   </div>
                 )}
 
+                {/* Conflicts with Pending Approvals */}
+                {preview.conflicts && preview.conflicts.length > 0 && (
+                  <div className="card overflow-hidden border-amber-300">
+                    <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <span className="font-medium text-amber-800">
+                          Conflicts with Pending Approvals ({preview.conflicts.length})
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-600 mt-1">
+                        These date fields have pending supplier change requests. Choose which value to use for each.
+                      </p>
+                    </div>
+                    <div className="divide-y divide-amber-100">
+                      {preview.conflicts.map((conflict) => (
+                        <div key={conflict.pending_change_id} className="p-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-gray-900 text-sm">
+                              {conflict.po_number} / {conflict.style_code}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {formatFieldName(conflict.field_name)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mb-3">
+                            Current value: <span className="font-medium text-gray-700">{conflict.current_value}</span>
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {/* Pending approval option */}
+                            <button
+                              onClick={() => setConflictResolutions(prev => ({
+                                ...prev, [conflict.pending_change_id]: 'use_pending'
+                              }))}
+                              className={cn(
+                                'p-3 rounded-lg border-2 text-left transition-all',
+                                conflictResolutions[conflict.pending_change_id] === 'use_pending'
+                                  ? 'border-purple-500 bg-purple-50'
+                                  : 'border-gray-200 hover:border-purple-300'
+                              )}
+                            >
+                              <p className="text-xs font-medium text-purple-700 mb-1">Approve Pending Change</p>
+                              <p className="text-sm font-semibold text-gray-900">{conflict.pending_proposed_value}</p>
+                              <p className="text-xs text-gray-500 mt-1.5">
+                                By {conflict.submitted_by}
+                              </p>
+                              {conflict.reason && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate" title={conflict.reason}>
+                                  "{conflict.reason}"
+                                </p>
+                              )}
+                            </button>
+                            {/* Excel value option */}
+                            <button
+                              onClick={() => setConflictResolutions(prev => ({
+                                ...prev, [conflict.pending_change_id]: 'use_excel'
+                              }))}
+                              className={cn(
+                                'p-3 rounded-lg border-2 text-left transition-all',
+                                conflictResolutions[conflict.pending_change_id] === 'use_excel'
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200 hover:border-blue-300'
+                              )}
+                            >
+                              <p className="text-xs font-medium text-blue-700 mb-1">Use Excel Value</p>
+                              <p className="text-sm font-semibold text-gray-900">{conflict.excel_value}</p>
+                              <p className="text-xs text-gray-500 mt-1.5">
+                                From uploaded file
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                Rejects pending change
+                              </p>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Unchanged Orders Section */}
                 {preview.unchanged_orders.length > 0 && (
                   <div className="card overflow-hidden">
@@ -625,7 +729,15 @@ function ImportContent() {
                         <p className="font-medium text-primary-900">Ready to import?</p>
                         <p className="text-sm text-primary-700">
                           {preview.new_orders.length} new + {preview.updated_orders.length} updates
+                          {(preview.conflicts?.length || 0) > 0 && (
+                            <span> + {preview.conflicts.length} conflict{preview.conflicts.length !== 1 ? 's' : ''}</span>
+                          )}
                         </p>
+                        {!allConflictsResolved && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Please resolve all conflicts above before importing.
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -636,7 +748,7 @@ function ImportContent() {
                         </button>
                         <button
                           onClick={handleImport}
-                          disabled={isImporting}
+                          disabled={isImporting || !allConflictsResolved}
                           className="btn-primary flex items-center gap-2"
                         >
                           {isImporting ? (

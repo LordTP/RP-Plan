@@ -302,6 +302,19 @@ export const statusesApi = {
 };
 
 // Excel endpoints
+export interface ImportConflict {
+  order_id: number;
+  po_number: string;
+  style_code: string;
+  field_name: string;
+  pending_change_id: number;
+  current_value: string;
+  pending_proposed_value: string;
+  excel_value: string;
+  submitted_by: string;
+  reason: string;
+}
+
 export interface ImportPreviewResult {
   success: boolean;
   error?: string;
@@ -330,11 +343,13 @@ export interface ImportPreviewResult {
     po_number: string;
     style_code: string;
   }>;
+  conflicts: ImportConflict[];
   summary?: {
     total_rows: number;
     new_count: number;
     update_count: number;
     unchanged_count: number;
+    conflict_count: number;
   };
   errors: string[];
 }
@@ -369,7 +384,10 @@ export const excelApi = {
     return response.data;
   },
 
-  importExcel: async (file: File): Promise<{
+  importExcel: async (
+    file: File,
+    conflictResolutions?: Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }>
+  ): Promise<{
     success: boolean;
     rows_processed: number;
     rows_created: number;
@@ -379,6 +397,9 @@ export const excelApi = {
   }> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (conflictResolutions && conflictResolutions.length > 0) {
+      formData.append('conflict_resolutions', JSON.stringify(conflictResolutions));
+    }
 
     const response = await api.post('/api/excel/import', formData, {
       headers: {

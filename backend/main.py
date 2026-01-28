@@ -1,7 +1,7 @@
 """
 Main FastAPI application for China Orderbook Portal
 """
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -1456,6 +1456,7 @@ async def preview_excel_import(
 @app.post("/api/excel/import")
 async def import_excel(
     file: UploadFile = File(...),
+    conflict_resolutions: Optional[str] = Form(None),
     current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db)
 ):
@@ -1469,12 +1470,28 @@ async def import_excel(
     # Read file content
     content = await file.read()
 
+    # Parse conflict resolutions if provided
+    import json
+    resolutions = []
+    if conflict_resolutions:
+        try:
+            resolutions = json.loads(conflict_resolutions)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid conflict resolutions format"
+            )
+
     # Generate batch ID for undo tracking
     import uuid
     batch_id = str(uuid.uuid4())
 
     # Import to database
-    result = import_excel_to_database(content, db, current_user, import_batch_id=batch_id)
+    result = import_excel_to_database(
+        content, db, current_user,
+        import_batch_id=batch_id,
+        conflict_resolutions=resolutions if resolutions else None
+    )
 
     # Create ImportBatch record if import was successful
     if result.rows_created > 0 or result.rows_updated > 0:

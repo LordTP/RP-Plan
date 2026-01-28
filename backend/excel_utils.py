@@ -12,7 +12,7 @@ from io import BytesIO
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from models import PurchaseOrder, User, DateChangeHistory
+from models import PurchaseOrder, User, DateChangeHistory, PendingDateChange
 from schemas import ExcelUploadResponse
 
 
@@ -137,7 +137,7 @@ def format_date(value: Any) -> Optional[str]:
 # IMPORT FUNCTIONS
 # =============================================================================
 
-def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None) -> ExcelUploadResponse:
+def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None, conflict_resolutions: List[Dict[str, Any]] = None) -> ExcelUploadResponse:
     """
     Import POs from Excel file into database.
 
@@ -205,6 +205,15 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
     rows_updated = 0
     rows_skipped = 0
     errors = []
+
+    # Build resolution lookup for pending date change conflicts
+    resolution_map = {}
+    if conflict_resolutions:
+        for cr in conflict_resolutions:
+            resolution_map[cr["pending_change_id"]] = cr["resolution"]
+
+    # Fields that can have pending supplier approvals
+    SUPPLIER_DATE_FIELDS = {'date_approved_to_production', 'revised_po_ex_factory', 'actual_date_del_to_uk'}
 
     # Build column mapping from headers
     col_map = _build_column_map(sheet)
@@ -283,6 +292,59 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
 
                     # Compare values (handle None/empty equivalence)
                     if _values_different(old_value, new_value):
+                        # Check for pending date change conflict
+                        if field in SUPPLIER_DATE_FIELDS:
+                            pending = db.query(PendingDateChange).filter(
+                                PendingDateChange.order_id == existing_po.id,
+                                PendingDateChange.field_name == field,
+                                PendingDateChange.status == "pending"
+                            ).first()
+                            if pending:
+                                resolution = resolution_map.get(pending.id)
+                                if resolution == "use_pending":
+                                    # Approve the pending change, use supplier's proposed value
+                                    pending_value = parse_date(pending.proposed_value)
+                                    setattr(existing_po, field, pending_value)
+                                    pending.status = "approved"
+                                    pending.reviewed_by_id = user.id
+                                    pending.reviewed_by_username = user.username
+                                    pending.reviewed_at = datetime.utcnow()
+                                    db.add(DateChangeHistory(
+                                        po_id=existing_po.id,
+                                        user_id=user.id,
+                                        field_name=field,
+                                        old_value=str(old_value) if old_value is not None else None,
+                                        new_value=pending.proposed_value,
+                                        source="Supplier (Approved)",
+                                        approved_by_id=user.id,
+                                        approved_by_username=user.username,
+                                        import_batch_id=import_batch_id
+                                    ))
+                                    changed_fields.append(field)
+                                    continue
+                                elif resolution == "use_excel":
+                                    # Reject the pending change, fall through to use Excel value
+                                    pending.status = "rejected"
+                                    pending.reviewed_by_id = user.id
+                                    pending.reviewed_by_username = user.username
+                                    pending.reviewed_at = datetime.utcnow()
+                                    pending.rejection_reason = f"Excel import override confirmed by {user.username}"
+                                    db.add(DateChangeHistory(
+                                        po_id=existing_po.id,
+                                        user_id=user.id,
+                                        field_name=field,
+                                        old_value=pending.current_value,
+                                        new_value=pending.proposed_value,
+                                        source="Supplier (Rejected)",
+                                        approved_by_id=user.id,
+                                        approved_by_username=user.username,
+                                        rejection_reason=f"Excel import override confirmed by {user.username}",
+                                    ))
+                                    # Fall through to normal Excel update below
+                                else:
+                                    # No resolution provided — skip this field
+                                    continue
+
                         changed_fields.append(field)
 
                         # Track change in history
@@ -425,7 +487,11 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
     new_orders = []
     updated_orders = []
     unchanged_orders = []
+    conflicts = []
     errors = []
+
+    # Fields that can have pending supplier approvals
+    SUPPLIER_DATE_FIELDS = {'date_approved_to_production', 'revised_po_ex_factory', 'actual_date_del_to_uk'}
 
     start_row = _find_data_start_row(sheet, col_map)
 
@@ -471,6 +537,27 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
                             "new_value": new_display
                         })
 
+                        # Check for pending date change conflict
+                        if field in SUPPLIER_DATE_FIELDS:
+                            pending = db.query(PendingDateChange).filter(
+                                PendingDateChange.order_id == existing_po.id,
+                                PendingDateChange.field_name == field,
+                                PendingDateChange.status == "pending"
+                            ).first()
+                            if pending:
+                                conflicts.append({
+                                    "order_id": existing_po.id,
+                                    "po_number": po_number,
+                                    "style_code": style_code,
+                                    "field_name": field,
+                                    "pending_change_id": pending.id,
+                                    "current_value": old_display,
+                                    "pending_proposed_value": pending.proposed_value,
+                                    "excel_value": new_display,
+                                    "submitted_by": pending.submitted_by_username,
+                                    "reason": pending.reason,
+                                })
+
                 if changes:
                     updated_orders.append({
                         "id": existing_po.id,
@@ -505,11 +592,13 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
         "new_orders": new_orders,
         "updated_orders": updated_orders,
         "unchanged_orders": unchanged_orders,
+        "conflicts": conflicts,
         "summary": {
             "total_rows": len(new_orders) + len(updated_orders) + len(unchanged_orders),
             "new_count": len(new_orders),
             "update_count": len(updated_orders),
-            "unchanged_count": len(unchanged_orders)
+            "unchanged_count": len(unchanged_orders),
+            "conflict_count": len(conflicts),
         },
         "errors": errors[:10] if errors else []
     }
