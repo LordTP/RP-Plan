@@ -338,7 +338,7 @@ function DashboardContent() {
                 {index > 0 && <div className="hidden sm:block w-px h-8 bg-gray-200 flex-shrink-0" />}
                 <div
                   className={cn(
-                    'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-colors w-full justify-center',
+                    'flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-colors w-full justify-center',
                     isClickable ? 'cursor-pointer hover:bg-gray-50' : ''
                   )}
                   onClick={() => isClickable && handleStatusClick((stat as any).statusFilter)}
@@ -346,19 +346,17 @@ function DashboardContent() {
                   <div className={cn('w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center flex-shrink-0', stat.color)}>
                     <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </div>
-                  <div className="flex flex-col leading-tight sm:contents">
-                    {'stacked' in stat && stat.stacked ? (
-                      <div className="flex flex-col leading-tight">
-                        <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
-                        <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
-                        <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
-                      </>
-                    )}
-                  </div>
+                  {'stacked' in stat && stat.stacked ? (
+                    <div className="flex flex-col leading-tight text-center sm:text-left">
+                      <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                      <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-1.5 text-center sm:text-left">
+                      <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                      <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
