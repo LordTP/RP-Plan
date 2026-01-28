@@ -2564,6 +2564,7 @@ async def get_po_summary(
     ).order_by(func.max(PurchaseOrder.created_at).desc()).limit(limit).all()
 
     # Format response
+    is_supplier = current_user.role == UserRole.SUPPLIER
     return {
         "po_summaries": [
             {
@@ -2572,7 +2573,7 @@ async def get_po_summary(
                 "factory": po.factory,
                 "line_count": po.line_count,
                 "total_qty": po.total_qty or 0,
-                "total_value": float(po.total_value or 0),
+                **({"total_value": float(po.total_value or 0)} if not is_supplier else {}),
                 "earliest_ex_factory": po.earliest_ex_factory.isoformat() if po.earliest_ex_factory else None,
                 "latest_update": po.latest_update.isoformat() if po.latest_update else None,
                 "status": po.status,
