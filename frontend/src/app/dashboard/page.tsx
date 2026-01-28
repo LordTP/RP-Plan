@@ -287,6 +287,7 @@ function DashboardContent() {
       value: formatCurrency(stats?.total_open_value || 0),
       icon: TrendingUp,
       color: 'bg-teal-100 text-teal-600',
+      stacked: true,
     },
     {
       label: 'This Month',
@@ -345,10 +346,17 @@ function DashboardContent() {
                   <div className={cn('w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0', stat.color)}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
-                    <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
-                  </div>
+                  {'stacked' in stat && stat.stacked ? (
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                      <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                      <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
