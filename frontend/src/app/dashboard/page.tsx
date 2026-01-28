@@ -328,35 +328,37 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* Stats Bar */}
-        <div className="bg-white border border-gray-200 rounded-xl px-2 py-3 mb-8 flex items-center overflow-x-auto">
+        {/* Stats Bar - grid on mobile, flex ribbon on desktop */}
+        <div className="bg-white border border-gray-200 rounded-xl px-2 py-3 mb-8 grid grid-cols-3 gap-1 sm:flex sm:items-center sm:overflow-x-auto">
           {allStats.map((stat, index) => {
             const Icon = stat.icon;
             const isClickable = 'statusFilter' in stat;
             return (
-              <div key={stat.label} className="flex items-center flex-1 min-w-0">
-                {index > 0 && <div className="w-px h-8 bg-gray-200 flex-shrink-0" />}
+              <div key={stat.label} className="flex items-center sm:flex-1 sm:min-w-0">
+                {index > 0 && <div className="hidden sm:block w-px h-8 bg-gray-200 flex-shrink-0" />}
                 <div
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors w-full justify-center',
+                    'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg transition-colors w-full justify-center',
                     isClickable ? 'cursor-pointer hover:bg-gray-50' : ''
                   )}
                   onClick={() => isClickable && handleStatusClick((stat as any).statusFilter)}
                 >
-                  <div className={cn('w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0', stat.color)}>
-                    <Icon className="w-3.5 h-3.5" />
+                  <div className={cn('w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center flex-shrink-0', stat.color)}>
+                    <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </div>
-                  {'stacked' in stat && stat.stacked ? (
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
-                      <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
-                      <span className="text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
-                    </div>
-                  )}
+                  <div className="flex flex-col leading-tight sm:contents">
+                    {'stacked' in stat && stat.stacked ? (
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                        <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{stat.label}</span>
+                        <span className="text-xs sm:text-sm font-semibold text-gray-900 font-mono">{stat.value}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -366,7 +368,7 @@ function DashboardContent() {
         {/* Pending Date Approvals - For Sourcelab users */}
         {isInternal && pendingApprovals.length > 0 && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Pending Date Approvals
                 <span className="ml-2 px-2 py-0.5 text-sm bg-orange-100 text-orange-700 rounded-full">
@@ -374,22 +376,22 @@ function DashboardContent() {
                 </span>
               </h2>
               {selectedApprovals.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleBulkApprove}
                     disabled={isProcessing}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                   >
                     {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Approve Selected ({selectedApprovals.length})
+                    Approve ({selectedApprovals.length})
                   </button>
                   <button
                     onClick={() => setShowBulkRejectModal(true)}
                     disabled={isProcessing}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                   >
                     <X className="w-4 h-4" />
-                    Reject Selected ({selectedApprovals.length})
+                    Reject ({selectedApprovals.length})
                   </button>
                 </div>
               )}
@@ -401,21 +403,21 @@ function DashboardContent() {
                   {/* PO Header - Clickable */}
                   <div
                     onClick={() => togglePOExpanded(poGroup.po_number)}
-                    className="flex items-center justify-between p-4 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
+                    className="flex items-center justify-between p-3 sm:p-4 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors gap-2"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                       {expandedPOs.includes(poGroup.po_number) ? (
-                        <ChevronDown className="w-5 h-5 text-orange-600" />
+                        <ChevronDown className="w-5 h-5 text-orange-600 flex-shrink-0" />
                       ) : (
-                        <ChevronRight className="w-5 h-5 text-orange-600" />
+                        <ChevronRight className="w-5 h-5 text-orange-600 flex-shrink-0" />
                       )}
-                      <div>
+                      <div className="min-w-0">
                         <span className="font-semibold text-orange-800">PO# {poGroup.po_number}</span>
-                        <span className="ml-3 text-sm text-orange-600">{poGroup.customer}</span>
-                        <span className="ml-3 text-sm text-orange-500">{poGroup.factory}</span>
+                        <span className="ml-2 sm:ml-3 text-sm text-orange-600 truncate">{poGroup.customer}</span>
+                        <span className="hidden sm:inline ml-3 text-sm text-orange-500">{poGroup.factory}</span>
                       </div>
                     </div>
-                    <span className="px-2 py-1 bg-orange-200 text-orange-800 rounded text-sm font-medium">
+                    <span className="px-2 py-1 bg-orange-200 text-orange-800 rounded text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0">
                       {poGroup.changes.length} pending
                     </span>
                   </div>
@@ -424,8 +426,8 @@ function DashboardContent() {
                   {expandedPOs.includes(poGroup.po_number) && (
                     <div className="divide-y divide-gray-100">
                       {poGroup.changes.map((change) => (
-                        <div key={change.id} className="p-4 hover:bg-gray-50">
-                          <div className="flex items-start justify-between gap-4">
+                        <div key={change.id} className="p-3 sm:p-4 hover:bg-gray-50">
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                             <div className="flex items-start gap-3">
                               <input
                                 type="checkbox"
@@ -666,11 +668,11 @@ function DashboardContent() {
         {/* While You Were Away - Changes between previous login and last login */}
         {missedActivity && missedActivity.since && (missedActivity.new_orders.count > 0 || missedActivity.updated_orders.count > 0 || missedActivity.new_comments.count > 0) && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 While You Were Away
               </h2>
-              <span className="text-sm text-gray-500">
+              <span className="text-xs sm:text-sm text-gray-500">
                 {new Date(missedActivity.since).toLocaleDateString('en-GB', {
                   day: 'numeric',
                   month: 'short',
@@ -922,16 +924,16 @@ function DashboardContent() {
             </Link>
           </div>
 
-          <div className="card overflow-hidden">
-            <table className="w-full">
+          <div className="card overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[600px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">PO#</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Customer</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Factory</th>
-                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Lines</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Total Qty</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Ex-Factory</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">PO#</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Customer</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Factory</th>
+                  <th className="px-4 py-3 text-center text-sm font-medium text-gray-600 whitespace-nowrap">Lines</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-600 whitespace-nowrap">Total Qty</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600 whitespace-nowrap">Ex-Factory</th>
                   <th className="px-4 py-3 text-center text-sm font-medium text-gray-600"></th>
                 </tr>
               </thead>

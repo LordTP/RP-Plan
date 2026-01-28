@@ -152,17 +152,17 @@ function AnalyticsContent() {
 
       <main className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6 sm:mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-            <p className="text-gray-500">Order and performance insights</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Analytics</h1>
+            <p className="text-sm sm:text-base text-gray-500">Order and performance insights</p>
           </div>
           <button
             onClick={loadData}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center gap-2 text-sm"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
 
@@ -197,7 +197,7 @@ function AnalyticsContent() {
         {/* Charts Row 1 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Orders Over Time */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-blue-500" />
               Orders Over Time
@@ -216,7 +216,7 @@ function AnalyticsContent() {
           </div>
 
           {/* Order Value Over Time */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-green-500" />
               Order Value Over Time
@@ -238,7 +238,7 @@ function AnalyticsContent() {
         {/* Charts Row 2 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Pipeline */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Package className="w-5 h-5 text-purple-500" />
               Order Pipeline
@@ -268,7 +268,7 @@ function AnalyticsContent() {
           </div>
 
           {/* Delivery Performance */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-500" />
               Delivery Performance
@@ -290,21 +290,21 @@ function AnalyticsContent() {
         </div>
 
         {/* Factory Performance Table */}
-        <div className="card p-6 mb-6">
+        <div className="card p-4 sm:p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Factory className="w-5 h-5 text-orange-500" />
             Factory Performance
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[500px]">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-medium text-gray-500">Factory</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Orders</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">On-Time Rate</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Late</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Date Changes</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Total Value</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Factory</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Orders</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">On-Time Rate</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Late</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Date Changes</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Total Value</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,20 +333,20 @@ function AnalyticsContent() {
         </div>
 
         {/* Customer Analytics */}
-        <div className="card p-6 mb-6">
+        <div className="card p-4 sm:p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-blue-500" />
             Top Customers by Value
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[500px]">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-medium text-gray-500">Customer</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Orders</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Total Value</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">Quantity</th>
-                  <th className="text-right py-3 px-4 font-medium text-gray-500">On-Time Rate</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Customer</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Orders</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Total Value</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">Quantity</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500 whitespace-nowrap">On-Time Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -375,7 +375,7 @@ function AnalyticsContent() {
 
         {/* Date Changes */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Calendar className="w-5 h-5 text-amber-500" />
               Date Changes Over Time
@@ -393,7 +393,7 @@ function AnalyticsContent() {
             </div>
           </div>
 
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Factory className="w-5 h-5 text-amber-500" />
               Date Changes by Factory
@@ -422,7 +422,7 @@ function AnalyticsContent() {
         {/* Alerts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Overdue Production */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-500" />
               Overdue Production
@@ -448,7 +448,7 @@ function AnalyticsContent() {
           </div>
 
           {/* Stale Orders */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-500" />
               No Updates (14+ days)
@@ -474,7 +474,7 @@ function AnalyticsContent() {
           </div>
 
           {/* Upcoming Deliveries */}
-          <div className="card p-6">
+          <div className="card p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-500" />
               Deliveries This Week
@@ -523,14 +523,14 @@ function StatCard({ title, value, icon: Icon, color }: StatCardProps) {
   };
 
   return (
-    <div className="card p-4">
-      <div className="flex items-center gap-3">
-        <div className={cn('p-2 rounded-lg', colorClasses[color])}>
-          <Icon className="w-5 h-5" />
+    <div className="card p-3 sm:p-4">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className={cn('p-1.5 sm:p-2 rounded-lg', colorClasses[color])}>
+          <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
         </div>
-        <div>
-          <p className="text-sm text-gray-500">{title}</p>
-          <p className="text-xl font-bold text-gray-900">{value}</p>
+        <div className="min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500 truncate">{title}</p>
+          <p className="text-base sm:text-xl font-bold text-gray-900 truncate">{value}</p>
         </div>
       </div>
     </div>
