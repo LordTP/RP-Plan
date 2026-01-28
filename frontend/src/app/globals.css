@@ -100,6 +100,22 @@
   box-shadow: inset -4px 0 4px -4px rgba(0, 0, 0, 0.1);
 }
 
+/* Shadow on the last sticky column */
+.sticky-shadow {
+  position: relative;
+}
+
+.sticky-shadow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 4px;
+  box-shadow: inset -4px 0 4px -4px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
 /* Table row hover */
 .table-row {
   @apply hover:bg-gray-50 transition-colors;

@@ -209,6 +209,27 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
 
   const visibleColumns = getVisibleColumns();
 
+  // Compute sticky left offsets for pinned columns
+  const STICKY_COLUMNS = ['po_number', 'style_code'] as const;
+  const stickyLeftMap: Record<string, number> = {};
+  {
+    let cumulativeLeft = 0;
+    for (const col of visibleColumns) {
+      if ((STICKY_COLUMNS as readonly string[]).includes(col.key)) {
+        stickyLeftMap[col.key] = cumulativeLeft;
+      }
+      cumulativeLeft += col.width;
+    }
+  }
+  const lastStickyKey = (() => {
+    for (let i = visibleColumns.length - 1; i >= 0; i--) {
+      if ((STICKY_COLUMNS as readonly string[]).includes(visibleColumns[i].key)) {
+        return visibleColumns[i].key;
+      }
+    }
+    return null;
+  })();
+
   // Find indices for special columns (gender and sizes for the header reference rows)
   const genderColIndex = visibleColumns.findIndex(c => c.key === 'gender');
   const firstSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_2xs');
@@ -379,15 +400,25 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                 }
 
                 // Regular columns (not gender, not size) - span all reference rows
+                const isSticky = column.key in stickyLeftMap;
+                const isLastSticky = column.key === lastStickyKey;
                 return (
                   <th
                     key={column.key}
                     rowSpan={showingReference ? headerRowCount : 1}
                     className={cn(
                       "px-1 py-1 text-left border border-gray-300 font-semibold whitespace-nowrap align-top",
-                      "bg-gray-100"
+                      "bg-gray-100",
+                      isLastSticky && "sticky-shadow"
                     )}
-                    style={{ minWidth: column.width }}
+                    style={{
+                      minWidth: column.width,
+                      ...(isSticky && {
+                        position: 'sticky',
+                        left: stickyLeftMap[column.key],
+                        zIndex: 20,
+                      }),
+                    }}
                   >
                     {column.label}
                   </th>
@@ -455,6 +486,8 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                   {visibleColumns.map((column) => {
                     const isCellChanged = orderChangedFields.includes(column.key);
 
+                    const isStickyCol = column.key in stickyLeftMap;
+                    const isLastStickyCol = column.key === lastStickyKey;
                     return (
                     <td
                       key={column.key}
@@ -462,9 +495,18 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                         "border border-gray-100",
                         sizeColumns.includes(column.key) && "bg-blue-50/30",
                         column.key === 'gender' && "bg-amber-50/30",
-                        isCellChanged && "!bg-emerald-200 !border-emerald-400"
+                        isCellChanged && "!bg-emerald-200 !border-emerald-400",
+                        isStickyCol && !isCellChanged && "bg-white",
+                        isLastStickyCol && "sticky-shadow"
                       )}
-                      style={{ minWidth: column.width }}
+                      style={{
+                        minWidth: column.width,
+                        ...(isStickyCol && {
+                          position: 'sticky',
+                          left: stickyLeftMap[column.key],
+                          zIndex: 10,
+                        }),
+                      }}
                     >
                       {column.key === 'status' ? (
                         // Status dropdown
