@@ -238,7 +238,8 @@ class DateChangeResponse(BaseModel):
     old_value: Optional[str] = None
     new_value: Optional[str] = None
     source: str
-    approved_by: Optional[str] = None  # Who approved (for supplier changes)
+    approved_by: Optional[str] = None  # Who approved/rejected (for supplier changes)
+    rejection_reason: Optional[str] = None  # Reason for rejection (if rejected)
     created_at: datetime
 
     class Config:

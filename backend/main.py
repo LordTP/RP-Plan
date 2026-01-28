@@ -963,6 +963,7 @@ async def get_order_history(
             new_value=str(entry.new_value) if entry.new_value is not None else None,
             source=entry.source or "Sourcelab",
             approved_by=entry.approved_by_username,
+            rejection_reason=entry.rejection_reason,
             created_at=entry.created_at
         ))
 
@@ -1890,6 +1891,20 @@ async def reject_date_change(
     if not rejection_reason:
         raise HTTPException(status_code=400, detail="Please provide a reason for rejection")
 
+    # Create history entry for the rejected change
+    history = DateChangeHistory(
+        po_id=pending.order_id,
+        user_id=pending.submitted_by_id,
+        field_name=pending.field_name,
+        old_value=pending.current_value,
+        new_value=pending.proposed_value,
+        source="Supplier (Rejected)",
+        approved_by_id=current_user.id,
+        approved_by_username=current_user.username,
+        rejection_reason=rejection_reason
+    )
+    db.add(history)
+
     # Update pending status
     pending.status = "rejected"
     pending.reviewed_by_id = current_user.id
@@ -1977,6 +1992,20 @@ async def bulk_reject_date_changes(
         pending = db.query(PendingDateChange).filter(PendingDateChange.id == approval_id).first()
         if not pending or pending.status != "pending":
             continue
+
+        # Create history entry for the rejected change
+        history = DateChangeHistory(
+            po_id=pending.order_id,
+            user_id=pending.submitted_by_id,
+            field_name=pending.field_name,
+            old_value=pending.current_value,
+            new_value=pending.proposed_value,
+            source="Supplier (Rejected)",
+            approved_by_id=current_user.id,
+            approved_by_username=current_user.username,
+            rejection_reason=reason
+        )
+        db.add(history)
 
         # Update pending status to rejected
         pending.status = "rejected"

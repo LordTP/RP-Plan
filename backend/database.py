@@ -86,4 +86,12 @@ def init_db():
                 conn.execute(text("ALTER TABLE date_change_history ADD COLUMN approved_by_username VARCHAR(50)"))
             print("✓ Added approved_by columns to date_change_history table")
 
+    # Migrate: add rejection_reason to date_change_history
+    if 'date_change_history' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('date_change_history')]
+        if 'rejection_reason' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE date_change_history ADD COLUMN rejection_reason TEXT"))
+            print("✓ Added rejection_reason column to date_change_history table")
+
     print("✓ Database tables created successfully")

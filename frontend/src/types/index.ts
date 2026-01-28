@@ -86,6 +86,7 @@ export interface DateHistory {
   new_value: string | null;
   source: string;
   approved_by: string | null;
+  rejection_reason: string | null;
   created_at: string;
 }
 
