@@ -2213,13 +2213,16 @@ async def get_dashboard_stats(
         overdue_query = overdue_query.filter(f)
     overdue_orders = overdue_query.scalar() or 0
 
-    # Total order value (internal users only)
-    total_value = 0
+    # Total open order value (not shipped/tracked, not cancelled) - internal users only
+    total_open_value = 0
     if current_user.role != UserRole.SUPPLIER:
-        value_query = db.query(func.sum(PurchaseOrder.total_order_value))
+        value_query = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
+            PurchaseOrder.tracking_reference.is_(None),
+            PurchaseOrder.status != "Cancelled"
+        )
         for f in base_filter:
             value_query = value_query.filter(f)
-        total_value = value_query.scalar() or 0
+        total_open_value = value_query.scalar() or 0
 
     # Orders this month
     first_of_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -2268,7 +2271,7 @@ async def get_dashboard_stats(
         "orders_cancelled": orders_cancelled,
         "orders_on_hold": orders_on_hold,
         "overdue_orders": overdue_orders,
-        "total_value": float(total_value) if total_value else 0,
+        "total_open_value": float(total_open_value) if total_open_value else 0,
         "orders_this_month": orders_this_month,
         "recent_comments": recent_comments_count,
         "top_customers": [{"customer": c[0], "count": c[1]} for c in orders_by_customer],
@@ -2713,10 +2716,10 @@ async def get_customer_analytics(
     """Get analytics by customer"""
     customers = db.query(
         PurchaseOrder.customer,
-        func.count(PurchaseOrder.id).label('order_count'),
+        func.count(func.distinct(PurchaseOrder.po_number)).label('order_count'),
         func.sum(PurchaseOrder.total_order_value).label('total_value'),
         func.sum(PurchaseOrder.total_quantity).label('total_quantity'),
-        func.count(case((PurchaseOrder.is_late == True, 1))).label('late_count')
+        func.count(func.distinct(case((PurchaseOrder.is_late == True, PurchaseOrder.po_number)))).label('late_count')
     ).filter(
         PurchaseOrder.customer.isnot(None),
         PurchaseOrder.customer != ''

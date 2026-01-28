@@ -100,7 +100,7 @@ export interface DashboardStats {
   orders_delivered: number;
   orders_cancelled: number;
   orders_on_hold: number;
-  total_value: number;
+  total_open_value: number;
   orders_this_month: number;
   overdue_orders: number;
 }

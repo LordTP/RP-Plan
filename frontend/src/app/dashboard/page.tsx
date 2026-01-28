@@ -283,8 +283,8 @@ function DashboardContent() {
   // Only show these to internal users
   const internalStats = (user?.role === 'internal' || user?.role === 'admin') ? [
     {
-      label: 'Total Value',
-      value: formatCurrency(stats?.total_value || 0),
+      label: 'Total Open Value',
+      value: formatCurrency(stats?.total_open_value || 0),
       icon: TrendingUp,
       color: 'bg-teal-100 text-teal-600',
     },
@@ -328,16 +328,16 @@ function DashboardContent() {
         </div>
 
         {/* Stats Bar */}
-        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-8 flex items-center gap-1 overflow-x-auto">
+        <div className="bg-white border border-gray-200 rounded-xl px-2 py-3 mb-8 flex items-center overflow-x-auto">
           {allStats.map((stat, index) => {
             const Icon = stat.icon;
             const isClickable = 'statusFilter' in stat;
             return (
-              <div key={stat.label} className="flex items-center">
-                {index > 0 && <div className="w-px h-8 bg-gray-200 mx-1 flex-shrink-0" />}
+              <div key={stat.label} className="flex items-center flex-1 min-w-0">
+                {index > 0 && <div className="w-px h-8 bg-gray-200 flex-shrink-0" />}
                 <div
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-lg flex-shrink-0 transition-colors',
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors w-full justify-center',
                     isClickable ? 'cursor-pointer hover:bg-gray-50' : ''
                   )}
                   onClick={() => isClickable && handleStatusClick((stat as any).statusFilter)}
