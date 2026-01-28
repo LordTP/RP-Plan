@@ -1,18 +1,15 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
   Filter,
   RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   X,
   Download,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Navbar } from '@/components/layout/Navbar';
@@ -56,6 +53,7 @@ function OrdersContent() {
   const {
     orders,
     setOrders,
+    appendOrders,
     totalOrders,
     currentPage,
     pageSize,
@@ -65,6 +63,8 @@ function OrdersContent() {
   } = useStore();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollSentinelRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -96,40 +96,58 @@ function OrdersContent() {
   // Check if any filters are active
   const hasActiveFilters = filters.po_number || filters.style_code || filters.factory || filters.customer || filters.status;
 
-  const totalPages = Math.ceil(totalOrders / pageSize);
+  const hasMore = orders.length < totalOrders;
 
-  const loadOrders = useCallback(async (page: number = currentPage, currentFilters: OrderFilters = filters, tab?: 'orders' | 'shipped') => {
+  const buildCleanFilters = useCallback((currentFilters: OrderFilters, tab?: 'orders' | 'shipped') => {
+    const cleanFilters: OrderFilters = {};
+    if (currentFilters.search) cleanFilters.search = currentFilters.search;
+    if (currentFilters.po_number) cleanFilters.po_number = currentFilters.po_number;
+    if (currentFilters.style_code) cleanFilters.style_code = currentFilters.style_code;
+    if (currentFilters.factory) cleanFilters.factory = currentFilters.factory;
+    if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
+    if (currentFilters.status) cleanFilters.status = currentFilters.status;
+    const resolvedTab = tab ?? activeTab;
+    if (isInternal) {
+      cleanFilters.tab = resolvedTab;
+    }
+    return cleanFilters;
+  }, [activeTab, isInternal]);
+
+  const loadOrders = useCallback(async (page: number = 1, currentFilters: OrderFilters = filters, tab?: 'orders' | 'shipped') => {
     setIsLoading(true);
     try {
-      // Clean up empty filter values
-      const cleanFilters: OrderFilters = {};
-      if (currentFilters.search) cleanFilters.search = currentFilters.search;
-      if (currentFilters.po_number) cleanFilters.po_number = currentFilters.po_number;
-      if (currentFilters.style_code) cleanFilters.style_code = currentFilters.style_code;
-      if (currentFilters.factory) cleanFilters.factory = currentFilters.factory;
-      if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
-      if (currentFilters.status) cleanFilters.status = currentFilters.status;
-
-      // Add tab filter for internal users
-      const resolvedTab = tab ?? activeTab;
-      if (isInternal) {
-        cleanFilters.tab = resolvedTab;
-      }
-
+      const cleanFilters = buildCleanFilters(currentFilters, tab);
       const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
       setOrders(response.orders, response.total);
+      setPage(1);
     } catch (error) {
       console.error('Failed to load orders:', error);
       toast.error('Failed to load orders. Please check your connection and try refreshing the page.');
     } finally {
       setIsLoading(false);
     }
-  }, [pageSize, setOrders, activeTab, isInternal]);
+  }, [pageSize, setOrders, setPage, buildCleanFilters]);
 
-  // Load orders when page or filters change
+  const loadMoreOrders = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const cleanFilters = buildCleanFilters(filters);
+      const response = await ordersApi.getOrders(nextPage, pageSize, cleanFilters);
+      appendOrders(response.orders, response.total);
+      setPage(nextPage);
+    } catch (error) {
+      console.error('Failed to load more orders:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, currentPage, pageSize, filters, appendOrders, setPage, buildCleanFilters]);
+
+  // Initial load
   useEffect(() => {
-    loadOrders(currentPage, filters);
-  }, [currentPage]);
+    loadOrders(1, filters);
+  }, []);
 
   // Initialize from URL params
   useEffect(() => {
@@ -175,14 +193,26 @@ function OrdersContent() {
     return () => unsubscribe();
   }, [updateOrderInList]);
 
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setPage(page);
-    }
-  };
+  // Infinite scroll: observe sentinel element
+  useEffect(() => {
+    const sentinel = scrollSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading && !isLoadingMore) {
+          loadMoreOrders();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading, isLoadingMore, loadMoreOrders]);
 
   const handleRefresh = () => {
-    loadOrders(currentPage, filters);
+    loadOrders(1, filters);
     toast.success('Orders refreshed');
   };
 
@@ -663,83 +693,15 @@ function OrdersContent() {
               changedFields={highlightChanges ? changedFields : undefined}
               showTrackingRef={isInternal && activeTab === 'shipped'}
               onShippedStatusRequest={isInternal ? handleShippedStatusRequest : undefined}
+              scrollSentinelRef={scrollSentinelRef}
+              isLoadingMore={isLoadingMore}
             />
           )}
         </div>
 
-        {/* Pagination */}
-        {!isLoading && totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4 flex-shrink-0">
-            <p className="text-sm text-gray-500">
-              Showing {(currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, totalOrders)} of {totalOrders} orders
-            </p>
-
-            <div className="flex items-center gap-2">
-              {/* First page */}
-              <button
-                onClick={() => handlePageChange(1)}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="First page"
-              >
-                <ChevronsLeft className="w-4 h-4" />
-              </button>
-
-              {/* Previous page */}
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Previous page"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              {/* Page numbers */}
-              <div className="flex items-center gap-1">
-                {generatePageNumbers(currentPage, totalPages).map((page, index) =>
-                  page === '...' ? (
-                    <span key={`ellipsis-${index}`} className="px-2 text-gray-400">
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={page}
-                      onClick={() => handlePageChange(page as number)}
-                      className={cn(
-                        'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
-                        currentPage === page
-                          ? 'bg-primary-600 text-white'
-                          : 'hover:bg-gray-100 text-gray-700'
-                      )}
-                    >
-                      {page}
-                    </button>
-                  )
-                )}
-              </div>
-
-              {/* Next page */}
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Next page"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-
-              {/* Last page */}
-              <button
-                onClick={() => handlePageChange(totalPages)}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Last page"
-              >
-                <ChevronsRight className="w-4 h-4" />
-              </button>
-            </div>
+        {!isLoading && (
+          <div className="flex-shrink-0 py-2 text-xs text-gray-400 text-center">
+            Showing {orders.length} of {totalOrders} order lines
           </div>
         )}
       </main>
@@ -763,40 +725,3 @@ function OrdersContent() {
   );
 }
 
-function generatePageNumbers(current: number, total: number): (number | string)[] {
-  const pages: (number | string)[] = [];
-  const showEllipsis = total > 7;
-
-  if (!showEllipsis) {
-    for (let i = 1; i <= total; i++) {
-      pages.push(i);
-    }
-    return pages;
-  }
-
-  // Always show first page
-  pages.push(1);
-
-  if (current > 3) {
-    pages.push('...');
-  }
-
-  // Show pages around current
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-
-  for (let i = start; i <= end; i++) {
-    pages.push(i);
-  }
-
-  if (current < total - 2) {
-    pages.push('...');
-  }
-
-  // Always show last page
-  if (total > 1) {
-    pages.push(total);
-  }
-
-  return pages;
-}

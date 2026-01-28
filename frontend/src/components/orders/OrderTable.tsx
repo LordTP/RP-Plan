@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp, Rows3 } from 'lucide-react';
+import { useRef, useState, useEffect, type RefObject } from 'react';
+import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
@@ -35,9 +35,11 @@ interface OrderTableProps {
   changedFields?: Record<string, string[]>;
   showTrackingRef?: boolean;
   onShippedStatusRequest?: (order: Order) => void;
+  scrollSentinelRef?: RefObject<HTMLDivElement | null>;
+  isLoadingMore?: boolean;
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, scrollSentinelRef, isLoadingMore = false }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -498,6 +500,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
             )}
           </tbody>
         </table>
+        {/* Infinite scroll sentinel */}
+        {scrollSentinelRef && <div ref={scrollSentinelRef} className="h-1" />}
+        {isLoadingMore && (
+          <div className="flex items-center justify-center py-3">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+            <span className="ml-2 text-sm text-gray-500">Loading more...</span>
+          </div>
+        )}
       </div>
     </div>
   );

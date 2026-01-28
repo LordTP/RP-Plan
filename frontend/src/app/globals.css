@@ -36,7 +36,7 @@
   }
 
   .data-cell {
-    @apply font-mono text-sm;
+    @apply font-mono text-xs;
   }
 
   .editable-cell {

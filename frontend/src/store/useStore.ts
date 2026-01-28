@@ -14,6 +14,7 @@ interface AppState {
   currentPage: number;
   pageSize: number;
   setOrders: (orders: Order[], total: number) => void;
+  appendOrders: (orders: Order[], total: number) => void;
   updateOrderInList: (order: Order) => void;
   setPage: (page: number) => void;
 
@@ -52,6 +53,11 @@ export const useStore = create<AppState>((set) => ({
   currentPage: 1,
   pageSize: 50,
   setOrders: (orders, total) => set({ orders, totalOrders: total }),
+  appendOrders: (newOrders, total) =>
+    set((state) => ({
+      orders: [...state.orders, ...newOrders],
+      totalOrders: total,
+    })),
   updateOrderInList: (updatedOrder) =>
     set((state) => ({
       orders: state.orders.map((order) =>
