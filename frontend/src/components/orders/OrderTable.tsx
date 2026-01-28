@@ -58,6 +58,67 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const isSupplier = user?.role === 'supplier';
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
 
+  // Drag-to-scroll state
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
+  const hasDragged = useRef(false);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const el = tableRef.current;
+    if (!el) return;
+    // Only left-click, and not on interactive elements
+    if (e.button !== 0) return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (['INPUT', 'SELECT', 'BUTTON', 'TEXTAREA', 'A'].includes(tag)) return;
+
+    isDragging.current = true;
+    hasDragged.current = false;
+    dragStart.current = { x: e.clientX, y: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
+    el.style.cursor = 'grabbing';
+    el.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasDragged.current = true;
+      }
+      el.scrollLeft = dragStart.current.scrollLeft - dx;
+      el.scrollTop = dragStart.current.scrollTop - dy;
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        el.style.cursor = 'grab';
+        el.style.userSelect = '';
+      }
+    };
+
+    // Suppress click events after dragging so cells don't accidentally open
+    const handleClick = (e: MouseEvent) => {
+      if (hasDragged.current) {
+        e.stopPropagation();
+        hasDragged.current = false;
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    el.addEventListener('click', handleClick, true);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      el.removeEventListener('click', handleClick, true);
+    };
+  }, []);
+
   // Get size column keys
   const sizeColumns = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl'];
 
@@ -259,7 +320,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           </button>
         </div>
       )}
-      <div ref={tableRef} className="overflow-auto flex-1">
+      <div ref={tableRef} className="overflow-auto flex-1 cursor-grab" onMouseDown={handleMouseDown}>
         <table
           className="w-full border-collapse text-xs"
           style={{ minWidth: `${totalWidth}px` }}
