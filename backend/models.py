@@ -32,7 +32,7 @@ class User(Base):
     
     # Relationships
     comments = relationship("Comment", back_populates="user")
-    date_changes = relationship("DateChangeHistory", back_populates="user")
+    date_changes = relationship("DateChangeHistory", back_populates="user", foreign_keys="[DateChangeHistory.user_id]")
 
 
 class PurchaseOrder(Base):
@@ -181,7 +181,7 @@ class DateChangeHistory(Base):
 
     # Relationships
     purchase_order = relationship("PurchaseOrder", back_populates="date_changes")
-    user = relationship("User", back_populates="date_changes")
+    user = relationship("User", back_populates="date_changes", foreign_keys=[user_id])
 
 
 class ImportBatch(Base):
