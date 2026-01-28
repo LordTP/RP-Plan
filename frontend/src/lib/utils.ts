@@ -25,9 +25,9 @@ export function formatDateForInput(dateString: string | null): string {
 
 export function formatCurrency(value: number | null): string {
   if (value === null || value === undefined) return '-';
-  return new Intl.NumberFormat('en-GB', {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'GBP',
+    currency: 'USD',
   }).format(value);
 }
 

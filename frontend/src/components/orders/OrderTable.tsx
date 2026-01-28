@@ -495,9 +495,9 @@ function formatCellValue(value: any, column: ColumnDef): string {
         return value;
       }
     case 'currency':
-      return new Intl.NumberFormat('en-GB', {
+      return new Intl.NumberFormat('en-US', {
         style: 'currency',
-        currency: 'GBP',
+        currency: 'USD',
       }).format(value);
     case 'number':
       return new Intl.NumberFormat('en-GB').format(value);

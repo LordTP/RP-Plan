@@ -61,7 +61,7 @@ src/
 - Add comments
 
 ### Supplier Users
-- Hidden columns: System PO#, Trade Price, Order Value, Order Received, Del to Customer
+- Hidden columns: System PO#, Cost Price, Order Value, Order Received, Del to Customer
 - Can only edit: Date Approved to Prod, Revised Ex-Factory, Actual Del UK
 - Cannot upload Excel
 - Can add comments

@@ -166,7 +166,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'size_5xl', label: '5XL', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   // Financial
   { key: 'total_quantity', label: 'Total', width: 60, editable: false, supplierEditable: false, supplierHidden: false, type: 'number' },
-  { key: 'trade_price', label: 'Trade Price', width: 90, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },
+  { key: 'trade_price', label: 'Cost Price', width: 90, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },
   { key: 'total_order_value', label: 'Order Value', width: 100, editable: false, supplierEditable: false, supplierHidden: true, type: 'currency' },
   // Dates
   { key: 'order_received_date', label: 'Order Received', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'date' },
