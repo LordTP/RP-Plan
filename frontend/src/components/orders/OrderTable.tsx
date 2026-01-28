@@ -341,10 +341,10 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
       )}
       <div ref={tableRef} className="overflow-auto flex-1 cursor-grab" onMouseDown={handleMouseDown}>
         <table
-          className="w-full border-collapse text-xs"
+          className="w-full border-separate border-spacing-0 text-xs"
           style={{ minWidth: `${totalWidth}px` }}
         >
-          <thead className="sticky top-0 z-10">
+          <thead className="sticky top-0 z-20">
             {/* Row 1: Main headers */}
             <tr className="bg-gray-100">
               {visibleColumns.map((column) => {
@@ -414,7 +414,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       ...(isSticky && {
                         position: 'sticky',
                         left: stickyLeftMap[column.key],
-                        zIndex: 20,
+                        zIndex: 30,
                       }),
                     }}
                   >
