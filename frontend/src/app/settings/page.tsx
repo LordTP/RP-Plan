@@ -46,7 +46,7 @@ function SettingsContent() {
     username: '',
     email: '',
     password: '',
-    role: 'supplier' as 'admin' | 'internal' | 'supplier',
+    role: 'supplier' as 'admin' | 'internal' | 'supplier' | 'sourcelab_designer',
     factory_name: '',
   });
 
@@ -60,6 +60,8 @@ function SettingsContent() {
   const [savingColumns, setSavingColumns] = useState(false);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+  const isDesigner = user?.role === 'sourcelab_designer';
+  const isFullInternal = isInternal && !isDesigner;
 
   // Load users, factories, and role settings on mount for internal users
   useEffect(() => {
@@ -190,7 +192,7 @@ function SettingsContent() {
       });
       toast.success('User created successfully');
       setShowAddUser(false);
-      setNewUser({ username: '', email: '', password: '', role: 'supplier', factory_name: '' });
+      setNewUser({ username: '', email: '', password: '', role: 'supplier' as 'admin' | 'internal' | 'supplier' | 'sourcelab_designer', factory_name: '' });
       loadUsers();
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Failed to create user';
@@ -270,13 +272,15 @@ function SettingsContent() {
               <span
                 className={cn(
                   'inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium',
-                  isInternal
+                  isDesigner
+                    ? 'bg-violet-100 text-violet-700'
+                    : isInternal
                     ? 'bg-primary-100 text-primary-700'
                     : 'bg-teal-100 text-teal-700'
                 )}
               >
                 <ShieldCheck className="w-4 h-4" />
-                {isInternal ? 'Internal User' : 'Supplier'}
+                {isDesigner ? 'Designer' : isInternal ? 'Internal User' : 'Supplier'}
               </span>
             </div>
             {user?.factory_name && (
@@ -291,8 +295,8 @@ function SettingsContent() {
           </div>
         </div>
 
-        {/* Permissions Card - Only show for internal users */}
-        {isInternal && (
+        {/* Permissions Card - Show for internal users and designers */}
+        {(isInternal || isDesigner) && (
           <div className="card p-6 mb-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <ShieldCheck className="w-5 h-5" />
@@ -302,35 +306,40 @@ function SettingsContent() {
             <div className="space-y-3">
               <PermissionItem
                 label="View all columns"
-                allowed={isInternal}
+                allowed={isFullInternal}
                 description="Full access to all order data"
               />
               <PermissionItem
                 label="Edit all fields"
-                allowed={isInternal}
+                allowed={isFullInternal}
                 description="Can edit any order field"
               />
               <PermissionItem
                 label="Upload Excel files"
-                allowed={isInternal}
+                allowed={isFullInternal}
                 description="Can import orders from Excel"
               />
               <PermissionItem
                 label="Export to Excel"
-                allowed={true}
+                allowed={isFullInternal}
                 description="Download orders as Excel file"
               />
               <PermissionItem
                 label="Manage users"
-                allowed={isInternal}
+                allowed={isFullInternal}
                 description="Add, edit, and remove user accounts"
+              />
+              <PermissionItem
+                label="Access Design page"
+                allowed={isDesigner || isInternal}
+                description="View and manage design tasks"
               />
             </div>
           </div>
         )}
 
-        {/* User Management Card - Only for Internal/Admin users */}
-        {isInternal && (
+        {/* User Management Card - Only for full Internal/Admin users (not designers) */}
+        {isFullInternal && (
           <div className="card p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -390,11 +399,12 @@ function SettingsContent() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                     <select
                       value={newUser.role}
-                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'internal' | 'supplier' })}
+                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'internal' | 'supplier' | 'sourcelab_designer' })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="supplier">Supplier</option>
                       <option value="internal">Internal</option>
+                      <option value="sourcelab_designer">Designer</option>
                       <option value="admin">Admin</option>
                     </select>
                   </div>
@@ -459,6 +469,7 @@ function SettingsContent() {
                             >
                               <option value="supplier">Supplier</option>
                               <option value="internal">Internal</option>
+                              <option value="sourcelab_designer">Designer</option>
                               <option value="admin">Admin</option>
                             </select>
                           ) : (
@@ -466,9 +477,10 @@ function SettingsContent() {
                               'px-2 py-1 rounded-full text-xs font-medium',
                               u.role === 'admin' ? 'bg-purple-100 text-purple-700' :
                               u.role === 'internal' ? 'bg-primary-100 text-primary-700' :
+                              u.role === 'sourcelab_designer' ? 'bg-violet-100 text-violet-700' :
                               'bg-teal-100 text-teal-700'
                             )}>
-                              {u.role}
+                              {u.role === 'sourcelab_designer' ? 'designer' : u.role}
                             </span>
                           )}
                         </td>
@@ -611,8 +623,8 @@ function SettingsContent() {
           </div>
         )}
 
-        {/* Supplier Column Settings Card - Only for Internal/Admin users */}
-        {isInternal && (
+        {/* Supplier Column Settings Card - Only for full Internal/Admin users (not designers) */}
+        {isFullInternal && (
           <div className="card p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>

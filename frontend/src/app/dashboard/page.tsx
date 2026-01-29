@@ -63,6 +63,7 @@ function DashboardContent() {
   const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+  const isDesigner = user?.role === 'sourcelab_designer';
   const isSupplier = user?.role === 'supplier';
 
   useEffect(() => {
@@ -363,8 +364,8 @@ function DashboardContent() {
           })}
         </div>
 
-        {/* Pending Date Approvals - For Sourcelab users */}
-        {isInternal && pendingApprovals.length > 0 && (
+        {/* Pending Date Approvals - For full internal users (not designers) */}
+        {isInternal && !isDesigner && pendingApprovals.length > 0 && (
           <div className="mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
               <h2 className="text-lg font-semibold text-gray-900">

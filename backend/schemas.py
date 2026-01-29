@@ -11,6 +11,7 @@ class UserRole(str, Enum):
     INTERNAL = "internal"
     SUPPLIER = "supplier"
     ADMIN = "admin"
+    SOURCELAB_DESIGNER = "sourcelab_designer"
 
 
 # User Schemas

@@ -28,7 +28,7 @@ from schemas import (
 )
 from auth import (
     get_password_hash, create_access_token, authenticate_user,
-    get_current_user, get_current_internal_user, get_current_admin_user
+    get_current_user, get_current_internal_user, get_current_full_internal_user, get_current_admin_user
 )
 from excel_utils import import_excel_to_database, export_database_to_excel
 
@@ -246,7 +246,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/users", response_model=List[UserResponse])
 async def get_all_users(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get all users (internal/admin only)"""
@@ -257,7 +257,7 @@ async def get_all_users(
 @app.post("/api/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Create a new user (internal/admin only)"""
@@ -298,7 +298,7 @@ async def create_user(
 async def update_user(
     user_id: int,
     user_data: dict,
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Update a user (internal/admin only)"""
@@ -339,7 +339,7 @@ async def update_user(
 @app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Delete a user (internal/admin only)"""
@@ -1162,7 +1162,7 @@ async def get_role_column_settings(
 async def update_role_column_settings(
     role: str,
     data: dict,
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Update column visibility settings for a role (internal/admin only)"""
@@ -1489,7 +1489,7 @@ async def bulk_add_comment(
 @app.post("/api/excel/preview")
 async def preview_excel_import(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Preview what an Excel import will do without committing changes"""
@@ -1513,7 +1513,7 @@ async def preview_excel_import(
 async def import_excel(
     file: UploadFile = File(...),
     conflict_resolutions: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Import purchase orders from Excel file"""
@@ -1642,7 +1642,7 @@ async def export_excel(
 
 
 @app.get("/api/excel/template")
-async def download_template(current_user: User = Depends(get_current_internal_user)):
+async def download_template(current_user: User = Depends(get_current_full_internal_user)):
     """Download an empty Excel template for imports"""
     # Create empty template with headers
     import openpyxl
@@ -1687,7 +1687,7 @@ async def download_template(current_user: User = Depends(get_current_internal_us
 
 @app.get("/api/excel/last-import")
 async def get_last_import(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get the most recent import batch info (for showing undo button)"""
@@ -1712,7 +1712,7 @@ async def get_last_import(
 
 @app.post("/api/excel/undo")
 async def undo_last_import(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Undo the most recent Excel import"""
@@ -2310,9 +2310,9 @@ async def get_dashboard_stats(
         overdue_query = overdue_query.filter(f)
     overdue_orders = overdue_query.scalar() or 0
 
-    # Total open order value (not shipped/tracked, not cancelled) - internal users only
+    # Total open order value (not shipped/tracked, not cancelled) - internal/admin users only
     total_open_value = 0
-    if current_user.role != UserRole.SUPPLIER:
+    if current_user.role in [UserRole.INTERNAL, UserRole.ADMIN]:
         value_query = db.query(func.sum(PurchaseOrder.total_order_value)).filter(
             PurchaseOrder.tracking_reference.is_(None),
             PurchaseOrder.status != "Cancelled"
@@ -2670,7 +2670,7 @@ async def get_po_summary(
 @app.get("/api/analytics/overview")
 async def get_analytics_overview(
     months: int = Query(6, ge=1, le=24),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get high-level analytics overview"""
@@ -2722,7 +2722,7 @@ async def get_analytics_overview(
 @app.get("/api/analytics/orders-over-time")
 async def get_orders_over_time(
     months: int = Query(12, ge=1, le=24),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get order counts and values by month"""
@@ -2759,7 +2759,7 @@ async def get_orders_over_time(
 
 @app.get("/api/analytics/factory-performance")
 async def get_factory_performance(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get performance metrics by factory"""
@@ -2812,7 +2812,7 @@ async def get_factory_performance(
 @app.get("/api/analytics/customer-analytics")
 async def get_customer_analytics(
     limit: int = Query(10, ge=1, le=50),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get analytics by customer"""
@@ -2847,7 +2847,7 @@ async def get_customer_analytics(
 @app.get("/api/analytics/delivery-performance")
 async def get_delivery_performance(
     months: int = Query(6, ge=1, le=24),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get delivery performance metrics over time"""
@@ -2891,7 +2891,7 @@ async def get_delivery_performance(
 @app.get("/api/analytics/date-changes")
 async def get_date_change_analytics(
     months: int = Query(6, ge=1, le=24),
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get date change analytics"""
@@ -2955,7 +2955,7 @@ async def get_date_change_analytics(
 
 @app.get("/api/analytics/pipeline")
 async def get_order_pipeline(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get order pipeline/funnel data"""
@@ -3005,7 +3005,7 @@ async def get_order_pipeline(
 
 @app.get("/api/analytics/alerts")
 async def get_analytics_alerts(
-    current_user: User = Depends(get_current_internal_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get orders that need attention"""

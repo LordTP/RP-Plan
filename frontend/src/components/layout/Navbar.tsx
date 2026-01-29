@@ -2,16 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3, Palette } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, internalOnly: false },
-  { href: '/orders', label: 'Orders', icon: Table2, internalOnly: false },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3, internalOnly: true },
-  { href: '/import', label: 'Import', icon: FileSpreadsheet, internalOnly: true },
-  { href: '/settings', label: 'Settings', icon: Settings, internalOnly: false },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
+  { href: '/orders', label: 'Orders', icon: Table2, roles: ['admin', 'internal', 'supplier'] },
+  { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
+  { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
+  { href: '/settings', label: 'Settings', icon: Settings, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
 ];
 
 export function Navbar() {
@@ -45,7 +46,7 @@ export function Navbar() {
             {/* Navigation Links */}
             <div className="flex items-center gap-1">
               {navItems
-                .filter((item) => !item.internalOnly || user?.role === 'internal' || user?.role === 'admin')
+                .filter((item) => user?.role && item.roles.includes(user.role))
                 .map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.href;
@@ -79,7 +80,7 @@ export function Navbar() {
               <div className="hidden md:block">
                 <p className="font-medium text-gray-900">{user?.username}</p>
                 <p className="text-xs text-gray-500 capitalize">
-                  {user?.role === 'admin' ? 'Admin' : user?.role === 'internal' ? 'Internal User' : 'Supplier'}
+                  {user?.role === 'admin' ? 'Admin' : user?.role === 'internal' ? 'Internal User' : user?.role === 'sourcelab_designer' ? 'Designer' : 'Supplier'}
                 </p>
               </div>
             </div>
@@ -90,10 +91,12 @@ export function Navbar() {
                 'px-2 py-1 rounded-full text-xs font-medium hidden lg:block',
                 user?.role === 'internal' || user?.role === 'admin'
                   ? 'bg-primary-100 text-primary-700'
+                  : user?.role === 'sourcelab_designer'
+                  ? 'bg-violet-100 text-violet-700'
                   : 'bg-teal-100 text-teal-700'
               )}
             >
-              {user?.role === 'internal' || user?.role === 'admin' ? 'Full Access' : 'Limited Access'}
+              {user?.role === 'internal' || user?.role === 'admin' ? 'Full Access' : user?.role === 'sourcelab_designer' ? 'Designer' : 'Limited Access'}
             </span>
 
             {/* Logout Button */}

@@ -110,11 +110,23 @@ async def get_current_user(
 async def get_current_internal_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """Require internal or admin user"""
-    if current_user.role not in [UserRole.INTERNAL, UserRole.ADMIN]:
+    """Require internal, admin, or sourcelab_designer user"""
+    if current_user.role not in [UserRole.INTERNAL, UserRole.ADMIN, UserRole.SOURCELAB_DESIGNER]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This feature is only available to internal users. Supplier accounts do not have access."
+        )
+    return current_user
+
+
+async def get_current_full_internal_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Require admin or internal user (excludes designers)"""
+    if current_user.role not in [UserRole.INTERNAL, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This feature is only available to full internal users. Designer accounts do not have access."
         )
     return current_user
 

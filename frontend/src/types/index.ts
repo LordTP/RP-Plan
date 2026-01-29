@@ -2,7 +2,7 @@ export interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'internal' | 'supplier';
+  role: 'admin' | 'internal' | 'supplier' | 'sourcelab_designer';
   factory_name?: string;
   is_active: boolean;
   last_login?: string;

@@ -14,6 +14,7 @@ class UserRole(str, enum.Enum):
     INTERNAL = "internal"
     SUPPLIER = "supplier"
     ADMIN = "admin"
+    SOURCELAB_DESIGNER = "sourcelab_designer"
 
 
 class User(Base):
