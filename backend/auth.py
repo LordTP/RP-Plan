@@ -14,7 +14,19 @@ from database import get_db
 from models import User, UserRole
 
 # Security configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production-abc123xyz789")
+_secret = os.getenv("SECRET_KEY", "")
+if not _secret or _secret in ("change-me-in-production", "your-secret-key-change-this-in-production-abc123xyz789"):
+    import warnings
+    import secrets
+    _secret = secrets.token_hex(32)
+    warnings.warn(
+        "SECRET_KEY is not set or uses a default value. "
+        "A random key has been generated for this session. "
+        "Set SECRET_KEY in your environment for production.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+SECRET_KEY = _secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour, refreshed on each request
 

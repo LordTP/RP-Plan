@@ -84,7 +84,7 @@ def parse_date(value: Any) -> Optional[datetime]:
         for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y-%m-%d %H:%M:%S"]:
             try:
                 return datetime.strptime(value, fmt)
-            except:
+            except (ValueError, TypeError):
                 continue
     return None
 
@@ -107,7 +107,7 @@ def parse_int(value: Any) -> Optional[int]:
         return None
     try:
         return int(float(value))
-    except:
+    except (ValueError, TypeError):
         return None
 
 
@@ -120,7 +120,7 @@ def parse_float(value: Any) -> Optional[float]:
         if isinstance(value, str):
             value = value.replace('$', '').replace('£', '').replace(',', '').strip()
         return float(value)
-    except:
+    except (ValueError, TypeError):
         return None
 
 
@@ -1150,7 +1150,7 @@ def _export_database_to_excel_legacy(db: Session, factory_filter: str = None, is
             try:
                 if cell.value and not isinstance(cell, openpyxl.cell.cell.MergedCell):
                     max_length = max(max_length, len(str(cell.value)))
-            except:
+            except Exception:
                 pass
         adjusted_width = min(max_length + 2, 40)
         ws.column_dimensions[column].width = max(adjusted_width, 10)

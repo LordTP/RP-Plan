@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 import json
 import os
 
+from collections import defaultdict
+import time as _time
+
 from database import get_db, init_db
 from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange
 from schemas import (
@@ -89,10 +92,34 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
+
+
+# Simple in-memory rate limiter for login attempts
+class LoginRateLimiter:
+    """Limits login attempts per IP address to prevent brute-force attacks."""
+    def __init__(self, max_attempts: int = 5, window_seconds: int = 300):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._attempts: dict[str, list[float]] = defaultdict(list)
+
+    def is_rate_limited(self, key: str) -> bool:
+        now = _time.time()
+        cutoff = now - self.window_seconds
+        # Prune old attempts
+        self._attempts[key] = [t for t in self._attempts[key] if t > cutoff]
+        return len(self._attempts[key]) >= self.max_attempts
+
+    def record_attempt(self, key: str) -> None:
+        self._attempts[key].append(_time.time())
+
+    def reset(self, key: str) -> None:
+        self._attempts.pop(key, None)
+
+login_limiter = LoginRateLimiter(max_attempts=5, window_seconds=300)
 
 
 # ============================================================================
@@ -129,9 +156,10 @@ async def health_check():
 @app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Register a new user (admin only in production)"""
+    """Register a new user (admin only)"""
     # Check if username exists
     existing_user = db.query(User).filter(User.username == user_data.username).first()
     if existing_user:
@@ -167,17 +195,30 @@ async def register_user(
 @app.post("/api/auth/login", response_model=Token)
 async def login(
     login_data: UserLogin,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Login and receive JWT token"""
+    # Rate limit by IP address
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    if login_limiter.is_rate_limited(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait 5 minutes before trying again."
+        )
+
     user = authenticate_user(db, login_data.username, login_data.password)
-    
+
     if not user:
+        login_limiter.record_attempt(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Login failed. Please check your username and password are correct. Passwords are case-sensitive."
         )
     
+    # Successful login — reset rate limiter for this IP
+    login_limiter.reset(client_ip)
+
     # Preserve previous login time, then update last login
     user.previous_login = user.last_login
     user.last_login = datetime.utcnow()
@@ -269,13 +310,23 @@ async def update_user(
             detail=f"User with ID {user_id} was not found. They may have been deleted."
         )
 
-    # Update allowed fields
+    # Only admins can change roles or deactivate users
     if 'role' in user_data:
+        if current_user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can change user roles."
+            )
         user.role = UserRole(user_data['role'])
+    if 'is_active' in user_data:
+        if current_user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can activate or deactivate users."
+            )
+        user.is_active = user_data['is_active']
     if 'factory_name' in user_data:
         user.factory_name = user_data['factory_name']
-    if 'is_active' in user_data:
-        user.is_active = user_data['is_active']
     if 'password' in user_data and user_data['password']:
         user.hashed_password = get_password_hash(user_data['password'])
 
@@ -352,11 +403,12 @@ async def get_orders(
 
     # Apply filters
     if search:
+        search_pattern = f"%{search}%"
         query = query.filter(
             or_(
-                PurchaseOrder.po_number.ilike(f"%{search}%"),
-                PurchaseOrder.style_code.ilike(f"%{search}%"),
-                PurchaseOrder.customer.ilike(f"%{search}%")
+                PurchaseOrder.po_number.ilike(search_pattern),
+                PurchaseOrder.style_code.ilike(search_pattern),
+                PurchaseOrder.customer.ilike(search_pattern)
             )
         )
 
@@ -371,10 +423,11 @@ async def get_orders(
 
     if po_number:
         # Search both po_number and customer_po_number
+        po_pattern = f"%{po_number}%"
         query = query.filter(
             or_(
-                PurchaseOrder.po_number.ilike(f"%{po_number}%"),
-                PurchaseOrder.customer_po_number.ilike(f"%{po_number}%")
+                PurchaseOrder.po_number.ilike(po_pattern),
+                PurchaseOrder.customer_po_number.ilike(po_pattern)
             )
         )
 
@@ -616,7 +669,7 @@ async def update_order(
                 if isinstance(new_value_str, str):
                     try:
                         new_value = datetime.fromisoformat(new_value_str.replace('Z', '+00:00'))
-                    except:
+                    except (ValueError, TypeError):
                         continue
                 elif isinstance(new_value_str, datetime):
                     new_value = new_value_str
@@ -686,54 +739,59 @@ async def update_order(
                 detail="A tracking reference is required when setting status to Shipped"
             )
 
-        # Fields to skip tracking (internal/meta fields)
-        skip_tracking = ['id', 'created_at', 'updated_at']
+        # Only allow updating known business fields — block id, metadata, and relationships
+        ALLOWED_UPDATE_FIELDS = {
+            'po_number', 'system_po_number', 'is_active', 'customer', 'china_orderbook_ref',
+            'customer_po_number', 'season', 'factory', 'terms', 'sales_person',
+            'style_code', 'customer_style_code', 'description', 'colour', 'gender',
+            'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
+            'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+            'total_quantity', 'trade_price', 'total_order_value',
+            'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
+            'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
+            'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
+            'eta_to_uk', 'actual_date_del_to_uk', 'eta_to_customer', 'actual_date_del_to_customer',
+            'status', 'is_late', 'tracking_reference',
+        }
+
+        # Fields to skip change tracking (non-business fields)
+        skip_tracking = {'id', 'created_at', 'updated_at', 'import_batch_id'}
 
         # Date fields that need parsing
-        date_fields = [
+        date_fields = {
             'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
             'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
             'eta_to_uk', 'actual_date_del_to_uk', 'eta_to_customer', 'actual_date_del_to_customer'
-        ]
-
-        print(f"[UPDATE ORDER] Order ID: {order_id}, Data received: {order_data}")
+        }
 
         for key, value in order_data.items():
+            if key not in ALLOWED_UPDATE_FIELDS:
+                continue
             if value is not None and hasattr(order, key):
                 old_value = getattr(order, key)
-                print(f"[UPDATE ORDER] Field: {key}, Old: {old_value} ({type(old_value)}), New: {value} ({type(value)})")
 
                 # Parse datetime for date fields if it's a string
                 if (key in date_fields or 'date' in key.lower()) and isinstance(value, str) and value:
                     try:
-                        # Try ISO format first (with time)
                         value = datetime.fromisoformat(value.replace('Z', '+00:00'))
                     except ValueError:
                         try:
-                            # Try date-only format (yyyy-MM-dd)
                             value = datetime.strptime(value, '%Y-%m-%d')
                         except ValueError:
                             try:
-                                # Try UK date format (dd/MM/yyyy)
                                 value = datetime.strptime(value, '%d/%m/%Y')
                             except ValueError:
-                                print(f"Could not parse date value: {value} for field {key}")
                                 continue  # Skip this field if we can't parse the date
 
-                # Track changes for ALL fields (not just dates)
+                # Track changes for all business fields
                 values_different = old_value != value
-                print(f"[UPDATE ORDER] Comparing {key}: {old_value} != {value} = {values_different}")
 
                 if key not in skip_tracking and values_different:
-                    # Determine source based on role (not supplier = Sourcelab)
                     role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
                     change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
 
-                    # Convert values to strings for storage
                     old_value_str = str(old_value) if old_value is not None else None
                     new_value_str = str(value) if value is not None else None
-
-                    print(f"[UPDATE ORDER] Tracking change: {key} from '{old_value_str}' to '{new_value_str}'")
 
                     field_change = DateChangeHistory(
                         po_id=order.id,
@@ -890,13 +948,11 @@ async def add_comment(
     # Create comment - mark as read by the user type who created it
     # Get role as string for comparison (handles both enum and string)
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    print(f"DEBUG add_comment: user={current_user.username}, role={current_user.role}, role_str={role_str}")
 
     # Check if user is internal/admin (not a supplier)
     is_internal = role_str != 'supplier'
     # Tag as "Supplier" for factory/supplier users, "Sourcelab" for internal/admin
     source_tag = "Sourcelab" if is_internal else "Supplier"
-    print(f"DEBUG: role_str={role_str}, is_internal={is_internal}, source_tag={source_tag}")
     new_comment = Comment(
         po_id=order_id,
         user_id=current_user.id,
@@ -1579,10 +1635,9 @@ async def export_excel(
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
-        print(f"Export error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Export failed: {str(e)}"
+            detail="Export failed. Please try again or contact an administrator."
         )
 
 
@@ -2162,21 +2217,46 @@ async def cancel_pending_change(
 # ============================================================================
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time updates"""
+async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(None)):
+    """WebSocket endpoint for real-time updates (requires valid JWT token)"""
+    # Verify authentication before accepting the connection
+    if not token:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+
+    try:
+        from auth import decode_access_token
+        payload = decode_access_token(token)
+        username = payload.get("sub")
+        if not username:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+        # Verify user still exists and is active
+        db = next(get_db())
+        try:
+            user = db.query(User).filter(User.username == username).first()
+            if not user or not user.is_active:
+                await websocket.close(code=4001, reason="User not found or inactive")
+                return
+        finally:
+            db.close()
+    except Exception:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
     await manager.connect(websocket)
-    
+
     try:
         while True:
             # Keep connection alive and listen for messages
             data = await websocket.receive_text()
-            
+
             # Echo back (or handle client messages if needed)
             await websocket.send_json({
                 "type": "pong",
                 "timestamp": datetime.utcnow().isoformat()
             })
-    
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

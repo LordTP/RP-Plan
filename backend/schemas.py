@@ -22,7 +22,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=8, max_length=128, description="Password must be at least 8 characters")
 
 
 class UserLogin(BaseModel):
@@ -204,7 +204,7 @@ class CommentBase(BaseModel):
 
 class CommentCreate(BaseModel):
     """Comment creation - po_id comes from URL path, not body"""
-    comment_text: str
+    comment_text: str = Field(..., min_length=1, max_length=5000)
     source: Optional[str] = None
 
 
