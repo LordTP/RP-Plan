@@ -51,17 +51,40 @@
     @apply bg-gray-50 font-semibold text-gray-700 text-xs uppercase tracking-wider;
   }
 
-  .sidebar {
-    @apply fixed right-0 top-0 h-full bg-white shadow-xl border-l border-gray-200 z-50 transform transition-transform duration-300;
-  }
+}
 
-  .sidebar-open {
-    @apply translate-x-0;
-  }
+/* Sidebar slide animation — outside @layer so it can't be overridden */
+.sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100%;
+  background: white;
+  border-left: 1px solid #e5e7eb;
+  z-index: 50;
+  will-change: transform;
+  transition: transform 550ms cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow 550ms cubic-bezier(0.32, 0.72, 0, 1);
+}
 
-  .sidebar-closed {
-    @apply translate-x-full;
-  }
+.sidebar-open {
+  transform: translateX(0) !important;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.1), -2px 0 8px rgba(0, 0, 0, 0.05);
+}
+
+.sidebar-closed {
+  transform: translateX(100%) !important;
+  box-shadow: none;
+}
+
+.sidebar-open > * {
+  opacity: 1;
+  transition: opacity 350ms ease 150ms;
+}
+
+.sidebar-closed > * {
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
 /* Scrollbar styling */

@@ -1893,6 +1893,39 @@ async def get_rejected_approvals(
     return {"rejected_changes": result}
 
 
+@app.post("/api/orders/batch-pending-changes")
+async def get_batch_pending_changes(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get pending date changes for multiple orders in one request"""
+    order_ids = body.get("order_ids", [])
+    if not order_ids:
+        return {"pending_changes": {}}
+
+    pending = db.query(PendingDateChange).filter(
+        PendingDateChange.order_id.in_(order_ids),
+        PendingDateChange.status == "pending"
+    ).all()
+
+    result: dict = {}
+    for p in pending:
+        if p.order_id not in result:
+            result[p.order_id] = []
+        result[p.order_id].append({
+            "id": p.id,
+            "field_name": p.field_name,
+            "current_value": p.current_value,
+            "proposed_value": p.proposed_value,
+            "reason": p.reason,
+            "submitted_by": p.submitted_by_username,
+            "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None
+        })
+
+    return {"pending_changes": result}
+
+
 @app.get("/api/orders/{order_id}/pending-changes")
 async def get_order_pending_changes(
     order_id: int,
@@ -2375,6 +2408,81 @@ async def get_dashboard_stats(
         "user_role": current_user.role.value,
         "factory": current_user.factory_name
     }
+
+
+@app.get("/api/stats/recent-activity")
+async def get_recent_activity(
+    limit: int = 15,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a unified recent activity feed combining field changes and comments"""
+    base_filter = []
+    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+
+    # Get recent field changes (excluding import batches for cleaner feed)
+    changes_query = db.query(DateChangeHistory, PurchaseOrder, User).join(
+        PurchaseOrder, DateChangeHistory.po_id == PurchaseOrder.id
+    ).join(
+        User, DateChangeHistory.user_id == User.id
+    ).filter(
+        DateChangeHistory.import_batch_id.is_(None)
+    )
+    for f in base_filter:
+        changes_query = changes_query.filter(f)
+    recent_changes = changes_query.order_by(
+        DateChangeHistory.created_at.desc()
+    ).limit(limit).all()
+
+    # Get recent comments
+    comments_query = db.query(Comment, PurchaseOrder, User).join(
+        PurchaseOrder, Comment.po_id == PurchaseOrder.id
+    ).join(
+        User, Comment.user_id == User.id
+    )
+    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+        comments_query = comments_query.filter(
+            PurchaseOrder.factory == current_user.factory_name
+        )
+    recent_comments = comments_query.order_by(
+        Comment.created_at.desc()
+    ).limit(limit).all()
+
+    # Merge into unified feed
+    events = []
+
+    for change, order, user in recent_changes:
+        events.append({
+            "type": "field_change",
+            "username": user.username,
+            "user_initials": user.username[:2].upper(),
+            "po_number": order.po_number,
+            "style_code": order.style_code,
+            "field_name": change.field_name,
+            "old_value": change.old_value,
+            "new_value": change.new_value,
+            "source": change.source,
+            "created_at": change.created_at.isoformat() if change.created_at else None,
+        })
+
+    for comment, order, user in recent_comments:
+        events.append({
+            "type": "comment",
+            "username": user.username,
+            "user_initials": user.username[:2].upper(),
+            "po_number": order.po_number,
+            "style_code": order.style_code,
+            "comment_text": comment.comment_text[:80] + ("..." if len(comment.comment_text) > 80 else ""),
+            "source": comment.source,
+            "created_at": comment.created_at.isoformat() if comment.created_at else None,
+        })
+
+    # Sort by created_at descending and take top N
+    events.sort(key=lambda e: e.get("created_at") or "", reverse=True)
+    events = events[:limit]
+
+    return {"events": events}
 
 
 @app.get("/api/stats/activity-summary")

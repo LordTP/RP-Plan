@@ -514,6 +514,20 @@ export interface ActivitySummary {
   };
 }
 
+export interface RecentActivityEvent {
+  type: 'field_change' | 'comment';
+  username: string;
+  user_initials: string;
+  po_number: string;
+  style_code: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  comment_text?: string;
+  source: string;
+  created_at: string | null;
+}
+
 export interface MissedActivity {
   since: string | null;
   until: string | null;
@@ -574,6 +588,13 @@ export const statsApi = {
 
   getMissedActivity: async (): Promise<MissedActivity> => {
     const response = await api.get<MissedActivity>('/api/stats/missed-activity');
+    return response.data;
+  },
+
+  getRecentActivity: async (limit: number = 15): Promise<{ events: RecentActivityEvent[] }> => {
+    const response = await api.get<{ events: RecentActivityEvent[] }>('/api/stats/recent-activity', {
+      params: { limit },
+    });
     return response.data;
   },
 };
@@ -707,6 +728,21 @@ export const approvalsApi = {
     }>;
   }> => {
     const response = await api.get(`/api/orders/${orderId}/pending-changes`);
+    return response.data;
+  },
+
+  getBatchPendingChanges: async (orderIds: number[]): Promise<{
+    pending_changes: Record<number, Array<{
+      id: number;
+      field_name: string;
+      current_value: string | null;
+      proposed_value: string | null;
+      reason: string;
+      submitted_by: string;
+      submitted_at: string | null;
+    }>>;
+  }> => {
+    const response = await api.post('/api/orders/batch-pending-changes', { order_ids: orderIds });
     return response.data;
   },
 

@@ -19,7 +19,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Navbar } from '@/components/layout/Navbar';
+import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
 import { excelApi, ImportPreviewResult } from '@/lib/api';
@@ -38,9 +38,8 @@ function ImportGuard() {
 
   if (user?.role === 'sourcelab_designer') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="flex items-center justify-center h-[calc(100vh-64px)]">
+      <AppShell title="Import">
+        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
           <div className="text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileSpreadsheet className="w-8 h-8 text-red-600" />
@@ -49,7 +48,7 @@ function ImportGuard() {
             <p className="text-gray-500">Designer accounts do not have access to the Import page.</p>
           </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
@@ -233,27 +232,18 @@ function ImportContent() {
 
   if (!isInternal) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <main className="max-w-4xl mx-auto px-4 py-12 text-center">
+      <AppShell title="Import">
+        <div className="max-w-4xl mx-auto py-12 text-center">
           <AlertCircle className="w-16 h-16 mx-auto text-gray-300 mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
           <p className="text-gray-500">Import/Export is only available for internal users.</p>
-        </main>
-      </div>
+        </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Import / Export</h1>
-          <p className="text-gray-500 mt-1">Import orders from Excel or export your data</p>
-        </div>
-
+    <AppShell title="Import" subtitle="Import orders from Excel or export your data">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Upload & Export */}
           <div className="space-y-6">
@@ -815,7 +805,6 @@ function ImportContent() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+    </AppShell>
   );
 }

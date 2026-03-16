@@ -16,7 +16,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Navbar } from '@/components/layout/Navbar';
+import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
 import { usersApi, factoriesApi, settingsApi, ColumnSetting } from '@/lib/api';
@@ -245,12 +245,7 @@ function SettingsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-
-      <main className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-8">Settings</h1>
-
+    <AppShell title="Settings">
         {/* User Info Card */}
         <div className="card p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -717,8 +712,7 @@ function SettingsContent() {
           </div>
         )}
 
-      </main>
-    </div>
+    </AppShell>
   );
 }
 

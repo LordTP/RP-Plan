@@ -136,30 +136,30 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     }
   }, [isSupplier]);
 
-  // Fetch pending changes for visible orders
+  // Fetch pending changes for visible orders (single batch request)
   useEffect(() => {
     const fetchPendingChanges = async () => {
-      const pendingMap: typeof pendingChanges = {};
-      for (const order of orders) {
-        try {
-          const result = await approvalsApi.getOrderPendingChanges(order.id);
-          if (result.pending_changes.length > 0) {
-            pendingMap[order.id] = {};
-            for (const change of result.pending_changes) {
-              pendingMap[order.id][change.field_name] = {
-                current_value: change.current_value,
-                proposed_value: change.proposed_value,
-                reason: change.reason,
-                submitted_by: change.submitted_by,
-                submitted_at: change.submitted_at,
-              };
-            }
+      try {
+        const orderIds = orders.map(o => o.id);
+        const result = await approvalsApi.getBatchPendingChanges(orderIds);
+        const pendingMap: typeof pendingChanges = {};
+        for (const [orderIdStr, changes] of Object.entries(result.pending_changes)) {
+          const orderId = Number(orderIdStr);
+          pendingMap[orderId] = {};
+          for (const change of changes) {
+            pendingMap[orderId][change.field_name] = {
+              current_value: change.current_value,
+              proposed_value: change.proposed_value,
+              reason: change.reason,
+              submitted_by: change.submitted_by,
+              submitted_at: change.submitted_at,
+            };
           }
-        } catch (error) {
-          console.error(`Failed to fetch pending changes for order ${order.id}:`, error);
         }
+        setPendingChanges(pendingMap);
+      } catch (error) {
+        console.error('Failed to fetch pending changes:', error);
       }
-      setPendingChanges(pendingMap);
     };
 
     if (orders.length > 0 && !isDashboard) {
@@ -210,14 +210,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const visibleColumns = getVisibleColumns();
 
   // Compute sticky left offsets for pinned columns
-  // po_number sticks at left:0; style_code sticks at left:<po_number width>
-  // so it scrolls normally until it bumps into the PO# column, then pins beside it
+  // Comment icon (32px) sticks at left:0, po_number at 32, style_code at 32+po_width
+  const COMMENT_COL_WIDTH = 32;
   const STICKY_COLUMNS = ['po_number', 'style_code'] as const;
   const stickyLeftMap: Record<string, number> = {};
   {
     const poCol = visibleColumns.find(c => c.key === 'po_number');
-    stickyLeftMap['po_number'] = 0;
-    stickyLeftMap['style_code'] = poCol ? poCol.width : 0;
+    stickyLeftMap['po_number'] = COMMENT_COL_WIDTH;
+    stickyLeftMap['style_code'] = COMMENT_COL_WIDTH + (poCol ? poCol.width : 0);
   }
   const lastStickyKey = (() => {
     for (let i = visibleColumns.length - 1; i >= 0; i--) {
@@ -312,8 +312,8 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     ordersApi.markCommentsRead(order.id).catch(console.error);
   };
 
-  // Calculate total table width
-  const totalWidth = visibleColumns.reduce((sum, col) => sum + col.width, 0) + 60;
+  // Calculate total table width (includes comment col at start)
+  const totalWidth = COMMENT_COL_WIDTH + visibleColumns.reduce((sum, col) => sum + col.width, 0);
 
   // Total header rows = 1 main + 13 reference = 14 (only if we have size columns AND showing reference)
   const headerRowCount = (hasSizeColumns && showSizeReference) ? SIZE_REFERENCE.length + 1 : 1;
@@ -347,6 +347,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           <thead className="sticky top-0 z-20">
             {/* Row 1: Main headers */}
             <tr className="bg-gray-100">
+              {/* Comment column - first, sticky */}
+              <th
+                rowSpan={showSizeReference ? headerRowCount : 1}
+                className="px-0.5 py-1 text-center border border-gray-300 bg-gray-100 align-top"
+                style={{ position: 'sticky', left: 0, zIndex: 30, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
+              >
+                <MessageSquare className="w-3 h-3 mx-auto text-gray-400" />
+              </th>
               {visibleColumns.map((column) => {
                 const isSizeCol = sizeColumns.includes(column.key);
                 const isFirstSizeCol = column.key === 'size_2xs';
@@ -422,10 +430,6 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                   </th>
                 );
               })}
-              {/* Actions column */}
-              <th rowSpan={showSizeReference ? headerRowCount : 1} className="px-1 py-1 text-center border border-gray-300 w-[50px] bg-gray-100 align-top">
-                <MessageSquare className="w-3 h-3 mx-auto" />
-              </th>
             </tr>
 
             {/* Size reference mapping - only show when expanded */}
@@ -464,7 +468,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
               <tr>
                 <td
                   colSpan={visibleColumns.length + 1}
-                  className="px-3 py-12 text-center text-gray-500"
+                  className="px-3 py-8 text-center text-gray-400 text-xs"
                 >
                   No orders found
                 </td>
@@ -478,9 +482,33 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                   key={order.id}
                   className={cn(
                     "table-row border-b border-gray-100 hover:bg-gray-50",
-                    orderChangedFields.length > 0 && "!bg-green-50"
+                    orderChangedFields.length > 0 && "!bg-green-50",
+                    order.unread_comment_count && order.unread_comment_count > 0 && "!border-l-2 !border-l-primary-400"
                   )}
                 >
+                  {/* Comment cell - first, sticky */}
+                  <td
+                    className="px-0.5 py-1 text-center border border-gray-100 bg-white"
+                    style={{ position: 'sticky', left: 0, zIndex: 10, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
+                  >
+                    <button
+                      onClick={() => handleRowClick(order)}
+                      className={cn(
+                        "p-1 rounded transition-colors relative mx-auto block",
+                        order.unread_comment_count && order.unread_comment_count > 0
+                          ? "text-primary-600 bg-primary-50 hover:bg-primary-100"
+                          : order.comment_count && order.comment_count > 0
+                          ? "text-gray-500 hover:text-primary-600 hover:bg-primary-50"
+                          : "text-gray-300 hover:text-gray-500 hover:bg-gray-50"
+                      )}
+                      title={order.unread_comment_count ? `${order.unread_comment_count} unread` : order.comment_count ? `${order.comment_count} comments` : 'Add comment'}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      {order.unread_comment_count && order.unread_comment_count > 0 && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary-500 rounded-full" />
+                      )}
+                    </button>
+                  </td>
                   {visibleColumns.map((column) => {
                     const isCellChanged = orderChangedFields.includes(column.key);
 
@@ -570,31 +598,6 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                     );
                   })}
 
-                  {/* Actions/Comments column */}
-                  <td className="px-1 py-1 text-center border border-gray-100">
-                    <button
-                      onClick={() => handleRowClick(order)}
-                      className={cn(
-                        "p-1 rounded transition-colors relative",
-                        order.unread_comment_count && order.unread_comment_count > 0
-                          ? "text-red-600 bg-red-50 hover:bg-red-100"
-                          : "text-gray-400 hover:text-primary-600 hover:bg-primary-50"
-                      )}
-                      title={order.unread_comment_count ? `${order.unread_comment_count} unread` : 'View comments'}
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      {order.comment_count && order.comment_count > 0 && (
-                        <span className={cn(
-                          "absolute -top-1 -right-1 text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center",
-                          order.unread_comment_count && order.unread_comment_count > 0
-                            ? "bg-red-500 text-white"
-                            : "bg-gray-300 text-gray-700"
-                        )}>
-                          {order.comment_count}
-                        </span>
-                      )}
-                    </button>
-                  </td>
                 </tr>
                 );
               })

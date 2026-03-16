@@ -75,6 +75,8 @@ export interface Comment {
   username: string;
   comment_text: string;
   source: string;
+  read_by_internal: boolean;
+  read_by_supplier: boolean;
   created_at: string;
 }
 

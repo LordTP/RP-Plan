@@ -12,7 +12,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Navbar } from '@/components/layout/Navbar';
+import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
@@ -38,9 +38,8 @@ function OrdersGuard() {
 
   if (user?.role === 'sourcelab_designer') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="flex items-center justify-center h-[calc(100vh-64px)]">
+      <AppShell title="Orders">
+        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
           <div className="text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <X className="w-8 h-8 text-red-600" />
@@ -49,7 +48,7 @@ function OrdersGuard() {
             <p className="text-gray-500">Designer accounts do not have access to the Orders page.</p>
           </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
@@ -58,15 +57,14 @@ function OrdersGuard() {
 
 function OrdersLoading() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <div className="flex items-center justify-center h-[calc(100vh-64px)]">
+    <AppShell title="Orders">
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-500">Loading orders...</p>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 
@@ -369,10 +367,8 @@ function OrdersContent() {
   };
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      <Navbar />
-
-      <main className="flex-1 max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden flex flex-col">
+    <AppShell title="Orders">
+      <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 116px)' }}>
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
@@ -400,6 +396,14 @@ function OrdersContent() {
                   {[filters.po_number, filters.style_code, filters.factory, filters.customer, filters.status].filter(Boolean).length}
                 </span>
               )}
+            </button>
+
+            {/* Try v2 */}
+            <button
+              onClick={() => router.push('/orders-v2')}
+              className="btn-secondary flex items-center gap-2 text-primary-600 border-primary-200 bg-primary-50 hover:bg-primary-100"
+            >
+              Try v2
             </button>
 
             {/* Refresh */}
@@ -727,7 +731,7 @@ function OrdersContent() {
             Showing {orders.length} of {totalOrders} order lines
           </div>
         )}
-      </main>
+      </div>
 
       {/* Comment Sidebar */}
       <CommentSidebar />
@@ -744,7 +748,7 @@ function OrdersContent() {
           setTrackingModalOrder(null);
         }}
       />
-    </div>
+    </AppShell>
   );
 }
 
