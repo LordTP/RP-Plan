@@ -60,7 +60,10 @@ class PurchaseOrder(Base):
     colour = Column(String(100), nullable=True)
     gender = Column(String(50), nullable=True)
     
-    # Sizes (stored as JSON string or individual columns)
+    # Product details (continued)
+    direct_repeat_new = Column(String(50), nullable=True)  # DIRECT REPEAT/ NEW?
+
+    # Sizes (stored as individual columns)
     size_2xs = Column(Integer, nullable=True)
     size_xs = Column(Integer, nullable=True)
     size_s = Column(Integer, nullable=True)
@@ -71,30 +74,73 @@ class PurchaseOrder(Base):
     size_3xl = Column(Integer, nullable=True)
     size_4xl = Column(Integer, nullable=True)
     size_5xl = Column(Integer, nullable=True)
-    
+
     # Financial
     total_quantity = Column(Integer, nullable=True)
-    trade_price = Column(Float, nullable=True)
-    total_order_value = Column(Float, nullable=True)
-    
-    # Dates
+    trade_price = Column(Float, nullable=True)  # FACTORY COST PRICE
+    total_order_value = Column(Float, nullable=True)  # TOTAL ORDER COST
+
+    # Dates - Order & Factory
     order_received_date = Column(DateTime, nullable=True)
     order_sent_to_factory_date = Column(DateTime, nullable=True)
-    original_po_ex_factory = Column(DateTime, nullable=True)
-    date_approved_to_production = Column(DateTime, nullable=True)
-    revised_po_ex_factory = Column(DateTime, nullable=True)
-    original_del_date_to_customer = Column(DateTime, nullable=True)
-    customer_po_open_month = Column(String(20), nullable=True)
-    expected_dispatch_arrive_uk_month = Column(String(20), nullable=True)
-    eta_to_uk = Column(DateTime, nullable=True)
-    actual_date_del_to_uk = Column(DateTime, nullable=True)
-    eta_to_customer = Column(DateTime, nullable=True)
-    actual_date_del_to_customer = Column(DateTime, nullable=True)
-    
-    # Status
-    status = Column(String(50), nullable=True)  # Active, On Hold, Cancelled, etc.
+    tech_packs_sent_to_factory = Column(DateTime, nullable=True)  # DESIGN
+    specs_sent_to_factory = Column(DateTime, nullable=True)  # PRODUCT
+    barcodes_sent_to_factory = Column(DateTime, nullable=True)  # PRODUCT
+    original_po_ex_factory = Column(DateTime, nullable=True)  # REQUESTED EX-FACTORY
+    factory_confirmed_ex_factory = Column(DateTime, nullable=True)  # FACTORY CONFIRMED EX-FACTORY (PRIME)
+
+    # Samples - Fit
+    fit_sample_required = Column(String(10), nullable=True)  # Y/N
+    fit_sample_status = Column(String(50), nullable=True)  # AUTO-CALC
+    fit_sample_received = Column(DateTime, nullable=True)
+    fit_sample_approved = Column(DateTime, nullable=True)
+
+    # Samples - Strike Off
+    strike_off_status = Column(String(50), nullable=True)  # AUTO-CALC
+    strike_off_received = Column(DateTime, nullable=True)
+    strike_off_approved = Column(DateTime, nullable=True)
+
+    # Samples - Lab Dip
+    lab_dip_status = Column(String(50), nullable=True)  # AUTO-CALC
+    lab_dip_received = Column(DateTime, nullable=True)
+    lab_dip_approved = Column(DateTime, nullable=True)
+
+    # Samples - PPS
+    pps_status = Column(String(50), nullable=True)  # AUTO-CALC
+    pps_received = Column(DateTime, nullable=True)
+    pps_sent_to_customer = Column(DateTime, nullable=True)  # PPS Sent to Customer by SL
+    pps_approved = Column(DateTime, nullable=True)
+
+    # Samples - Other
+    photo_sample_received = Column(DateTime, nullable=True)
+    ex_factory_from_pp_approval = Column(DateTime, nullable=True)  # EX FACTORY BASED FROM PP APPROVAL (auto: PP approval + 4 weeks)
+    revised_po_ex_factory = Column(DateTime, nullable=True)  # REVISED EX-FACTORY
+    shipment_sample_received = Column(DateTime, nullable=True)
+
+    # Delivery dates
+    original_del_date_to_customer = Column(DateTime, nullable=True)  # CUSTOMER REQUESTED DELIVERY DATE
+    eta_to_uk = Column(DateTime, nullable=True)  # ETA TO UK (auto: revised ex-factory + 60 days)
+    eta_to_customer = Column(DateTime, nullable=True)  # ETA TO CUSTOMER (auto: revised ex-factory + 5 days)
+    customer_po_open_month = Column(String(20), nullable=True)  # AUTO-CALC
+    expected_dispatch_arrive_uk_month = Column(String(20), nullable=True)  # EXPECTED CUSTOMER DELIVERY MONTH (AUTO-CALC)
+
+    # Shipping / Vessel
+    fcl_lcl = Column(String(20), nullable=True)  # FCL / LCL
+    vessel_name = Column(String(100), nullable=True)
+    vessel_etd = Column(DateTime, nullable=True)  # VESSEL ETD
+    vessel_eta_to_port = Column(DateTime, nullable=True)  # VESSEL ETA TO PORT
+    revised_vessel_eta_to_port = Column(DateTime, nullable=True)  # REVISED VESSEL ETA TO PORT
+    estimated_del_to_customer = Column(DateTime, nullable=True)  # AUTO-CALC (revised vessel ETA + 5 or 7)
+
+    # Legacy fields (kept for data preservation, hidden from UI)
+    date_approved_to_production = Column(DateTime, nullable=True)  # LEGACY: replaced by factory_confirmed_ex_factory
+    actual_date_del_to_uk = Column(DateTime, nullable=True)  # LEGACY: removed in new headers
+    actual_date_del_to_customer = Column(DateTime, nullable=True)  # LEGACY: removed in new headers
+
+    # Status (internal-only, not in new CP headers but used by app logic)
+    status = Column(String(50), nullable=True)
     is_late = Column(Boolean, default=False)
-    
+
     # Shipping
     tracking_reference = Column(String(100), nullable=True, index=True)
 

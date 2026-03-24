@@ -102,4 +102,46 @@ def init_db():
                 conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN tracking_reference VARCHAR(100)"))
             print("✓ Added tracking_reference column to purchase_orders table")
 
+    # Migrate: add new CP HEADERS columns to purchase_orders (2026-03-24)
+    if 'purchase_orders' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('purchase_orders')]
+        new_cols = [
+            ("direct_repeat_new", "VARCHAR(50)"),
+            ("tech_packs_sent_to_factory", "TIMESTAMP"),
+            ("specs_sent_to_factory", "TIMESTAMP"),
+            ("barcodes_sent_to_factory", "TIMESTAMP"),
+            ("factory_confirmed_ex_factory", "TIMESTAMP"),
+            ("fit_sample_required", "VARCHAR(10)"),
+            ("fit_sample_status", "VARCHAR(50)"),
+            ("fit_sample_received", "TIMESTAMP"),
+            ("fit_sample_approved", "TIMESTAMP"),
+            ("strike_off_status", "VARCHAR(50)"),
+            ("strike_off_received", "TIMESTAMP"),
+            ("strike_off_approved", "TIMESTAMP"),
+            ("lab_dip_status", "VARCHAR(50)"),
+            ("lab_dip_received", "TIMESTAMP"),
+            ("lab_dip_approved", "TIMESTAMP"),
+            ("pps_status", "VARCHAR(50)"),
+            ("pps_received", "TIMESTAMP"),
+            ("pps_sent_to_customer", "TIMESTAMP"),
+            ("pps_approved", "TIMESTAMP"),
+            ("photo_sample_received", "TIMESTAMP"),
+            ("ex_factory_from_pp_approval", "TIMESTAMP"),
+            ("shipment_sample_received", "TIMESTAMP"),
+            ("fcl_lcl", "VARCHAR(20)"),
+            ("vessel_name", "VARCHAR(100)"),
+            ("vessel_etd", "TIMESTAMP"),
+            ("vessel_eta_to_port", "TIMESTAMP"),
+            ("revised_vessel_eta_to_port", "TIMESTAMP"),
+            ("estimated_del_to_customer", "TIMESTAMP"),
+        ]
+        added = []
+        with engine.begin() as conn:
+            for col_name, col_type in new_cols:
+                if col_name not in columns:
+                    conn.execute(text(f"ALTER TABLE purchase_orders ADD COLUMN {col_name} {col_type}"))
+                    added.append(col_name)
+        if added:
+            print(f"✓ Added {len(added)} new CP HEADERS columns to purchase_orders")
+
     print("✓ Database tables created successfully")

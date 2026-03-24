@@ -17,6 +17,7 @@ export interface Order {
   customer?: string;
   china_orderbook_ref?: string;
   customer_po_number?: string;
+  direct_repeat_new?: string;
   season?: string;
   factory?: string;
   terms?: string;
@@ -42,18 +43,53 @@ export interface Order {
   total_quantity?: number;
   trade_price?: number;
   total_order_value?: number;
-  // Dates
+  // Dates - Order & Factory
   order_received_date?: string | null;
   order_sent_to_factory_date?: string | null;
+  tech_packs_sent_to_factory?: string | null;
+  specs_sent_to_factory?: string | null;
+  barcodes_sent_to_factory?: string | null;
   original_po_ex_factory?: string | null;
-  date_approved_to_production?: string | null;
+  factory_confirmed_ex_factory?: string | null;
+  // Samples - Fit
+  fit_sample_required?: string;
+  fit_sample_status?: string;
+  fit_sample_received?: string | null;
+  fit_sample_approved?: string | null;
+  // Samples - Strike Off
+  strike_off_status?: string;
+  strike_off_received?: string | null;
+  strike_off_approved?: string | null;
+  // Samples - Lab Dip
+  lab_dip_status?: string;
+  lab_dip_received?: string | null;
+  lab_dip_approved?: string | null;
+  // Samples - PPS
+  pps_status?: string;
+  pps_received?: string | null;
+  pps_sent_to_customer?: string | null;
+  pps_approved?: string | null;
+  // Samples - Other
+  photo_sample_received?: string | null;
+  ex_factory_from_pp_approval?: string | null;
   revised_po_ex_factory?: string | null;
+  shipment_sample_received?: string | null;
+  // Delivery dates
   original_del_date_to_customer?: string | null;
+  eta_to_uk?: string | null;
+  eta_to_customer?: string | null;
   customer_po_open_month?: string;
   expected_dispatch_arrive_uk_month?: string;
-  eta_to_uk?: string | null;
+  // Shipping / Vessel
+  fcl_lcl?: string;
+  vessel_name?: string;
+  vessel_etd?: string | null;
+  vessel_eta_to_port?: string | null;
+  revised_vessel_eta_to_port?: string | null;
+  estimated_del_to_customer?: string | null;
+  // Legacy fields (kept for data preservation)
+  date_approved_to_production?: string | null;
   actual_date_del_to_uk?: string | null;
-  eta_to_customer?: string | null;
   actual_date_del_to_customer?: string | null;
   // Status
   status?: string;
@@ -144,16 +180,17 @@ export interface ColumnDef {
 }
 
 export const COLUMNS: ColumnDef[] = [
-  // Core PO identifiers - matches Excel Sheet1 order
+  // Core PO identifiers - matches new CP HEADERS order
   { key: 'po_number', label: 'PO#', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'system_po_number', label: 'System PO#', width: 100, editable: true, supplierEditable: false, supplierHidden: true, type: 'text' },
+  { key: 'system_po_number', label: 'SL System PO#', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'text' },
   { key: 'customer', label: 'Customer', width: 150, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'china_orderbook_ref', label: 'China Orderbook Ref', width: 160, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'china_orderbook_ref', label: 'Order Reference', width: 140, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'customer_po_number', label: 'Customer PO#', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'direct_repeat_new', label: 'Direct Repeat/New', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'season', label: 'Season', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'factory', label: 'Factory', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'factory', label: 'Supplier', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'terms', label: 'Terms', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'sales_person', label: 'Sales Person', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'sales_person', label: 'SL Sales Person', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'style_code', label: 'Style Code', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'customer_style_code', label: 'Cust Style Code', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'description', label: 'Description', width: 180, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
@@ -172,21 +209,53 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'size_5xl', label: '5XL', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   // Financial
   { key: 'total_quantity', label: 'Total', width: 60, editable: false, supplierEditable: false, supplierHidden: false, type: 'number' },
-  { key: 'trade_price', label: 'Cost Price', width: 90, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },
-  { key: 'total_order_value', label: 'Order Value', width: 100, editable: false, supplierEditable: false, supplierHidden: true, type: 'currency' },
-  // Dates
+  { key: 'trade_price', label: 'Factory Cost Price', width: 120, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },
+  { key: 'total_order_value', label: 'Total Order Cost', width: 120, editable: false, supplierEditable: false, supplierHidden: true, type: 'currency' },
+  // Dates - Order & Factory
   { key: 'order_received_date', label: 'Order Received', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'date' },
   { key: 'order_sent_to_factory_date', label: 'Sent to Factory', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'original_po_ex_factory', label: 'Orig Ex-Factory', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'date_approved_to_production', label: 'Approved Prod', width: 110, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
-  { key: 'revised_po_ex_factory', label: 'Revised Ex-Fact', width: 110, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
-  { key: 'original_del_date_to_customer', label: 'Orig Del Cust', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'customer_po_open_month', label: 'PO Open Month', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'expected_dispatch_arrive_uk_month', label: 'Exp UK Month', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'eta_to_uk', label: 'ETA UK', width: 90, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'actual_date_del_to_uk', label: 'Actual Del UK', width: 100, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
-  { key: 'eta_to_customer', label: 'ETA Customer', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'actual_date_del_to_customer', label: 'Actual Del Cust', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'date' },
+  { key: 'tech_packs_sent_to_factory', label: 'Tech Packs Sent', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'specs_sent_to_factory', label: 'Specs Sent', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'barcodes_sent_to_factory', label: 'Barcodes Sent', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'original_po_ex_factory', label: 'Requested Ex-Fac', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'factory_confirmed_ex_factory', label: 'Factory Confirmed Ex-Fac', width: 150, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
+  // Samples - Fit
+  { key: 'fit_sample_required', label: 'Fit Sample Req', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'fit_sample_status', label: 'Fit Sample Status', width: 120, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'fit_sample_received', label: 'Fit Sample Rcvd', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'fit_sample_approved', label: 'Fit Sample Appr', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Samples - Strike Off
+  { key: 'strike_off_status', label: 'Strike Off Status', width: 120, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'strike_off_received', label: 'Strike Off Rcvd', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'strike_off_approved', label: 'Strike Off Appr', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Samples - Lab Dip
+  { key: 'lab_dip_status', label: 'Lab Dip Status', width: 115, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'lab_dip_received', label: 'Lab Dip Rcvd', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'lab_dip_approved', label: 'Lab Dip Appr', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Samples - PPS
+  { key: 'pps_status', label: 'PPS Status', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'pps_received', label: 'PPS Received', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'pps_sent_to_customer', label: 'PPS Sent to Cust', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'pps_approved', label: 'PPS Approved', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Samples - Other
+  { key: 'photo_sample_received', label: 'Photo Sample Rcvd', width: 125, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'ex_factory_from_pp_approval', label: 'Ex-Fac from PP Appr', width: 135, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'revised_po_ex_factory', label: 'Revised Ex-Fac', width: 115, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
+  { key: 'shipment_sample_received', label: 'Shipment Sample Rcvd', width: 140, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Delivery dates
+  { key: 'original_del_date_to_customer', label: 'Cust Req Delivery', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'eta_to_uk', label: 'ETA UK', width: 90, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'eta_to_customer', label: 'ETA Customer', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'customer_po_open_month', label: 'PO Open Month', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'expected_dispatch_arrive_uk_month', label: 'Exp Cust Del Month', width: 125, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  // Shipping / Vessel
+  { key: 'fcl_lcl', label: 'FCL/LCL', width: 75, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'vessel_name', label: 'Vessel Name', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'vessel_etd', label: 'Vessel ETD', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'vessel_eta_to_port', label: 'Vessel ETA Port', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'revised_vessel_eta_to_port', label: 'Revised Vessel ETA', width: 130, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'estimated_del_to_customer', label: 'Est Del to Cust', width: 115, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
+  // Status (internal-only, kept for app logic)
   { key: 'status', label: 'Status', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
 ];
 

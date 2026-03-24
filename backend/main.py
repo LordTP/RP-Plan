@@ -630,7 +630,7 @@ async def update_order(
 ):
     """
     Update a purchase order
-    - Suppliers can only update: date_approved_to_production, revised_po_ex_factory, actual_date_del_to_uk
+    - Suppliers can only update: factory_confirmed_ex_factory, revised_po_ex_factory
     - Internal users can update everything
     - ALL date changes are tracked in DateChangeHistory
     """
@@ -650,11 +650,10 @@ async def update_order(
                 detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
             )
         
-        # Suppliers can ONLY update these 3 date fields - BUT changes require approval
+        # Suppliers can ONLY update these date fields - BUT changes require approval
         allowed_fields = [
-            'date_approved_to_production',
+            'factory_confirmed_ex_factory',
             'revised_po_ex_factory',
-            'actual_date_del_to_uk'
         ]
 
         # Supplier must provide a reason for date changes
@@ -742,16 +741,28 @@ async def update_order(
         # Only allow updating known business fields — block id, metadata, and relationships
         ALLOWED_UPDATE_FIELDS = {
             'po_number', 'system_po_number', 'is_active', 'customer', 'china_orderbook_ref',
-            'customer_po_number', 'season', 'factory', 'terms', 'sales_person',
+            'customer_po_number', 'direct_repeat_new', 'season', 'factory', 'terms', 'sales_person',
             'style_code', 'customer_style_code', 'description', 'colour', 'gender',
             'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
             'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
             'total_quantity', 'trade_price', 'total_order_value',
-            'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
-            'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'factory_confirmed_ex_factory',
+            'fit_sample_required', 'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+            'strike_off_status', 'strike_off_received', 'strike_off_approved',
+            'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+            'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'revised_po_ex_factory', 'shipment_sample_received',
+            'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer',
             'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
-            'eta_to_uk', 'actual_date_del_to_uk', 'eta_to_customer', 'actual_date_del_to_customer',
+            'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
+            'revised_vessel_eta_to_port', 'estimated_del_to_customer',
             'status', 'is_late', 'tracking_reference',
+            # Legacy fields (still updatable for backwards compatibility)
+            'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
         }
 
         # Fields to skip change tracking (non-business fields)
@@ -759,9 +770,21 @@ async def update_order(
 
         # Date fields that need parsing
         date_fields = {
-            'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
-            'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
-            'eta_to_uk', 'actual_date_del_to_uk', 'eta_to_customer', 'actual_date_del_to_customer'
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'factory_confirmed_ex_factory',
+            'fit_sample_received', 'fit_sample_approved',
+            'strike_off_received', 'strike_off_approved',
+            'lab_dip_received', 'lab_dip_approved',
+            'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'revised_po_ex_factory', 'shipment_sample_received',
+            'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer',
+            'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+            'estimated_del_to_customer',
+            # Legacy
+            'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
         }
 
         for key, value in order_data.items():
@@ -1087,24 +1110,37 @@ async def get_statuses():
 
 # Default columns configuration - matches frontend COLUMNS
 DEFAULT_COLUMNS = [
-    'po_number', 'system_po_number', 'customer', 'china_orderbook_ref', 'customer_po_number',
-    'season', 'factory', 'terms', 'sales_person', 'style_code', 'customer_style_code',
-    'description', 'colour', 'gender', 'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
-    'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl', 'total_quantity', 'trade_price',
-    'total_order_value', 'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
-    'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
-    'customer_po_open_month', 'expected_dispatch_arrive_uk_month', 'eta_to_uk', 'actual_date_del_to_uk',
-    'eta_to_customer', 'actual_date_del_to_customer', 'status'
+    'po_number', 'system_po_number', 'is_active', 'customer', 'china_orderbook_ref',
+    'customer_po_number', 'direct_repeat_new', 'season', 'factory', 'terms', 'sales_person',
+    'style_code', 'customer_style_code', 'description', 'colour', 'gender',
+    'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
+    'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+    'total_quantity', 'trade_price', 'total_order_value',
+    'order_received_date', 'order_sent_to_factory_date',
+    'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+    'original_po_ex_factory', 'factory_confirmed_ex_factory',
+    'fit_sample_required', 'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+    'strike_off_status', 'strike_off_received', 'strike_off_approved',
+    'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+    'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
+    'photo_sample_received', 'ex_factory_from_pp_approval',
+    'revised_po_ex_factory', 'shipment_sample_received',
+    'original_del_date_to_customer',
+    'eta_to_uk', 'eta_to_customer',
+    'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
+    'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
+    'revised_vessel_eta_to_port', 'estimated_del_to_customer',
+    'status',
 ]
 
 # Default supplier hidden columns (initial defaults)
 DEFAULT_SUPPLIER_HIDDEN = [
-    'system_po_number', 'trade_price', 'total_order_value', 'order_received_date', 'actual_date_del_to_customer'
+    'system_po_number', 'is_active', 'trade_price', 'total_order_value', 'order_received_date',
 ]
 
 # Columns that suppliers can edit (initial defaults)
 DEFAULT_SUPPLIER_EDITABLE = [
-    'date_approved_to_production', 'revised_po_ex_factory', 'actual_date_del_to_uk'
+    'factory_confirmed_ex_factory', 'revised_po_ex_factory',
 ]
 
 
@@ -1260,9 +1296,21 @@ async def bulk_update_date(
 
     # Valid date fields
     date_fields = [
-        'order_received_date', 'order_sent_to_factory_date', 'original_po_ex_factory',
-        'date_approved_to_production', 'revised_po_ex_factory', 'original_del_date_to_customer',
-        'eta_to_uk', 'actual_date_del_to_uk', 'eta_to_customer', 'actual_date_del_to_customer'
+        'order_received_date', 'order_sent_to_factory_date',
+        'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+        'original_po_ex_factory', 'factory_confirmed_ex_factory',
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+        'pps_received', 'pps_sent_to_customer', 'pps_approved',
+        'photo_sample_received', 'ex_factory_from_pp_approval',
+        'revised_po_ex_factory', 'shipment_sample_received',
+        'original_del_date_to_customer',
+        'eta_to_uk', 'eta_to_customer',
+        'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+        'estimated_del_to_customer',
+        # Legacy
+        'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
     ]
 
     if field_name not in date_fields:

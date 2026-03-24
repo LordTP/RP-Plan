@@ -77,25 +77,70 @@ class PurchaseOrderBase(BaseModel):
     size_4xl: Optional[int] = None
     size_5xl: Optional[int] = None
     
+    direct_repeat_new: Optional[str] = None
+
     # Financial
     total_quantity: Optional[int] = None
     trade_price: Optional[float] = None
     total_order_value: Optional[float] = None
-    
-    # Dates
+
+    # Dates - Order & Factory
     order_received_date: Optional[datetime] = None
     order_sent_to_factory_date: Optional[datetime] = None
+    tech_packs_sent_to_factory: Optional[datetime] = None
+    specs_sent_to_factory: Optional[datetime] = None
+    barcodes_sent_to_factory: Optional[datetime] = None
     original_po_ex_factory: Optional[datetime] = None
-    date_approved_to_production: Optional[datetime] = None
+    factory_confirmed_ex_factory: Optional[datetime] = None
+
+    # Samples - Fit
+    fit_sample_required: Optional[str] = None
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+
+    # Samples - Strike Off
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+
+    # Samples - Lab Dip
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+
+    # Samples - PPS
+    pps_status: Optional[str] = None
+    pps_received: Optional[datetime] = None
+    pps_sent_to_customer: Optional[datetime] = None
+    pps_approved: Optional[datetime] = None
+
+    # Samples - Other
+    photo_sample_received: Optional[datetime] = None
+    ex_factory_from_pp_approval: Optional[datetime] = None
     revised_po_ex_factory: Optional[datetime] = None
+    shipment_sample_received: Optional[datetime] = None
+
+    # Delivery dates
     original_del_date_to_customer: Optional[datetime] = None
+    eta_to_uk: Optional[datetime] = None
+    eta_to_customer: Optional[datetime] = None
     customer_po_open_month: Optional[str] = None
     expected_dispatch_arrive_uk_month: Optional[str] = None
-    eta_to_uk: Optional[datetime] = None
+
+    # Shipping / Vessel
+    fcl_lcl: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_etd: Optional[datetime] = None
+    vessel_eta_to_port: Optional[datetime] = None
+    revised_vessel_eta_to_port: Optional[datetime] = None
+    estimated_del_to_customer: Optional[datetime] = None
+
+    # Legacy fields (kept for data preservation)
+    date_approved_to_production: Optional[datetime] = None
     actual_date_del_to_uk: Optional[datetime] = None
-    eta_to_customer: Optional[datetime] = None
     actual_date_del_to_customer: Optional[datetime] = None
-    
+
     status: Optional[str] = None
     is_late: bool = False
     tracking_reference: Optional[str] = None
@@ -111,10 +156,9 @@ class PurchaseOrderUpdate(PurchaseOrderBase):
 
 
 class PurchaseOrderSupplierUpdate(BaseModel):
-    """Suppliers can ONLY update these specific date fields"""
-    date_approved_to_production: Optional[datetime] = None
+    """Suppliers can ONLY update these specific fields (changes require approval)"""
+    factory_confirmed_ex_factory: Optional[datetime] = None
     revised_po_ex_factory: Optional[datetime] = None
-    actual_date_del_to_uk: Optional[datetime] = None
     # Note: Comments are handled separately via the comments endpoint
 
 
@@ -163,21 +207,51 @@ class PurchaseOrderSupplierResponse(BaseModel):
     total_quantity: Optional[int] = None
     # trade_price: HIDDEN FROM SUPPLIERS
     # total_order_value: HIDDEN FROM SUPPLIERS
-    
+
     # Dates (visible to suppliers)
     # order_received_date: HIDDEN FROM SUPPLIERS
     order_sent_to_factory_date: Optional[datetime] = None
+    tech_packs_sent_to_factory: Optional[datetime] = None
+    specs_sent_to_factory: Optional[datetime] = None
+    barcodes_sent_to_factory: Optional[datetime] = None
     original_po_ex_factory: Optional[datetime] = None
-    date_approved_to_production: Optional[datetime] = None  # EDITABLE by suppliers
+    factory_confirmed_ex_factory: Optional[datetime] = None  # EDITABLE by suppliers
+
+    # Samples (visible to suppliers)
+    fit_sample_required: Optional[str] = None
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+    pps_status: Optional[str] = None
+    pps_received: Optional[datetime] = None
+    pps_sent_to_customer: Optional[datetime] = None
+    pps_approved: Optional[datetime] = None
+    photo_sample_received: Optional[datetime] = None
+    ex_factory_from_pp_approval: Optional[datetime] = None
     revised_po_ex_factory: Optional[datetime] = None  # EDITABLE by suppliers
+    shipment_sample_received: Optional[datetime] = None
+
+    # Delivery
     original_del_date_to_customer: Optional[datetime] = None
+    eta_to_uk: Optional[datetime] = None
+    eta_to_customer: Optional[datetime] = None
     customer_po_open_month: Optional[str] = None
     expected_dispatch_arrive_uk_month: Optional[str] = None
-    eta_to_uk: Optional[datetime] = None
-    actual_date_del_to_uk: Optional[datetime] = None  # EDITABLE by suppliers
-    eta_to_customer: Optional[datetime] = None
-    # actual_date_del_to_customer: HIDDEN FROM SUPPLIERS
-    
+
+    # Shipping / Vessel
+    fcl_lcl: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_etd: Optional[datetime] = None
+    vessel_eta_to_port: Optional[datetime] = None
+    revised_vessel_eta_to_port: Optional[datetime] = None
+    estimated_del_to_customer: Optional[datetime] = None
+
     status: Optional[str] = None
     is_late: bool = False
     comment_count: Optional[int] = 0

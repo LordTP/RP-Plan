@@ -23,16 +23,18 @@ from schemas import ExcelUploadResponse
 # Sheet1 column structure - matches exact format
 # Format: (header_name, db_field, data_type, is_internal_only)
 SHEET1_COLUMNS = [
+    # MERCH columns
     ("PO#", "po_number", "text", False),
-    ("SYSTEM PO#", "system_po_number", "text", True),  # Red - internal only
+    ("SL SYSTEM PO#", "system_po_number", "text", True),  # Red - internal only
     ("ACTIVE", "is_active", "bool", True),  # Red - internal only
     ("CUSTOMER", "customer", "text", False),
-    ("China Orderbook Reference", "china_orderbook_ref", "text", False),
+    ("ORDER REFERENCE", "china_orderbook_ref", "text", False),
     ("CUSTOMER PO#", "customer_po_number", "text", False),
+    ("DIRECT REPEAT/ NEW?", "direct_repeat_new", "text", False),
     ("SEASON", "season", "text", False),
-    ("FACTORY", "factory", "text", False),
+    ("SUPPLIER", "factory", "text", False),
     ("TERMS", "terms", "text", False),
-    ("SALES PERSON", "sales_person", "text", False),
+    ("SL SALES PERSON", "sales_person", "text", False),
     ("STYLE CODE", "style_code", "text", False),
     ("CUSTOMER STYLE CODE", "customer_style_code", "text", False),
     ("DESCRIPTION", "description", "text", False),
@@ -49,24 +51,55 @@ SHEET1_COLUMNS = [
     ("3XL", "size_3xl", "int", False),
     ("4XL", "size_4xl", "int", False),
     ("5XL", "size_5xl", "int", False),
-    # Continue after sizes
-    ("TOTAL", "total_quantity", "int", False),
-    ("TRADE PRICE (Change to cost proce $)", "trade_price", "float", False),
-    ("TOTAL ORDER VALUE", "total_order_value", "float", False),
-    ("ORDER RECEIVED DATE", "order_received_date", "date", True),  # Red - internal only
-    ("ORDER SENT TO FACTORY DATE", "order_sent_to_factory_date", "date", False),
-    ("ORIGINAL PO EX-FACTORY", "original_po_ex_factory", "date", False),
-    ("DATE APPROVED TO PRODUCTION", "date_approved_to_production", "date", False),
-    ("REVISED PO EX-FACTORY", "revised_po_ex_factory", "date", False),
-    ("ORIGINAL DEL DATE TO CUSTOMER", "original_del_date_to_customer", "date", False),
-    ("CUSTOMER PO OPEN MONTH", "customer_po_open_month", "text", False),
-    ("EXPECTED DISPATCH ARRIVE TO UK MONTH", "expected_dispatch_arrive_uk_month", "text", False),
-    ("ETA TO UK", "eta_to_uk", "date", False),
-    ("ACTUAL DATE DEL TO UK (scheduling)", "actual_date_del_to_uk", "date", False),
-    ("ETA TO CUSTOMER", "eta_to_customer", "date", False),
-    ("ACTUAL DATE DEL TO CUSTOMER", "actual_date_del_to_customer", "date", False),
+    # Financial
+    ("TOTAL", "total_quantity", "int", False),  # AUTO-CALC
+    ("FACTORY COST PRICE", "trade_price", "float", False),
+    ("TOTAL ORDER COST", "total_order_value", "float", False),  # AUTO-CALC
+    # Dates - Order & Factory
+    ("ORDER RECEIVED DATE", "order_received_date", "date", True),  # MERCH, internal only
+    ("ORDER SENT TO FACTORY DATE", "order_sent_to_factory_date", "date", False),  # MERCH
+    ("TECH PACKS SENT TO FACTORY", "tech_packs_sent_to_factory", "date", False),  # DESIGN
+    ("SPECS SENT TO FACTORY", "specs_sent_to_factory", "date", False),  # PRODUCT
+    ("BARCODES SENT TO FACTORY", "barcodes_sent_to_factory", "date", False),  # PRODUCT
+    ("REQUESTED EX-FACTORY", "original_po_ex_factory", "date", False),  # MERCH
+    ("FACTORY CONFIRMED EX-FACTORY", "factory_confirmed_ex_factory", "date", False),  # PRIME
+    # Samples - Fit
+    ("FIT SAMPLE REQUIRED Y/N", "fit_sample_required", "text", False),  # PRODUCT
+    ("FIT SAMPLE STATUS", "fit_sample_status", "text", False),  # AUTO-CALC
+    ("FIT SAMPLE RECEIVED", "fit_sample_received", "date", False),  # PRODUCT
+    ("FIT SAMPLE APPROVED", "fit_sample_approved", "date", False),  # PRODUCT
+    # Samples - Strike Off
+    ("STRIKE OFF STATUS", "strike_off_status", "text", False),  # AUTO-CALC
+    ("STRIKE OFF RECEIVED", "strike_off_received", "date", False),  # PRODUCT
+    ("STRIKE OFF APPROVED", "strike_off_approved", "date", False),  # PRODUCT
+    # Samples - Lab Dip
+    ("LAB DIP STATUS", "lab_dip_status", "text", False),  # AUTO-CALC
+    ("LAB DIP RECEIVED", "lab_dip_received", "date", False),  # PRODUCT
+    ("LAB DIP APPROVED", "lab_dip_approved", "date", False),  # PRODUCT
+    # Samples - PPS
+    ("PPS STATUS", "pps_status", "text", False),  # AUTO-CALC
+    ("PPS RECEIVED", "pps_received", "date", False),  # PRODUCT
+    ("PPS Sent to Customer by SL", "pps_sent_to_customer", "date", False),  # PRODUCT
+    ("PPS APPROVED", "pps_approved", "date", False),  # PRODUCT
+    # Samples - Other
+    ("PHOTO SAMPLE RECEIVED", "photo_sample_received", "date", False),  # PRODUCT
+    ("EX FACTORY BASED FROM PP APPROVAL", "ex_factory_from_pp_approval", "date", False),  # PRIME 23
+    ("REVISED EX-FACTORY", "revised_po_ex_factory", "date", False),  # PRIME 23
+    ("SHIPMENT SAMPLE RECEIVED", "shipment_sample_received", "date", False),  # PRODUCT
+    # Delivery dates
+    ("CUSTOMER REQUESTED DELIVERY DATE", "original_del_date_to_customer", "date", False),  # MERCH
+    ("ETA TO UK (BASED OFF REVISED EX-FACTORY)", "eta_to_uk", "date", False),  # AUTO-CALC
+    ("ETA TO CUSTOMER (BASED OFF REVISED EX-FACTORY)", "eta_to_customer", "date", False),  # AUTO-CALC
+    ("CUSTOMER PO OPEN MONTH", "customer_po_open_month", "text", False),  # AUTO-CALC
+    ("EXPECTED CUSTOMER DELIVERY MONTH", "expected_dispatch_arrive_uk_month", "text", False),  # AUTO-CALC
+    # Shipping / Vessel
+    ("FCL/ LCL", "fcl_lcl", "text", False),  # PRIME
+    ("VESSEL NAME", "vessel_name", "text", False),  # PRIME
+    ("VESSEL ETD", "vessel_etd", "date", False),  # PRIME
+    ("VESSEL ETA TO PORT", "vessel_eta_to_port", "date", False),  # PRIME
+    ("REVISED VESSEL ETA TO PORT", "revised_vessel_eta_to_port", "date", False),  # MERCH
+    ("ESTIMATED DEL TO CUSTOMER (BASED OFF REVISED VESSEL ETA TO PORT)", "estimated_del_to_customer", "date", False),  # AUTO-CALC
     # COMMENTS column is NOT exported - managed separately in the app
-    ("LATE", "status", "text", False),
 ]
 
 
@@ -642,11 +675,11 @@ def _build_column_map(sheet) -> Dict[str, int]:
         # IMPORTANT: Check MORE SPECIFIC patterns FIRST before general ones
 
         # PO number columns - check specific patterns first
-        if "SYSTEM PO" in header_str:
+        if "SYSTEM PO" in header_str or "SL SYSTEM PO" in header_str:
             col_map["system_po_number"] = col_idx
         elif "CUSTOMER PO OPEN" in header_str:  # Must come before "CUSTOMER PO"
             col_map["customer_po_open_month"] = col_idx
-        elif "CUSTOMER PO#" in header_str or (header_str == "CUSTOMER PO"):  # CUSTOMER PO# specifically
+        elif "CUSTOMER PO#" in header_str or (header_str == "CUSTOMER PO"):
             col_map["customer_po_number"] = col_idx
         elif header_str == "PO#" or (header_str == "PO" and "SYSTEM" not in header_str and "CUSTOMER" not in header_str):
             col_map["po_number"] = col_idx
@@ -656,19 +689,23 @@ def _build_column_map(sheet) -> Dict[str, int]:
             col_map["customer"] = col_idx
         elif "CUSTOMER STYLE" in header_str:
             col_map["customer_style_code"] = col_idx
+        elif "CUSTOMER REQUESTED DELIVERY" in header_str:
+            col_map["original_del_date_to_customer"] = col_idx
 
-        # Other columns
+        # Core columns
         elif header_str == "ACTIVE":
             col_map["is_active"] = col_idx
-        elif "CHINA ORDERBOOK" in header_str or "ORDERBOOK REF" in header_str:
+        elif "CHINA ORDERBOOK" in header_str or "ORDERBOOK REF" in header_str or header_str == "ORDER REFERENCE":
             col_map["china_orderbook_ref"] = col_idx
+        elif "DIRECT REPEAT" in header_str or header_str == "DIRECT REPEAT/ NEW?":
+            col_map["direct_repeat_new"] = col_idx
         elif header_str == "SEASON":
             col_map["season"] = col_idx
-        elif header_str == "FACTORY":
+        elif header_str == "FACTORY" or header_str == "SUPPLIER":
             col_map["factory"] = col_idx
         elif header_str == "TERMS":
             col_map["terms"] = col_idx
-        elif "SALES PERSON" in header_str or header_str == "SALESPERSON":
+        elif "SALES PERSON" in header_str or header_str == "SALESPERSON" or "SL SALES" in header_str:
             col_map["sales_person"] = col_idx
         elif header_str == "STYLE CODE" or header_str == "STYLE":
             col_map["style_code"] = col_idx
@@ -678,32 +715,108 @@ def _build_column_map(sheet) -> Dict[str, int]:
             col_map["colour"] = col_idx
         elif header_str == "GENDER":
             col_map["gender"] = col_idx
-        elif header_str == "TOTAL" and "ORDER" not in header_str and "VALUE" not in header_str:
+        elif header_str == "TOTAL" and "ORDER" not in header_str and "VALUE" not in header_str and "COST" not in header_str:
             col_map["total_quantity"] = col_idx
-        elif "TRADE PRICE" in header_str or header_str == "PRICE":
+
+        # Financial
+        elif "FACTORY COST" in header_str or "TRADE PRICE" in header_str or header_str == "PRICE":
             col_map["trade_price"] = col_idx
-        elif "TOTAL ORDER VALUE" in header_str or header_str == "ORDER VALUE":
+        elif "TOTAL ORDER COST" in header_str or "TOTAL ORDER VALUE" in header_str or header_str == "ORDER VALUE":
             col_map["total_order_value"] = col_idx
+
+        # Dates - Order & Factory
         elif "ORDER RECEIVED" in header_str:
             col_map["order_received_date"] = col_idx
-        elif "ORDER SENT" in header_str or "SENT TO FACTORY" in header_str:
+        elif "ORDER SENT" in header_str or header_str == "ORDER SENT TO FACTORY DATE":
             col_map["order_sent_to_factory_date"] = col_idx
-        elif "ORIGINAL PO EX" in header_str or "ORIGINAL EX-FACTORY" in header_str:
+        elif "TECH PACK" in header_str:
+            col_map["tech_packs_sent_to_factory"] = col_idx
+        elif "SPECS SENT" in header_str:
+            col_map["specs_sent_to_factory"] = col_idx
+        elif "BARCODES SENT" in header_str:
+            col_map["barcodes_sent_to_factory"] = col_idx
+        elif "REQUESTED EX-FACTORY" in header_str or "ORIGINAL PO EX" in header_str or "ORIGINAL EX-FACTORY" in header_str:
             col_map["original_po_ex_factory"] = col_idx
-        elif "APPROVED TO PRODUCTION" in header_str or "DATE APPROVED" in header_str:
-            col_map["date_approved_to_production"] = col_idx
-        elif "REVISED" in header_str and ("EX-FACTORY" in header_str or "EX FACTORY" in header_str):
+        elif "FACTORY CONFIRMED" in header_str:
+            col_map["factory_confirmed_ex_factory"] = col_idx
+
+        # Samples - Fit
+        elif "FIT SAMPLE REQUIRED" in header_str:
+            col_map["fit_sample_required"] = col_idx
+        elif "FIT SAMPLE STATUS" in header_str:
+            col_map["fit_sample_status"] = col_idx
+        elif "FIT SAMPLE RECEIVED" in header_str:
+            col_map["fit_sample_received"] = col_idx
+        elif "FIT SAMPLE APPROVED" in header_str:
+            col_map["fit_sample_approved"] = col_idx
+
+        # Samples - Strike Off
+        elif "STRIKE OFF STATUS" in header_str:
+            col_map["strike_off_status"] = col_idx
+        elif "STRIKE OFF RECEIVED" in header_str:
+            col_map["strike_off_received"] = col_idx
+        elif "STRIKE OFF APPROVED" in header_str:
+            col_map["strike_off_approved"] = col_idx
+
+        # Samples - Lab Dip
+        elif "LAB DIP STATUS" in header_str:
+            col_map["lab_dip_status"] = col_idx
+        elif "LAB DIP RECEIVED" in header_str:
+            col_map["lab_dip_received"] = col_idx
+        elif "LAB DIP APPROVED" in header_str:
+            col_map["lab_dip_approved"] = col_idx
+
+        # Samples - PPS
+        elif "PPS STATUS" in header_str:
+            col_map["pps_status"] = col_idx
+        elif "PPS RECEIVED" in header_str:
+            col_map["pps_received"] = col_idx
+        elif "PPS SENT TO CUSTOMER" in header_str or "PPS SENT" in header_str:
+            col_map["pps_sent_to_customer"] = col_idx
+        elif "PPS APPROVED" in header_str:
+            col_map["pps_approved"] = col_idx
+
+        # Samples - Other
+        elif "PHOTO SAMPLE" in header_str:
+            col_map["photo_sample_received"] = col_idx
+        elif "EX FACTORY BASED" in header_str or "EX FACTORY FROM PP" in header_str:
+            col_map["ex_factory_from_pp_approval"] = col_idx
+        elif "SHIPMENT SAMPLE" in header_str:
+            col_map["shipment_sample_received"] = col_idx
+
+        # Revised ex-factory (must come after EX FACTORY BASED to avoid conflict)
+        elif "REVISED EX-FACTORY" in header_str or "REVISED PO EX" in header_str:
             col_map["revised_po_ex_factory"] = col_idx
+
+        # Delivery dates (legacy support + new)
         elif "ORIGINAL DEL" in header_str and "CUSTOMER" in header_str:
             col_map["original_del_date_to_customer"] = col_idx
-        elif "EXPECTED DISPATCH" in header_str or "ARRIVE TO UK MONTH" in header_str or "ARRIVE UK MONTH" in header_str:
+        elif "EXPECTED CUSTOMER DELIVERY" in header_str or "EXPECTED DISPATCH" in header_str or "ARRIVE TO UK MONTH" in header_str:
             col_map["expected_dispatch_arrive_uk_month"] = col_idx
-        elif header_str == "ETA TO UK" or header_str == "ETA UK":
+        elif "ETA TO UK" in header_str or header_str == "ETA UK":
             col_map["eta_to_uk"] = col_idx
+        elif "ETA TO CUSTOMER" in header_str or header_str == "ETA CUSTOMER":
+            col_map["eta_to_customer"] = col_idx
+
+        # Shipping / Vessel
+        elif header_str == "FCL/ LCL" or header_str == "FCL/LCL" or header_str == "FCL / LCL":
+            col_map["fcl_lcl"] = col_idx
+        elif "VESSEL NAME" in header_str:
+            col_map["vessel_name"] = col_idx
+        elif "VESSEL ETD" in header_str:
+            col_map["vessel_etd"] = col_idx
+        elif "REVISED VESSEL" in header_str or "REVISED VESSEL ETA" in header_str:
+            col_map["revised_vessel_eta_to_port"] = col_idx
+        elif "VESSEL ETA" in header_str and "REVISED" not in header_str:
+            col_map["vessel_eta_to_port"] = col_idx
+        elif "ESTIMATED DEL TO CUSTOMER" in header_str:
+            col_map["estimated_del_to_customer"] = col_idx
+
+        # Legacy columns (still importable for backwards compatibility)
+        elif "APPROVED TO PRODUCTION" in header_str or "DATE APPROVED" in header_str:
+            col_map["date_approved_to_production"] = col_idx
         elif ("ACTUAL" in header_str and "UK" in header_str and "CUSTOMER" not in header_str) or "ACTUAL DEL UK" in header_str:
             col_map["actual_date_del_to_uk"] = col_idx
-        elif header_str == "ETA TO CUSTOMER" or header_str == "ETA CUSTOMER":
-            col_map["eta_to_customer"] = col_idx
         elif ("ACTUAL" in header_str and "CUSTOMER" in header_str) or "ACTUAL DEL CUSTOMER" in header_str:
             col_map["actual_date_del_to_customer"] = col_idx
         elif header_str == "LATE" or header_str == "STATUS":
