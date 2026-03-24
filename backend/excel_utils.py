@@ -961,52 +961,86 @@ def _values_different(old_value: Any, new_value: Any) -> bool:
 # =============================================================================
 
 # Template column mapping - maps database fields to template column indices
-# Based on CP_-_Thomas_Enhanced.xlsx structure
+# Based on Copy of CP HEADERS.xlsx structure (70 columns)
 TEMPLATE_COLUMN_MAP = {
+    # MERCH columns (1-16)
     "po_number": 1,
     "system_po_number": 2,
     "is_active": 3,
     "customer": 4,
-    "china_orderbook_ref": 5,
+    "china_orderbook_ref": 5,       # ORDER REFERENCE
     "customer_po_number": 6,
-    "season": 7,
-    "factory": 8,
-    "terms": 9,
-    "sales_person": 10,
-    "style_code": 11,
-    "customer_style_code": 12,
-    "description": 13,
-    "colour": 14,
-    "gender": 15,
-    # Size columns 16-25
-    "size_2xs": 16,
-    "size_xs": 17,
-    "size_s": 18,
-    "size_m": 19,
-    "size_l": 20,
-    "size_xl": 21,
-    "size_2xl": 22,
-    "size_3xl": 23,
-    "size_4xl": 24,
-    "size_5xl": 25,
-    # Column 26 is empty spacer
-    "total_quantity": 27,
-    "trade_price": 28,
-    "total_order_value": 29,
-    "order_received_date": 30,
-    "order_sent_to_factory_date": 31,
-    "original_po_ex_factory": 32,
-    "date_approved_to_production": 33,
-    "revised_po_ex_factory": 34,
-    "original_del_date_to_customer": 35,
-    "customer_po_open_month": 36,
-    "expected_dispatch_arrive_uk_month": 37,
-    "eta_to_uk": 38,
-    "actual_date_del_to_uk": 39,
-    "eta_to_customer": 40,
-    "actual_date_del_to_customer": 41,
-    # Column 42 is COMMENTS - managed separately in app
-    "status": 43,  # LATE column
+    "direct_repeat_new": 7,         # DIRECT REPEAT/ NEW?
+    "season": 8,
+    "factory": 9,                   # SUPPLIER
+    "terms": 10,
+    "sales_person": 11,             # SL SALES PERSON
+    "style_code": 12,
+    "customer_style_code": 13,
+    "description": 14,
+    "colour": 15,
+    "gender": 16,
+    # Size columns 17-26 (under merged "SIZE RANGE & QTY" header)
+    "size_2xs": 17,
+    "size_xs": 18,
+    "size_s": 19,
+    "size_m": 20,
+    "size_l": 21,
+    "size_xl": 22,
+    "size_2xl": 23,
+    "size_3xl": 24,
+    "size_4xl": 25,
+    "size_5xl": 26,
+    # Columns 27-30 are spacers in the template
+    # Financial
+    "total_quantity": 31,            # TOTAL (AUTO)
+    "trade_price": 32,               # FACTORY COST PRICE
+    "total_order_value": 33,         # TOTAL ORDER COST (AUTO)
+    # Dates - Order & Factory
+    "order_received_date": 34,
+    "order_sent_to_factory_date": 35,
+    "tech_packs_sent_to_factory": 36,   # DESIGN
+    "specs_sent_to_factory": 37,         # PRODUCT
+    "barcodes_sent_to_factory": 38,      # PRODUCT
+    "original_po_ex_factory": 39,        # REQUESTED EX-FACTORY
+    "factory_confirmed_ex_factory": 40,  # FACTORY CONFIRMED EX-FACTORY (PRIME)
+    # Samples - Fit
+    "fit_sample_required": 41,
+    "fit_sample_status": 42,             # AUTO
+    "fit_sample_received": 43,
+    "fit_sample_approved": 44,
+    # Samples - Strike Off
+    "strike_off_status": 45,             # AUTO
+    "strike_off_received": 46,
+    "strike_off_approved": 47,
+    # Samples - Lab Dip
+    "lab_dip_status": 48,                # AUTO
+    "lab_dip_received": 49,
+    "lab_dip_approved": 50,
+    # Samples - PPS
+    "pps_status": 51,                    # AUTO
+    "pps_received": 52,
+    "pps_sent_to_customer": 53,
+    "pps_approved": 54,
+    # Samples - Other
+    "photo_sample_received": 55,
+    "ex_factory_from_pp_approval": 56,   # PRIME 23
+    "revised_po_ex_factory": 57,         # REVISED EX-FACTORY (PRIME 23)
+    "shipment_sample_received": 58,
+    # Delivery dates
+    "original_del_date_to_customer": 59, # CUSTOMER REQUESTED DELIVERY DATE
+    "eta_to_uk": 60,                     # ETA TO UK (AUTO)
+    "eta_to_customer": 61,               # ETA TO CUSTOMER (AUTO)
+    "customer_po_open_month": 62,        # AUTO
+    "expected_dispatch_arrive_uk_month": 63,  # EXPECTED CUSTOMER DELIVERY MONTH (AUTO)
+    # Shipping / Vessel
+    "fcl_lcl": 64,
+    "vessel_name": 65,
+    "vessel_etd": 66,
+    "vessel_eta_to_port": 67,
+    "revised_vessel_eta_to_port": 68,
+    "estimated_del_to_customer": 69,     # AUTO
+    # Column 70 is COMMENTS - managed separately in app
 }
 
 # Field types for formatting
@@ -1017,20 +1051,26 @@ FIELD_TYPES = {
     "total_quantity": "int",
     "trade_price": "float",
     "total_order_value": "float",
-    "order_received_date": "date",
-    "order_sent_to_factory_date": "date",
-    "original_po_ex_factory": "date",
-    "date_approved_to_production": "date",
-    "revised_po_ex_factory": "date",
+    "order_received_date": "date", "order_sent_to_factory_date": "date",
+    "tech_packs_sent_to_factory": "date", "specs_sent_to_factory": "date",
+    "barcodes_sent_to_factory": "date",
+    "original_po_ex_factory": "date", "factory_confirmed_ex_factory": "date",
+    "fit_sample_received": "date", "fit_sample_approved": "date",
+    "strike_off_received": "date", "strike_off_approved": "date",
+    "lab_dip_received": "date", "lab_dip_approved": "date",
+    "pps_received": "date", "pps_sent_to_customer": "date", "pps_approved": "date",
+    "photo_sample_received": "date", "ex_factory_from_pp_approval": "date",
+    "revised_po_ex_factory": "date", "shipment_sample_received": "date",
     "original_del_date_to_customer": "date",
-    "eta_to_uk": "date",
-    "actual_date_del_to_uk": "date",
-    "eta_to_customer": "date",
-    "actual_date_del_to_customer": "date",
+    "eta_to_uk": "date", "eta_to_customer": "date",
+    "vessel_etd": "date", "vessel_eta_to_port": "date",
+    "revised_vessel_eta_to_port": "date", "estimated_del_to_customer": "date",
 }
 
-# Path to template file (mounted via docker-compose volume)
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CP_-_Thomas_Enhanced.xlsx")
+# Path to template file - use the new CP HEADERS template
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CP_HEADERS_TEMPLATE.xlsx")
+# Fallback to old template
+LEGACY_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "CP_-_Thomas_Enhanced.xlsx")
 
 
 def export_database_to_excel(
@@ -1052,29 +1092,39 @@ def export_database_to_excel(
         filters: Optional dict with filter parameters (po_number, style_code, factory, customer, status)
     """
 
-    # Load the template file
+    # Load the CP HEADERS template file
     try:
         wb = openpyxl.load_workbook(TEMPLATE_PATH)
     except FileNotFoundError:
-        print(f"Template not found at {TEMPLATE_PATH}, falling back to generating from scratch")
-        return _export_database_to_excel_legacy(db, factory_filter, is_supplier)
+        # Try legacy template
+        try:
+            wb = openpyxl.load_workbook(LEGACY_TEMPLATE_PATH)
+            print(f"Using legacy template from {LEGACY_TEMPLATE_PATH}")
+        except FileNotFoundError:
+            print(f"No template found, falling back to generating from scratch")
+            return _export_database_to_excel_legacy(db, factory_filter, is_supplier)
 
     ws = wb.active
 
-    # Clear any existing data from row 16 onwards
-    # (in case template has sample data)
-    for row in range(16, ws.max_row + 1):
-        for col in range(1, 44):  # Columns A through AQ
+    # The CP HEADERS template has:
+    # Row 1: Category row (MERCH, DESIGN, PRODUCT, PRIME, AUTO, ALL)
+    # Row 2: Header row (PO#, SL SYSTEM PO#, etc.) - merged down with size ref rows
+    # Rows 3-18: Size reference data and status options (merged cells)
+    # Row 19: INPUT/CALC indicator row
+    # Row 20-21: Notes/logic rows
+    # Data starts at row 22
+
+    # Clear any existing data/notes from row 19 onwards (keep rows 1-18 intact)
+    for row in range(19, ws.max_row + 1):
+        for col in range(1, 71):  # Columns A through BR
             ws.cell(row, col).value = None
 
     # Query POs with filters
     query = db.query(PurchaseOrder)
 
-    # Apply factory filter (for suppliers)
     if factory_filter:
         query = query.filter(PurchaseOrder.factory == factory_filter)
 
-    # Apply additional filters if provided
     if filters:
         if filters.get('po_number'):
             query = query.filter(PurchaseOrder.po_number.ilike(f"%{filters['po_number']}%"))
@@ -1089,8 +1139,8 @@ def export_database_to_excel(
 
     pos = query.order_by(PurchaseOrder.system_po_number.asc()).all()
 
-    # Data starts at row 16
-    data_start_row = 16
+    # Data starts after the header/reference rows
+    data_start_row = 19
 
     # Border style for data cells
     thin_border = Border(
@@ -1131,17 +1181,12 @@ def export_database_to_excel(
     # For suppliers, delete columns they shouldn't see
     # Must delete from right to left to preserve column indices
     if is_supplier:
-        # Columns to hide for suppliers (these are internal-only)
-        # Based on SHEET1_COLUMNS where is_internal_only=True
-        # Column indices in reverse order (delete from right to left)
         supplier_hidden_columns = [
-            43,  # status/LATE
-            41,  # actual_date_del_to_customer
-            30,  # order_received_date
-            29,  # total_order_value
-            28,  # trade_price
+            34,  # order_received_date
+            33,  # total_order_value (TOTAL ORDER COST)
+            32,  # trade_price (FACTORY COST PRICE)
             3,   # is_active
-            2,   # system_po_number
+            2,   # system_po_number (SL SYSTEM PO#)
         ]
         for col_idx in sorted(supplier_hidden_columns, reverse=True):
             ws.delete_cols(col_idx)
