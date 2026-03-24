@@ -1114,10 +1114,8 @@ def export_database_to_excel(
     # Row 20-21: Notes/logic rows
     # Data starts at row 22
 
-    # Clear any existing data/notes from row 19 onwards (keep rows 1-18 intact)
-    for row in range(19, ws.max_row + 1):
-        for col in range(1, 71):  # Columns A through BR
-            ws.cell(row, col).value = None
+    # Delete template rows 19-21 (INPUT/CALC + notes) so data starts clean
+    ws.delete_rows(19, ws.max_row - 18)
 
     # Query POs with filters
     query = db.query(PurchaseOrder)
@@ -1139,7 +1137,7 @@ def export_database_to_excel(
 
     pos = query.order_by(PurchaseOrder.system_po_number.asc()).all()
 
-    # Data starts after the header/reference rows
+    # Data starts right after the header/reference rows (19-21 were deleted)
     data_start_row = 19
 
     # Border style for data cells
