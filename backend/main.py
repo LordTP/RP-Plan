@@ -1344,11 +1344,10 @@ async def bulk_update_date(
 
     # Check permissions
     if current_user.role == UserRole.SUPPLIER:
-        # Suppliers can only edit these 3 date fields
+        # Suppliers can only edit these date fields
         supplier_allowed_fields = [
-            'date_approved_to_production',
+            'factory_confirmed_ex_factory',
             'revised_po_ex_factory',
-            'actual_date_del_to_uk'
         ]
         if field_name not in supplier_allowed_fields:
             raise HTTPException(status_code=403, detail=f"Suppliers can only edit: {supplier_allowed_fields}")
