@@ -39,6 +39,10 @@ export interface Order {
   size_3xl?: number;
   size_4xl?: number;
   size_5xl?: number;
+  size_11?: number;
+  size_12?: number;
+  size_13?: number;
+  size_14?: number;
   // Financial
   total_quantity?: number;
   trade_price?: number;
@@ -207,6 +211,10 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'size_3xl', label: '3XL', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   { key: 'size_4xl', label: '4XL', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   { key: 'size_5xl', label: '5XL', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
+  { key: 'size_11', label: 'S11', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
+  { key: 'size_12', label: 'S12', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
+  { key: 'size_13', label: 'S13', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
+  { key: 'size_14', label: 'S14', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   // Financial
   { key: 'total_quantity', label: 'Total', width: 60, editable: false, supplierEditable: false, supplierHidden: false, type: 'number' },
   { key: 'trade_price', label: 'Factory Cost Price', width: 120, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },

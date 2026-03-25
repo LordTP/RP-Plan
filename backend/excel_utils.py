@@ -51,6 +51,10 @@ SHEET1_COLUMNS = [
     ("3XL", "size_3xl", "int", False),
     ("4XL", "size_4xl", "int", False),
     ("5XL", "size_5xl", "int", False),
+    ("S11", "size_11", "int", False),
+    ("S12", "size_12", "int", False),
+    ("S13", "size_13", "int", False),
+    ("S14", "size_14", "int", False),
     # Financial
     ("TOTAL", "total_quantity", "int", False),  # AUTO-CALC
     ("FACTORY COST PRICE", "trade_price", "float", False),
@@ -837,6 +841,20 @@ def _build_column_map(sheet) -> Dict[str, int]:
             if size_label in size_map:
                 col_map[size_map[size_label]] = col_idx
 
+    # Map positional size columns 11-14 (after the 10 named size cols)
+    # Find all mapped size columns and their positions, then grab the next 4
+    size_field_order = ["size_2xs", "size_xs", "size_s", "size_m", "size_l",
+                        "size_xl", "size_2xl", "size_3xl", "size_4xl", "size_5xl"]
+    mapped_size_cols = [(col_map[f], f) for f in size_field_order if f in col_map]
+    if mapped_size_cols:
+        mapped_size_cols.sort()
+        last_size_col = mapped_size_cols[-1][0]
+        extra_size_fields = ["size_11", "size_12", "size_13", "size_14"]
+        for i, field in enumerate(extra_size_fields):
+            next_col = last_size_col + 1 + i
+            if next_col <= sheet.max_column:
+                col_map[field] = next_col
+
     print(f"Column mapping result: {col_map}")
     return col_map
 
@@ -861,8 +879,10 @@ def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str,
     # Text fields
     text_fields = [
         "po_number", "system_po_number", "customer", "china_orderbook_ref",
-        "customer_po_number", "season", "factory", "terms", "sales_person",
+        "customer_po_number", "direct_repeat_new", "season", "factory", "terms", "sales_person",
         "style_code", "customer_style_code", "description", "colour", "gender",
+        "fit_sample_required", "fit_sample_status", "strike_off_status",
+        "lab_dip_status", "pps_status", "fcl_lcl", "vessel_name",
         "customer_po_open_month", "expected_dispatch_arrive_uk_month", "status"
     ]
     for field in text_fields:
@@ -876,7 +896,8 @@ def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str,
     # Integer fields (sizes and total)
     int_fields = [
         "size_2xs", "size_xs", "size_s", "size_m", "size_l", "size_xl",
-        "size_2xl", "size_3xl", "size_4xl", "size_5xl", "total_quantity"
+        "size_2xl", "size_3xl", "size_4xl", "size_5xl",
+        "size_11", "size_12", "size_13", "size_14", "total_quantity"
     ]
     for field in int_fields:
         if field in col_map:
@@ -890,9 +911,21 @@ def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str,
 
     # Date fields
     date_fields = [
-        "order_received_date", "order_sent_to_factory_date", "original_po_ex_factory",
-        "date_approved_to_production", "revised_po_ex_factory", "original_del_date_to_customer",
-        "eta_to_uk", "actual_date_del_to_uk", "eta_to_customer", "actual_date_del_to_customer"
+        "order_received_date", "order_sent_to_factory_date",
+        "tech_packs_sent_to_factory", "specs_sent_to_factory", "barcodes_sent_to_factory",
+        "original_po_ex_factory", "factory_confirmed_ex_factory",
+        "fit_sample_received", "fit_sample_approved",
+        "strike_off_received", "strike_off_approved",
+        "lab_dip_received", "lab_dip_approved",
+        "pps_received", "pps_sent_to_customer", "pps_approved",
+        "photo_sample_received", "ex_factory_from_pp_approval",
+        "revised_po_ex_factory", "shipment_sample_received",
+        "original_del_date_to_customer",
+        "eta_to_uk", "eta_to_customer",
+        "vessel_etd", "vessel_eta_to_port", "revised_vessel_eta_to_port",
+        "estimated_del_to_customer",
+        # Legacy fields
+        "date_approved_to_production", "actual_date_del_to_uk", "actual_date_del_to_customer"
     ]
     for field in date_fields:
         if field in col_map:
@@ -924,7 +957,8 @@ def _get_cell_str(sheet, row: int, col: int) -> Optional[str]:
 def _calculate_order_totals(order) -> None:
     """Auto-calculate total_quantity and total_order_value for an order"""
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
-                   'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl']
+                   'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+                   'size_11', 'size_12', 'size_13', 'size_14']
     total_qty = sum(getattr(order, f) or 0 for f in size_fields)
     if total_qty > 0:
         order.total_quantity = total_qty
@@ -991,7 +1025,10 @@ TEMPLATE_COLUMN_MAP = {
     "size_3xl": 24,
     "size_4xl": 25,
     "size_5xl": 26,
-    # Columns 27-30 are spacers in the template
+    "size_11": 27,
+    "size_12": 28,
+    "size_13": 29,
+    "size_14": 30,
     # Financial
     "total_quantity": 31,            # TOTAL (AUTO)
     "trade_price": 32,               # FACTORY COST PRICE
@@ -1048,6 +1085,7 @@ FIELD_TYPES = {
     "is_active": "bool",
     "size_2xs": "int", "size_xs": "int", "size_s": "int", "size_m": "int", "size_l": "int",
     "size_xl": "int", "size_2xl": "int", "size_3xl": "int", "size_4xl": "int", "size_5xl": "int",
+    "size_11": "int", "size_12": "int", "size_13": "int", "size_14": "int",
     "total_quantity": "int",
     "trade_price": "float",
     "total_order_value": "float",

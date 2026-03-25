@@ -629,6 +629,10 @@ function DetailPanel({
     { label: '3XL', value: order.size_3xl },
     { label: '4XL', value: order.size_4xl },
     { label: '5XL', value: order.size_5xl },
+    { label: 'S11', value: order.size_11 },
+    { label: 'S12', value: order.size_12 },
+    { label: 'S13', value: order.size_13 },
+    { label: 'S14', value: order.size_14 },
   ].filter(s => s.value && s.value > 0);
 
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);

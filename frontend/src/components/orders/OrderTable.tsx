@@ -12,19 +12,22 @@ import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN } from '@/types';
 
 // Size reference mapping - matches Excel rows 2-14
 const SIZE_REFERENCE = [
-  { gender: '001-MENS', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'] },
-  { gender: '002-LADIES', sizes: ['6', '8', '10', '12', '14', '16', '18', '20', '22', '24'] },
-  { gender: '003-KIDS', sizes: ['XSB', 'SB', 'MB', 'LB', 'XLB', '', '', '', '', ''] },
-  { gender: '004-KIDS', sizes: ['2-3', '4-5', '6-7', '8-9', '10-11', '12-13', '14-15', '', '', ''] },
-  { gender: '005-KIDS', sizes: ['2-3', '3-4', '5-6', '7-8', '9-10', '11-12', '13', '', '', ''] },
-  { gender: '006-LADIES LETTER', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '', ''] },
-  { gender: '007-KIDS', sizes: ['3-4', '4-5', '6-7', '8-9', '10-11', '12-13', '', '', '', ''] },
-  { gender: '008-BABY', sizes: ['0-3', '3-6', '6-9', '9-12', '12-18', '18-24', '', '', '', ''] },
-  { gender: '009-CAPS/HATS', sizes: ['ONE SIZE', 'BABY', 'JUNIOR', 'ADULT', '6-12 M', '1-3 YRS', 'INFANT', '', '', ''] },
-  { gender: '010-MENS SHOES', sizes: ['3-6', '7-11', '', '', '', '', '', '', '', ''] },
-  { gender: '011-BOYS SHOES', sizes: ['10-11', '1-2', '5-6', '', '', '', '', '', '', ''] },
-  { gender: '012-DOG', sizes: ['XS', 'S', 'M', 'L', 'XL', '', '', '', '', ''] },
-  { gender: '013-LEEDS KIDS', sizes: ['2-3', '3-4', '4-5', '5-6', '7-8', '9-10', '11-12', '13', '', ''] },
+  { gender: '001-MENS/ ADULTS', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '', '', '', ''] },
+  { gender: '002-LADIES', sizes: ['6', '8', '10', '12', '14', '16', '18', '20', '22', '24', '', '', '', ''] },
+  { gender: '003-KIDS LETTER', sizes: ['XSB', 'SB', 'MB', 'LB', 'XLB', '', '', '', '', '', '', '', '', ''] },
+  { gender: '004-KIDS', sizes: ['2-3', '4-5', '6-7', '8-9', '10-11', '12-13', '14-15', '', '', '', '', '', '', ''] },
+  { gender: '005-KIDS ALT 1', sizes: ['2-3', '3-4', '5-6', '7-8', '9-10', '11-12', '13', '', '', '', '', '', '', ''] },
+  { gender: '006-LADIES LETTER', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '', '', '', '', '', ''] },
+  { gender: '007-KIDS ALT 2', sizes: ['3-4', '4-5', '6-7', '8-9', '10-11', '12-13', '', '', '', '', '', '', '', ''] },
+  { gender: '008-BABY', sizes: ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M/ 18-23M', '', '', '', '', '', '', '', ''] },
+  { gender: '009-ACCESSORIES/ HEADWEAR', sizes: ['ONE SIZE', 'BABY', 'JUNIOR', 'ADULT', '6-12 M', '1-3 YRS', 'INFANT', '', '', '', '', '', '', ''] },
+  { gender: '010-MENS FOOTWEAR', sizes: ['3-6', '7-11', '7-8', '9-10', '11-12', '', '', '', '', '', '', '', '', ''] },
+  { gender: '011-KIDS FOOTWEAR', sizes: ['10-11', '12-13', '1-2', '3-4', '5-6', '', '', '', '', '', '', '', '', ''] },
+  { gender: '012-DOG', sizes: ['XS', 'S', 'M', 'L', 'XL', 'S/M', 'M/L', '', '', '', '', '', '', ''] },
+  { gender: '013-LADIES DUAL', sizes: ['8-10', '12-14', '16-18', '20-22', '', '', '', '', '', '', '', '', '', ''] },
+  { gender: '014-KIDS DRY ROBE', sizes: ['5-9 YRS', '10-13YRS', '', '', '', '', '', '', '', '', '', '', '', ''] },
+  { gender: '015- KIDS 3-15', sizes: ['3/4', '4/5', '5/6', '6/7', '7/8', '8/9', '9/10', '10/11', '11/12', '12/13', '13/14', '14/15', '', ''] },
+  { gender: '016- KIDS 1-14', sizes: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14'] },
 ];
 
 interface OrderTableProps {
@@ -120,7 +123,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   }, []);
 
   // Get size column keys
-  const sizeColumns = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl'];
+  const sizeColumns = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl', 'size_11', 'size_12', 'size_13', 'size_14'];
 
   // Load available statuses
   useEffect(() => {
@@ -231,7 +234,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   // Find indices for special columns (gender and sizes for the header reference rows)
   const genderColIndex = visibleColumns.findIndex(c => c.key === 'gender');
   const firstSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_2xs');
-  const lastSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_5xl');
+  const lastSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_14');
   const hasSizeColumns = firstSizeColIndex >= 0 && lastSizeColIndex >= 0 && genderColIndex >= 0;
 
   const handleSave = async (orderId: number, field: string, value: any, changeReason?: string) => {
@@ -380,7 +383,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                     return (
                       <th
                         key="size-range-header"
-                        colSpan={10}
+                        colSpan={14}
                         className="px-1 py-1 text-center border border-gray-300 font-semibold bg-blue-100"
                       >
                         SIZE RANGE & QTY
@@ -391,7 +394,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                     return (
                       <th
                         key="size-range-header-compact"
-                        colSpan={10}
+                        colSpan={14}
                         className="px-1 py-1 text-center border border-gray-300 font-semibold bg-blue-100"
                       >
                         SIZE QTYS

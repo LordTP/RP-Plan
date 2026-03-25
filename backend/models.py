@@ -74,6 +74,10 @@ class PurchaseOrder(Base):
     size_3xl = Column(Integer, nullable=True)
     size_4xl = Column(Integer, nullable=True)
     size_5xl = Column(Integer, nullable=True)
+    size_11 = Column(Integer, nullable=True)  # Extra size col 11 (e.g. shoe 13/14, numeric 11)
+    size_12 = Column(Integer, nullable=True)  # Extra size col 12 (e.g. shoe 14/15, numeric 12)
+    size_13 = Column(Integer, nullable=True)  # Extra size col 13 (e.g. numeric 13)
+    size_14 = Column(Integer, nullable=True)  # Extra size col 14 (e.g. numeric 14)
 
     # Financial
     total_quantity = Column(Integer, nullable=True)

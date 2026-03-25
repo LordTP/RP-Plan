@@ -745,6 +745,7 @@ async def update_order(
             'style_code', 'customer_style_code', 'description', 'colour', 'gender',
             'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
             'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+            'size_11', 'size_12', 'size_13', 'size_14',
             'total_quantity', 'trade_price', 'total_order_value',
             'order_received_date', 'order_sent_to_factory_date',
             'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
@@ -831,7 +832,8 @@ async def update_order(
     
     # Auto-calculate total_quantity from size columns
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
-                   'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl']
+                   'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+                   'size_11', 'size_12', 'size_13', 'size_14']
     total_qty = sum(getattr(order, f) or 0 for f in size_fields)
     if total_qty > 0:
         order.total_quantity = total_qty
@@ -1115,6 +1117,7 @@ DEFAULT_COLUMNS = [
     'style_code', 'customer_style_code', 'description', 'colour', 'gender',
     'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
     'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+    'size_11', 'size_12', 'size_13', 'size_14',
     'total_quantity', 'trade_price', 'total_order_value',
     'order_received_date', 'order_sent_to_factory_date',
     'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
@@ -1807,6 +1810,7 @@ async def undo_last_import(
                 setattr(po, field_name, None)
             elif field_name in ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
                                 'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+                                'size_11', 'size_12', 'size_13', 'size_14',
                                 'total_quantity']:
                 try:
                     setattr(po, field_name, int(float(old_value_str)))

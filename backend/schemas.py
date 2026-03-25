@@ -76,7 +76,11 @@ class PurchaseOrderBase(BaseModel):
     size_3xl: Optional[int] = None
     size_4xl: Optional[int] = None
     size_5xl: Optional[int] = None
-    
+    size_11: Optional[int] = None
+    size_12: Optional[int] = None
+    size_13: Optional[int] = None
+    size_14: Optional[int] = None
+
     direct_repeat_new: Optional[str] = None
 
     # Financial
@@ -203,7 +207,11 @@ class PurchaseOrderSupplierResponse(BaseModel):
     size_3xl: Optional[int] = None
     size_4xl: Optional[int] = None
     size_5xl: Optional[int] = None
-    
+    size_11: Optional[int] = None
+    size_12: Optional[int] = None
+    size_13: Optional[int] = None
+    size_14: Optional[int] = None
+
     total_quantity: Optional[int] = None
     # trade_price: HIDDEN FROM SUPPLIERS
     # total_order_value: HIDDEN FROM SUPPLIERS
