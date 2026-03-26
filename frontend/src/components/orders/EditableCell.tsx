@@ -29,7 +29,7 @@ interface EditableCellProps {
   order: Order;
   isEditable: boolean;
   isSupplierEditable: boolean;
-  userRole: 'admin' | 'internal' | 'supplier';
+  userRole: 'admin' | 'internal' | 'supplier' | 'sourcelab_designer';
   onSave: (orderId: number, field: string, value: any, changeReason?: string) => Promise<void>;
   onBulkSave?: () => void;
   isChanged?: boolean;

@@ -645,17 +645,56 @@ async def update_order(
                 detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
             )
         
-        # Suppliers can ONLY update these date fields - BUT changes require approval
-        allowed_fields = [
-            'factory_confirmed_ex_factory',
-            'revised_po_ex_factory',
-        ]
+        # Build supplier allowed fields from DB settings, fall back to defaults
+        db_settings = db.query(RoleColumnSettings).filter(
+            RoleColumnSettings.role == 'supplier',
+            RoleColumnSettings.is_editable == True
+        ).all()
+        if db_settings:
+            allowed_fields = [s.column_key for s in db_settings]
+        else:
+            allowed_fields = ['factory_confirmed_ex_factory', 'revised_po_ex_factory']
 
-        # Supplier must provide a reason for date changes
+        # Determine which fields are dates (need approval) vs text (direct save)
+        DATE_FIELDS = {
+            'factory_confirmed_ex_factory', 'revised_po_ex_factory',
+            'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'fit_sample_received', 'fit_sample_approved',
+            'strike_off_received', 'strike_off_approved', 'lab_dip_received', 'lab_dip_approved',
+            'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'shipment_sample_received', 'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer', 'estimated_del_to_customer',
+        }
+
+        # Reject any fields not in the allowed list
+        submitted_fields = [k for k in order_data.keys() if k != 'change_reason']
+        for f in submitted_fields:
+            if f not in allowed_fields:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"You are not allowed to edit '{f}'"
+                )
+
+        # Handle text/non-date fields — save directly, no approval needed
+        direct_updates = {}
+        for field in allowed_fields:
+            if field in order_data and field not in DATE_FIELDS:
+                direct_updates[field] = order_data[field]
+
+        for field, value in direct_updates.items():
+            if hasattr(order, field):
+                setattr(order, field, value)
+
+        # Handle date fields — require approval
         change_reason = order_data.get('change_reason', '').strip()
         pending_changes_created = []
 
         for field in allowed_fields:
+            if field not in DATE_FIELDS:
+                continue
             if field in order_data and order_data[field] is not None:
                 new_value_str = order_data[field]
 
@@ -708,7 +747,20 @@ async def update_order(
 
                     pending_changes_created.append(field)
 
-        # If only pending changes were created (no direct updates), commit and return early
+        # If we had direct updates but no pending changes, commit and return
+        if direct_updates and not pending_changes_created:
+            order.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(order)
+            order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+            read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
+            order.unread_comment_count = db.query(Comment).filter(
+                Comment.po_id == order.id,
+                ~Comment.id.in_(read_ids)
+            ).count()
+            return PurchaseOrderSupplierResponse.from_orm(order)
+
+        # If pending changes were created, commit and return early
         if pending_changes_created:
             db.commit()
             db.refresh(order)
@@ -1357,11 +1409,15 @@ async def bulk_update_date(
 
     # Check permissions
     if current_user.role == UserRole.SUPPLIER:
-        # Suppliers can only edit these date fields
-        supplier_allowed_fields = [
-            'factory_confirmed_ex_factory',
-            'revised_po_ex_factory',
-        ]
+        # Build supplier allowed fields from DB settings, fall back to defaults
+        db_settings = db.query(RoleColumnSettings).filter(
+            RoleColumnSettings.role == 'supplier',
+            RoleColumnSettings.is_editable == True
+        ).all()
+        if db_settings:
+            supplier_allowed_fields = [s.column_key for s in db_settings]
+        else:
+            supplier_allowed_fields = ['factory_confirmed_ex_factory', 'revised_po_ex_factory']
         if field_name not in supplier_allowed_fields:
             raise HTTPException(status_code=403, detail=f"Suppliers can only edit: {supplier_allowed_fields}")
 

@@ -445,7 +445,7 @@ export const usersApi = {
     username: string;
     email: string;
     password: string;
-    role: 'admin' | 'internal' | 'supplier';
+    role: 'admin' | 'internal' | 'supplier' | 'sourcelab_designer';
     factory_name?: string;
   }): Promise<User> => {
     const response = await api.post<User>('/api/users', userData);

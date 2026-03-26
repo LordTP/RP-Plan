@@ -21,7 +21,7 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { ordersApi, statusesApi, OrderFilters } from '@/lib/api';
+import { ordersApi, statusesApi, settingsApi, OrderFilters } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS } from '@/types';
@@ -139,13 +139,24 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
+  const [supplierColumnSettings, setSupplierColumnSettings] = useState<{ column_key: string; is_visible: boolean; is_editable: boolean }[]>([]);
+
+  // Reason modal state for supplier date edits
+  const [reasonModal, setReasonModal] = useState<{ orderId: number; field: string; value: string } | null>(null);
+  const [changeReason, setChangeReason] = useState('');
+  const [isSavingReason, setIsSavingReason] = useState(false);
 
   const isSupplier = user?.role === 'supplier';
 
-  // Load statuses
+  // Load statuses + supplier settings
   useEffect(() => {
     statusesApi.getStatuses().then(res => setStatuses(res.statuses)).catch(console.error);
-  }, []);
+    if (isSupplier) {
+      settingsApi.getRoleColumns('supplier')
+        .then(res => setSupplierColumnSettings(res.columns))
+        .catch(console.error);
+    }
+  }, [isSupplier]);
 
   // Load orders
   const loadOrders = useCallback(async (filters?: OrderFilters) => {
@@ -274,6 +285,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   };
 
   const handleDetailSave = async (orderId: number, field: string, value: any) => {
+    // For supplier date edits, show the reason modal instead of saving directly
+    const col = COLUMNS.find(c => c.key === field);
+    if (isSupplier && col?.type === 'date') {
+      setReasonModal({ orderId, field, value });
+      setChangeReason('');
+      return;
+    }
+
     try {
       const result = await ordersApi.updateOrder(orderId, { [field]: value });
       if (result && typeof result === 'object' && 'pending_approval' in result && result.pending_approval) {
@@ -289,8 +308,225 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
     }
   };
 
+  // Submit handler for the reason modal (supplier date edits)
+  const handleReasonSubmit = async () => {
+    if (!reasonModal || !changeReason.trim()) return;
+    setIsSavingReason(true);
+    try {
+      if (reasonApplyMode !== 'single' && reasonModal.orderId) {
+        // Find the order to get its PO number
+        const order = orders.find(o => o.id === reasonModal.orderId);
+        if (!order) return;
+        const orderIdsToUpdate = reasonApplyMode === 'all'
+          ? [] // Empty = all on PO
+          : reasonSelectedIds;
+        const result = await ordersApi.bulkUpdateDate(
+          order.po_number,
+          reasonModal.field,
+          reasonModal.value,
+          orderIdsToUpdate,
+          changeReason
+        );
+        if (result.pending_approval) {
+          toast.success(result.message || 'Date change submitted for approval');
+        } else {
+          toast.success(`Updated ${result.orders_updated} styles`);
+        }
+        // Refresh to pick up changes
+        loadOrders();
+      } else {
+        const result = await ordersApi.updateOrder(reasonModal.orderId, {
+          [reasonModal.field]: reasonModal.value,
+          change_reason: changeReason,
+        });
+        if (result && typeof result === 'object' && 'pending_approval' in result && result.pending_approval) {
+          toast.success(result.message || 'Date change submitted for approval');
+        } else {
+          const updatedOrder = result as Order;
+          setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+          toast.success('Updated successfully');
+        }
+      }
+      setReasonModal(null);
+      setChangeReason('');
+      setReasonApplyMode('single');
+      setReasonSelectedIds([]);
+      setReasonStylesOnPO([]);
+    } catch (error: any) {
+      const msg = error?.response?.data?.detail || 'Failed to update';
+      toast.error(msg);
+    } finally {
+      setIsSavingReason(false);
+    }
+  };
+
+  // Bulk apply state for reason modal
+  const [reasonApplyMode, setReasonApplyMode] = useState<'single' | 'all' | 'selected'>('single');
+  const [reasonSelectedIds, setReasonSelectedIds] = useState<number[]>([]);
+  const [reasonStylesOnPO, setReasonStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
+  const [loadingReasonStyles, setLoadingReasonStyles] = useState(false);
+
+  // Load styles on PO when reason modal opens
+  useEffect(() => {
+    if (reasonModal) {
+      const order = orders.find(o => o.id === reasonModal.orderId);
+      if (order?.po_number) {
+        setLoadingReasonStyles(true);
+        ordersApi.getStylesOnPO(order.po_number)
+          .then(res => setReasonStylesOnPO(res.orders))
+          .catch(console.error)
+          .finally(() => setLoadingReasonStyles(false));
+      }
+    }
+  }, [reasonModal, orders]);
+
   return (
     <AppShell title={viewTitle} subtitle="v2">
+
+      {/* Reason Modal for supplier date edits */}
+      {reasonModal && (() => {
+        const modalOrder = orders.find(o => o.id === reasonModal.orderId);
+        const fieldCol = COLUMNS.find(c => c.key === reasonModal.field);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-xl shadow-xl w-[440px] max-h-[80vh] overflow-y-auto p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                Edit {fieldCol?.label || reasonModal.field}
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                {modalOrder?.po_number} · {modalOrder?.style_code}
+              </p>
+
+              {/* Date value */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Date</label>
+                <input
+                  type="date"
+                  value={reasonModal.value?.split('T')[0] || ''}
+                  onChange={(e) => setReasonModal({ ...reasonModal, value: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                />
+              </div>
+
+              {/* Reason */}
+              <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <label className="block text-sm font-medium text-orange-800 mb-2">
+                  Reason for date change <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm resize-none"
+                  placeholder="e.g., Factory delay due to material shortage"
+                />
+                <p className="text-xs text-orange-600 mt-1">
+                  This change will require approval from Sourcelab
+                </p>
+              </div>
+
+              {/* Bulk apply options */}
+              {reasonStylesOnPO.length > 1 && (
+                <div className="mb-4 border-t pt-4">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Apply to:</p>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="reasonApplyMode"
+                        value="single"
+                        checked={reasonApplyMode === 'single'}
+                        onChange={() => setReasonApplyMode('single')}
+                        className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        This style only ({modalOrder?.style_code})
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="reasonApplyMode"
+                        value="all"
+                        checked={reasonApplyMode === 'all'}
+                        onChange={() => setReasonApplyMode('all')}
+                        className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        All styles on this PO ({reasonStylesOnPO.length} styles)
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="reasonApplyMode"
+                        value="selected"
+                        checked={reasonApplyMode === 'selected'}
+                        onChange={() => setReasonApplyMode('selected')}
+                        className="w-4 h-4 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700">Selected styles</span>
+                    </label>
+
+                    {reasonApplyMode === 'selected' && (
+                      <div className="ml-6 space-y-1.5 max-h-40 overflow-y-auto">
+                        {reasonStylesOnPO
+                          .filter(s => s.id !== reasonModal.orderId)
+                          .map((style) => (
+                            <label key={style.id} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={reasonSelectedIds.includes(style.id)}
+                                onChange={(e) => {
+                                  setReasonSelectedIds(prev =>
+                                    e.target.checked
+                                      ? [...prev, style.id]
+                                      : prev.filter(id => id !== style.id)
+                                  );
+                                }}
+                                className="w-3.5 h-3.5 text-primary-600 focus:ring-primary-500 rounded"
+                              />
+                              <span className="text-xs text-gray-600">
+                                {style.style_code} · {style.colour} — {style.description}
+                              </span>
+                            </label>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setReasonModal(null);
+                    setChangeReason('');
+                    setReasonApplyMode('single');
+                    setReasonSelectedIds([]);
+                  }}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  disabled={isSavingReason}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleReasonSubmit}
+                  disabled={isSavingReason || !changeReason.trim() || (reasonApplyMode === 'selected' && reasonSelectedIds.length === 0)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingReason ? 'Saving...' : reasonApplyMode === 'all'
+                    ? `Submit (${reasonStylesOnPO.length} styles)`
+                    : reasonApplyMode === 'selected'
+                      ? `Submit (${reasonSelectedIds.length + 1} styles)`
+                      : 'Submit for Approval'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 116px)' }}>
 
         {/* ─── Left: Order List ─── */}
@@ -427,6 +663,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
             isSupplier={isSupplier}
             viewType={viewType}
             onSave={handleDetailSave}
+            supplierColumnSettings={supplierColumnSettings}
           />
         )}
       </div>
@@ -631,6 +868,7 @@ function DetailPanel({
   isSupplier,
   viewType,
   onSave,
+  supplierColumnSettings,
 }: {
   order: Order;
   onClose: () => void;
@@ -638,6 +876,7 @@ function DetailPanel({
   isSupplier: boolean;
   viewType: FactoryViewType;
   onSave?: (orderId: number, field: string, value: any) => void;
+  supplierColumnSettings: { column_key: string; is_visible: boolean; is_editable: boolean }[];
 }) {
   const allowedCols = viewType === 'factory-product'
     ? new Set(FACTORY_PRODUCT_COLUMNS)
@@ -646,6 +885,11 @@ function DetailPanel({
 
   const canEdit = (key: string) => {
     if (isSupplier) {
+      // Use DB settings if available, fall back to hardcoded
+      if (supplierColumnSettings.length > 0) {
+        const setting = supplierColumnSettings.find(s => s.column_key === key);
+        return setting?.is_editable ?? false;
+      }
       const col = COLUMNS.find(c => c.key === key);
       return col?.supplierEditable ?? false;
     }
@@ -797,9 +1041,9 @@ function DetailPanel({
               {hasCol('original_del_date_to_customer') && <TimelineItem label="Cust Req Delivery" date={order.original_del_date_to_customer} />}
               {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
               {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
-              {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} />}
-              {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} />}
-              {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} />}
+              {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+              {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+              {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
               {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
             </div>
           </div>
@@ -854,8 +1098,8 @@ function DetailPanel({
               Shipping
             </h4>
             <div className="space-y-2">
-              {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} />}
-              {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} />}
+              {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
+              {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
               {order.tracking_reference && <DetailRow label="Tracking Ref" value={order.tracking_reference} />}
             </div>
           </div>
@@ -898,11 +1142,45 @@ function DetailPanel({
 
 // ─── Sub-components ────────────────────────────────────────
 
-function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
+function DetailRow({ label, value, editable, onSave }: {
+  label: string;
+  value: string | number | null | undefined;
+  editable?: boolean;
+  onSave?: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(String(value || ''));
+
+  const handleSave = () => {
+    onSave?.(editValue);
+    setEditing(false);
+  };
+
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
       <span className="text-xs text-gray-400">{label}</span>
-      <span className="text-xs font-medium text-gray-700 text-right max-w-[200px] truncate">{value || '—'}</span>
+      {editing ? (
+        <input
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
+          autoFocus
+          className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
+        />
+      ) : (
+        <span
+          className={cn(
+            'text-xs font-medium text-gray-700 text-right max-w-[200px] truncate',
+            editable && 'cursor-pointer hover:text-primary-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-200/60'
+          )}
+          onClick={() => editable && setEditing(true)}
+          title={editable ? 'Click to edit' : undefined}
+        >
+          {value || '—'}
+        </span>
+      )}
     </div>
   );
 }

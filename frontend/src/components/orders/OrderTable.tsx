@@ -178,7 +178,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     // If explicit column keys provided, filter and order by those
     if (columnKeys) {
       const colMap = new Map(COLUMNS.map(c => [c.key, c]));
-      columns = columnKeys.map(k => colMap.get(k)).filter((c): c is ColumnDef => !!c);
+      columns = columnKeys.map(k => colMap.get(k as keyof Order)).filter((c): c is ColumnDef => !!c);
     } else if (isSupplier && supplierColumnSettings.length > 0) {
       // Use dynamic settings from database
       const visibleKeys = supplierColumnSettings
@@ -627,7 +627,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           </tbody>
         </table>
         {/* Infinite scroll sentinel */}
-        {scrollSentinelRef && <div ref={scrollSentinelRef} className="h-1" />}
+        {scrollSentinelRef && <div ref={scrollSentinelRef as React.RefObject<HTMLDivElement>} className="h-1" />}
         {isLoadingMore && (
           <div className="flex items-center justify-center py-3">
             <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
