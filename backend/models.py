@@ -1,7 +1,7 @@
 """
 Database models for China Orderbook Portal
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, Enum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -180,6 +180,22 @@ class Comment(Base):
     # Relationships
     purchase_order = relationship("PurchaseOrder", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    reads = relationship("CommentRead", back_populates="comment", cascade="all, delete-orphan")
+
+
+class CommentRead(Base):
+    """Tracks which users have read which comments"""
+    __tablename__ = "comment_reads"
+    __table_args__ = (UniqueConstraint('comment_id', 'user_id', name='uq_comment_user'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    read_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    comment = relationship("Comment", back_populates="reads")
+    user = relationship("User")
 
 
 # Valid order statuses

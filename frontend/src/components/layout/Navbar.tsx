@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3, Palette } from 'lucide-react';
+import { LayoutDashboard, Table2, Settings, LogOut, User, FileSpreadsheet, BarChart3, Palette, ShoppingBag, Truck } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
   { href: '/orders', label: 'Orders', icon: Table2, roles: ['admin', 'internal', 'supplier'] },
+  { href: '/factory-product', label: 'Factory Product', icon: ShoppingBag, roles: ['admin', 'supplier'] },
+  { href: '/factory-shipping', label: 'Factory Shipping', icon: Truck, roles: ['admin', 'supplier'] },
   { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },

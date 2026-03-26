@@ -16,7 +16,7 @@ from collections import defaultdict
 import time as _time
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange
+from models import User, PurchaseOrder, Comment, CommentRead, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
@@ -441,22 +441,17 @@ async def get_orders(
     offset = (page - 1) * page_size
     orders = query.order_by(PurchaseOrder.system_po_number.asc()).offset(offset).limit(page_size).all()
     
-    # Add comment count and unread count to each order
-    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    is_internal = role_str != 'supplier'
+    # Add comment count and unread count per user
     for order in orders:
         order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
-        # Count unread comments for this user type
-        if is_internal:
-            order.unread_comment_count = db.query(Comment).filter(
-                Comment.po_id == order.id,
-                Comment.read_by_internal == False
-            ).count()
-        else:
-            order.unread_comment_count = db.query(Comment).filter(
-                Comment.po_id == order.id,
-                Comment.read_by_supplier == False
-            ).count()
+        # Count comments this specific user hasn't read
+        read_comment_ids = db.query(CommentRead.comment_id).filter(
+            CommentRead.user_id == current_user.id
+        ).subquery()
+        order.unread_comment_count = db.query(Comment).filter(
+            Comment.po_id == order.id,
+            ~Comment.id.in_(read_comment_ids)
+        ).count()
     
     # Return different response based on user role
     if current_user.role == UserRole.SUPPLIER:
@@ -719,9 +714,10 @@ async def update_order(
             db.refresh(order)
             # Return with pending info
             order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+            read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
             order.unread_comment_count = db.query(Comment).filter(
                 Comment.po_id == order.id,
-                Comment.read_by_supplier == False
+                ~Comment.id.in_(read_ids)
             ).count()
             return {
                 "order": PurchaseOrderSupplierResponse.from_orm(order),
@@ -854,18 +850,11 @@ async def update_order(
 
     # Add comment counts before returning
     order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
-    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    is_internal = role_str != 'supplier'
-    if is_internal:
-        order.unread_comment_count = db.query(Comment).filter(
-            Comment.po_id == order.id,
-            Comment.read_by_internal == False
-        ).count()
-    else:
-        order.unread_comment_count = db.query(Comment).filter(
-            Comment.po_id == order.id,
-            Comment.read_by_supplier == False
-        ).count()
+    read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
+    order.unread_comment_count = db.query(Comment).filter(
+        Comment.po_id == order.id,
+        ~Comment.id.in_(read_ids)
+    ).count()
 
     # Return appropriate response based on user role
     if current_user.role == UserRole.SUPPLIER:
@@ -926,7 +915,15 @@ async def get_order_comments(
     # Get comments with user information
     comments = db.query(Comment).filter(Comment.po_id == order_id).order_by(Comment.created_at.desc()).all()
 
-    # Build response with username - properly serialize without __dict__
+    # Get set of comment IDs this user has read
+    read_ids = set(
+        r[0] for r in db.query(CommentRead.comment_id).filter(
+            CommentRead.user_id == current_user.id,
+            CommentRead.comment_id.in_([c.id for c in comments])
+        ).all()
+    )
+
+    # Build response with username
     result = []
     for comment in comments:
         user = db.query(User).filter(User.id == comment.user_id).first()
@@ -937,6 +934,7 @@ async def get_order_comments(
             username=user.username if user else "Unknown",
             comment_text=comment.comment_text,
             source=comment.source or "Sourcelab",
+            read=comment.id in read_ids,
             read_by_internal=comment.read_by_internal or False,
             read_by_supplier=comment.read_by_supplier or False,
             created_at=comment.created_at
@@ -983,14 +981,18 @@ async def add_comment(
         user_id=current_user.id,
         comment_text=comment_data.comment_text,
         source=source_tag,
-        read_by_internal=is_internal,  # Creator has read it
-        read_by_supplier=not is_internal  # Creator has read it
+        read_by_internal=is_internal,  # Legacy compat
+        read_by_supplier=not is_internal  # Legacy compat
     )
 
     db.add(new_comment)
+    db.flush()  # Get the comment ID
+
+    # Mark as read by the creator
+    db.add(CommentRead(comment_id=new_comment.id, user_id=current_user.id))
     db.commit()
     db.refresh(new_comment)
-    
+
     # Broadcast new comment
     await manager.broadcast({
         "type": "comment_added",
@@ -1003,7 +1005,7 @@ async def add_comment(
         },
         "timestamp": datetime.utcnow().isoformat()
     })
-    
+
     # Return properly constructed response
     return CommentResponse(
         id=new_comment.id,
@@ -1012,6 +1014,7 @@ async def add_comment(
         username=current_user.username,
         comment_text=new_comment.comment_text,
         source=new_comment.source,
+        read=True,  # Creator has read their own comment
         read_by_internal=new_comment.read_by_internal or False,
         read_by_supplier=new_comment.read_by_supplier or False,
         created_at=new_comment.created_at
@@ -1085,19 +1088,29 @@ async def mark_comments_read(
         if order.factory != current_user.factory_name:
             raise HTTPException(status_code=403, detail="Not authorized")
 
-    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    is_internal = role_str != 'supplier'
+    # Get all comment IDs for this order
+    comment_ids = [c.id for c in db.query(Comment.id).filter(Comment.po_id == order_id).all()]
 
-    # Update comments based on user type
-    comments = db.query(Comment).filter(Comment.po_id == order_id).all()
-    for comment in comments:
-        if is_internal:
-            comment.read_by_internal = True
-        else:
-            comment.read_by_supplier = True
+    if comment_ids:
+        # Find which ones this user has already read
+        already_read = set(
+            r[0] for r in db.query(CommentRead.comment_id).filter(
+                CommentRead.user_id == current_user.id,
+                CommentRead.comment_id.in_(comment_ids)
+            ).all()
+        )
 
-    db.commit()
-    return {"success": True, "comments_marked": len(comments)}
+        # Insert read records for unread comments
+        new_reads = 0
+        for cid in comment_ids:
+            if cid not in already_read:
+                db.add(CommentRead(comment_id=cid, user_id=current_user.id))
+                new_reads += 1
+
+        db.commit()
+        return {"success": True, "comments_marked": new_reads}
+
+    return {"success": True, "comments_marked": 0}
 
 
 @app.get("/api/statuses")
@@ -1509,6 +1522,7 @@ async def bulk_add_comment(
     source_tag = "Sourcelab" if is_internal else "Supplier"
 
     # Add comment to each order
+    new_comments = []
     for order in orders:
         new_comment = Comment(
             po_id=order.id,
@@ -1519,6 +1533,13 @@ async def bulk_add_comment(
             read_by_supplier=not is_internal
         )
         db.add(new_comment)
+        new_comments.append(new_comment)
+
+    db.flush()  # Get IDs for all comments
+
+    # Mark all as read by the creator
+    for comment in new_comments:
+        db.add(CommentRead(comment_id=comment.id, user_id=current_user.id))
 
     db.commit()
 

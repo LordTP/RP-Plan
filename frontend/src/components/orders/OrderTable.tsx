@@ -40,9 +40,10 @@ interface OrderTableProps {
   onShippedStatusRequest?: (order: Order) => void;
   scrollSentinelRef?: RefObject<HTMLDivElement | null>;
   isLoadingMore?: boolean;
+  columnKeys?: string[];  // If provided, only show these columns (in this order)
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, scrollSentinelRef, isLoadingMore = false }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, scrollSentinelRef, isLoadingMore = false, columnKeys }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -174,7 +175,11 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const getVisibleColumns = (): ColumnDef[] => {
     let columns = isDashboard ? DASHBOARD_COLUMNS : COLUMNS;
 
-    if (isSupplier && supplierColumnSettings.length > 0) {
+    // If explicit column keys provided, filter and order by those
+    if (columnKeys) {
+      const colMap = new Map(COLUMNS.map(c => [c.key, c]));
+      columns = columnKeys.map(k => colMap.get(k)).filter((c): c is ColumnDef => !!c);
+    } else if (isSupplier && supplierColumnSettings.length > 0) {
       // Use dynamic settings from database
       const visibleKeys = supplierColumnSettings
         .filter((s) => s.is_visible)
@@ -311,7 +316,10 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
 
   const handleRowClick = (order: Order) => {
     setSelectedOrder(order);
-    // Mark comments as read when opening
+    // Mark comments as read when opening and clear badge immediately
+    if (order.unread_comment_count && order.unread_comment_count > 0) {
+      updateOrderInList({ ...order, unread_comment_count: 0 });
+    }
     ordersApi.markCommentsRead(order.id).catch(console.error);
   };
 
@@ -506,10 +514,20 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       )}
                       title={order.unread_comment_count ? `${order.unread_comment_count} unread` : order.comment_count ? `${order.comment_count} comments` : 'Add comment'}
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      {order.unread_comment_count && order.unread_comment_count > 0 && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary-500 rounded-full" />
+                      {order.comment_count && order.comment_count > 0 ? (
+                        <MessageSquare className="w-3.5 h-3.5 fill-current" />
+                      ) : (
+                        <MessageSquare className="w-3.5 h-3.5" />
                       )}
+                      {order.unread_comment_count && order.unread_comment_count > 0 ? (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-primary-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm">
+                          {order.unread_comment_count}
+                        </span>
+                      ) : order.comment_count && order.comment_count > 0 ? (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-gray-400 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                          {order.comment_count}
+                        </span>
+                      ) : null}
                     </button>
                   </td>
                   {visibleColumns.map((column) => {
@@ -524,8 +542,9 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                         "border border-gray-100",
                         sizeColumns.includes(column.key) && "bg-blue-50/30",
                         column.key === 'gender' && "bg-amber-50/30",
+                        isSupplier && column.supplierEditable && "bg-green-50 border-green-200/60",
                         isCellChanged && "!bg-emerald-200 !border-emerald-400",
-                        isStickyCol && !isCellChanged && "bg-white",
+                        isStickyCol && !isCellChanged && !( isSupplier && column.supplierEditable) && "bg-white",
                         isLastStickyCol && "sticky-shadow"
                       )}
                       style={{

@@ -12,6 +12,8 @@ import {
   Settings,
   LogOut,
   Package,
+  ShoppingBag,
+  Truck,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -22,6 +24,8 @@ const navSections = [
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
       { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier'] },
+      { href: '/factory-product', label: 'Factory Product', icon: ShoppingBag, roles: ['admin', 'supplier'] },
+      { href: '/factory-shipping', label: 'Factory Shipping', icon: Truck, roles: ['admin', 'supplier'] },
       { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
     ],
   },

@@ -106,8 +106,7 @@ export function CommentSidebar() {
 
   const isUnread = (comment: Comment): boolean => {
     if (!user) return false;
-    if (user.role === 'supplier') return !comment.read_by_supplier;
-    return !comment.read_by_internal;
+    return !comment.read;
   };
 
   if (!selectedOrder) return null;
@@ -324,14 +323,22 @@ export function CommentSidebar() {
               />
               Add to all styles on this PO
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
+            <div className="flex gap-2 items-end">
+              <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Add a comment..."
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-300 bg-white transition-all"
+                rows={2}
+                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-300 bg-white transition-all resize-none"
                 disabled={isSubmitting}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (newComment.trim() && !isSubmitting) {
+                      (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                    }
+                  }
+                }}
               />
               <button
                 type="submit"

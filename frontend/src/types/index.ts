@@ -115,6 +115,7 @@ export interface Comment {
   username: string;
   comment_text: string;
   source: string;
+  read: boolean;
   read_by_internal: boolean;
   read_by_supplier: boolean;
   created_at: string;
@@ -265,6 +266,49 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'estimated_del_to_customer', label: 'Est Del to Cust', width: 115, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Status (internal-only, kept for app logic)
   { key: 'status', label: 'Status', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+];
+
+// Factory Product view — PO through ETA Customer, product-focused
+export const FACTORY_PRODUCT_COLUMNS: string[] = [
+  'po_number', 'customer', 'china_orderbook_ref', 'direct_repeat_new', 'season',
+  'style_code', 'description', 'colour', 'gender',
+  // Size range & qty
+  'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl',
+  'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl', 'size_11', 'size_12', 'size_13', 'size_14',
+  // Financial
+  'total_quantity', 'trade_price', 'total_order_value',
+  // Dates & samples through ETA Customer
+  'order_received_date', 'order_sent_to_factory_date',
+  'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+  'original_po_ex_factory', 'factory_confirmed_ex_factory',
+  'fit_sample_required', 'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+  'strike_off_status', 'strike_off_received', 'strike_off_approved',
+  'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+  'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
+  'photo_sample_received', 'ex_factory_from_pp_approval',
+  'revised_po_ex_factory', 'shipment_sample_received',
+  'original_del_date_to_customer', 'eta_to_uk', 'eta_to_customer',
+];
+
+// Factory Shipping view — shipping-focused columns
+export const FACTORY_SHIPPING_COLUMNS: string[] = [
+  'po_number', 'customer', 'china_orderbook_ref', 'terms',
+  'style_code', 'description', 'colour', 'gender',
+  // Size range & qty
+  'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl',
+  'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl', 'size_11', 'size_12', 'size_13', 'size_14',
+  // Financial
+  'total_quantity', 'trade_price', 'total_order_value',
+  // Ex-factory dates
+  'original_po_ex_factory', 'factory_confirmed_ex_factory',
+  // PPS status all the way to estimated del to customer
+  'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
+  'photo_sample_received', 'ex_factory_from_pp_approval',
+  'revised_po_ex_factory', 'shipment_sample_received',
+  'original_del_date_to_customer', 'eta_to_uk', 'eta_to_customer',
+  'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
+  'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
+  'revised_vessel_eta_to_port', 'estimated_del_to_customer',
 ];
 
 export const TRACKING_REF_COLUMN: ColumnDef = {

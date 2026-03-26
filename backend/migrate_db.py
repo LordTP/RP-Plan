@@ -29,7 +29,20 @@ def migrate():
         print("Adding read_by_supplier column...")
         cursor.execute("ALTER TABLE comments ADD COLUMN read_by_supplier BOOLEAN DEFAULT 0")
 
-    # Remove old read_status column if it exists (optional, SQLite doesn't support DROP COLUMN easily)
+    # Create comment_reads table for per-user read tracking
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comment_reads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            read_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # Check if index exists before creating
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='ix_comment_reads_lookup'")
+    if not cursor.fetchone():
+        cursor.execute("CREATE UNIQUE INDEX ix_comment_reads_lookup ON comment_reads(comment_id, user_id)")
+    print("comment_reads table ready")
 
     conn.commit()
 

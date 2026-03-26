@@ -296,8 +296,9 @@ class CommentResponse(CommentBase):
     po_id: int
     user_id: int
     username: str
-    read_by_internal: bool = False
-    read_by_supplier: bool = False
+    read: bool = False  # Whether the current user has read this comment
+    read_by_internal: bool = False  # Legacy, kept for compat
+    read_by_supplier: bool = False  # Legacy, kept for compat
     created_at: datetime
 
     class Config:
