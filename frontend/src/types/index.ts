@@ -227,7 +227,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'specs_sent_to_factory', label: 'Specs Sent', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'barcodes_sent_to_factory', label: 'Barcodes Sent', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'original_po_ex_factory', label: 'Requested Ex-Fac', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'factory_confirmed_ex_factory', label: 'Factory Confirmed Ex-Fac', width: 150, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
+  { key: 'factory_confirmed_ex_factory', label: 'Factory Confirmed Ex-Fac', width: 150, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Fit
   { key: 'fit_sample_required', label: 'Fit Sample Req', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'fit_sample_status', label: 'Fit Sample Status', width: 120, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
@@ -285,7 +285,7 @@ export const FACTORY_PRODUCT_COLUMNS: string[] = [
   'strike_off_status', 'strike_off_received', 'strike_off_approved',
   'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
   'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
-  'photo_sample_received', 'ex_factory_from_pp_approval',
+  'photo_sample_received',
   'revised_po_ex_factory', 'shipment_sample_received',
   'original_del_date_to_customer', 'eta_to_uk', 'eta_to_customer',
 ];
@@ -303,7 +303,7 @@ export const FACTORY_SHIPPING_COLUMNS: string[] = [
   'original_po_ex_factory', 'factory_confirmed_ex_factory',
   // PPS status all the way to estimated del to customer
   'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
-  'photo_sample_received', 'ex_factory_from_pp_approval',
+  'photo_sample_received',
   'revised_po_ex_factory', 'shipment_sample_received',
   'original_del_date_to_customer', 'eta_to_uk', 'eta_to_customer',
   'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
