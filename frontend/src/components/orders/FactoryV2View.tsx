@@ -1,36 +1,27 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   Search,
-  Filter,
   RefreshCw,
   X,
-  Download,
-  ChevronDown,
   ChevronRight,
-  Loader2,
   Package,
   MessageSquare,
   Calendar,
-  DollarSign,
-  Hash,
   Truck,
   Clock,
-  ArrowRight,
   Eye,
   Layers,
   Grid3X3,
-  List,
 } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
-import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
+import { ordersApi, statusesApi, OrderFilters } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS } from '@/types';
@@ -96,21 +87,28 @@ interface POGroup {
   latestUpdate: string;
 }
 
-// ─── Page Entry ────────────────────────────────────────────
+// ─── Public Props ──────────────────────────────────────────
 
-export default function OrdersV2Page() {
+export type FactoryViewType = 'factory-product' | 'factory-shipping';
+
+interface FactoryV2ViewProps {
+  viewType: FactoryViewType;
+}
+
+// ─── Main Export ───────────────────────────────────────────
+
+export function FactoryV2View({ viewType }: FactoryV2ViewProps) {
   return (
-    <AuthProvider>
-      <Suspense fallback={<OrdersLoading />}>
-        <OrdersV2Content />
-      </Suspense>
-    </AuthProvider>
+    <Suspense fallback={<FactoryLoading viewType={viewType} />}>
+      <FactoryV2Content viewType={viewType} />
+    </Suspense>
   );
 }
 
-function OrdersLoading() {
+function FactoryLoading({ viewType }: { viewType: FactoryViewType }) {
+  const title = viewType === 'factory-product' ? 'Factory Product' : 'Factory Shipping';
   return (
-    <AppShell title="Orders" subtitle="v2">
+    <AppShell title={title} subtitle="v2">
       <div className="flex items-center justify-center h-[calc(100vh-200px)]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -121,22 +119,19 @@ function OrdersLoading() {
   );
 }
 
-// ─── Main Content ──────────────────────────────────────────
+// ─── Content ───────────────────────────────────────────────
 
-function OrdersV2Content() {
+function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { orders: storeOrders, setOrders: setStoreOrders, totalOrders: storeTotalOrders, user, setPage, setSelectedOrder, setSidebarOpen } = useStore();
+  const { user, setSelectedOrder, setSidebarOpen } = useStore();
 
-  // Determine which view we're in
-  const viewParam = searchParams.get('view');
-  const isFactoryView = viewParam === 'factory-product' || viewParam === 'factory-shipping';
+  const isProductView = viewType === 'factory-product';
+  const viewTitle = isProductView ? 'Factory Product' : 'Factory Shipping';
+  const tableRoute = isProductView ? '/factory-product' : '/factory-shipping';
 
-  // Use local state for factory views, global store for main orders
-  const [localOrders, setLocalOrders] = useState<Order[]>([]);
-  const [localTotal, setLocalTotal] = useState(0);
-  const orders = isFactoryView ? localOrders : storeOrders;
-  const totalOrders = isFactoryView ? localTotal : storeTotalOrders;
+  // Always local state — never touches global store
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [totalOrders, setTotalOrders] = useState(0);
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,35 +142,25 @@ function OrdersV2Content() {
 
   const isSupplier = user?.role === 'supplier';
 
-  const viewTitle = viewParam === 'factory-product' ? 'Factory Product'
-    : viewParam === 'factory-shipping' ? 'Factory Shipping'
-    : 'Orders';
-  const viewSubtitle = 'v2 Preview';
-
   // Load statuses
   useEffect(() => {
     statusesApi.getStatuses().then(res => setStatuses(res.statuses)).catch(console.error);
   }, []);
 
-  // Load orders — get a big batch so we can group client-side
+  // Load orders
   const loadOrders = useCallback(async (filters?: OrderFilters) => {
     setIsLoading(true);
     try {
       const response = await ordersApi.getOrders(1, 500, filters || {});
-      if (isFactoryView) {
-        setLocalOrders(response.orders);
-        setLocalTotal(response.total);
-      } else {
-        setStoreOrders(response.orders, response.total);
-        setPage(1);
-      }
+      setOrders(response.orders);
+      setTotalOrders(response.total);
     } catch (error) {
       console.error('Failed to load orders:', error);
       toast.error('Failed to load orders');
     } finally {
       setIsLoading(false);
     }
-  }, [isFactoryView, setStoreOrders, setPage]);
+  }, []);
 
   useEffect(() => {
     loadOrders();
@@ -185,7 +170,6 @@ function OrdersV2Content() {
   const poGroups = useMemo(() => {
     let filtered = orders;
 
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(o =>
@@ -198,12 +182,10 @@ function OrdersV2Content() {
       );
     }
 
-    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
-    // Group by PO
     const groups: Record<string, POGroup> = {};
     for (const order of filtered) {
       const po = order.po_number;
@@ -228,15 +210,12 @@ function OrdersV2Content() {
       if (order.updated_at > groups[po].latestUpdate) {
         groups[po].latestUpdate = order.updated_at;
       }
-
-      // Use revised or original ex-factory date
       const exFactory = order.revised_po_ex_factory || order.original_po_ex_factory;
       if (exFactory && (!groups[po].latestDate || exFactory > groups[po].latestDate)) {
         groups[po].latestDate = exFactory;
       }
     }
 
-    // Compute status summary for each group
     for (const group of Object.values(groups)) {
       const statusCounts: Record<string, number> = {};
       for (const s of group.styles) {
@@ -244,18 +223,14 @@ function OrdersV2Content() {
         statusCounts[st] = (statusCounts[st] || 0) + 1;
       }
       const entries = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]);
-      if (entries.length === 1) {
+      if (entries.length >= 1) {
         group.statusSummary = entries[0][0];
-      } else {
-        group.statusSummary = entries[0][0]; // Most common
       }
     }
 
-    // Sort by latest update (most recent first)
     return Object.values(groups).sort((a, b) => b.latestUpdate.localeCompare(a.latestUpdate));
   }, [orders, searchQuery, statusFilter]);
 
-  // Status counts for chips
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { all: orders.length };
     for (const o of orders) {
@@ -281,14 +256,9 @@ function OrdersV2Content() {
   const handleCommentClick = (order: Order) => {
     setSelectedOrder(order);
     setSidebarOpen(true);
-    // Mark as read and clear badge immediately
     if (order.unread_comment_count && order.unread_comment_count > 0) {
       const updated = { ...order, unread_comment_count: 0 };
-      if (isFactoryView) {
-        setLocalOrders(prev => prev.map(o => o.id === order.id ? updated : o));
-      } else {
-        setStoreOrders(orders.map(o => o.id === order.id ? updated : o), totalOrders);
-      }
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
     }
     ordersApi.markCommentsRead(order.id).catch(console.error);
   };
@@ -310,11 +280,7 @@ function OrdersV2Content() {
         toast.success(result.message || 'Date change submitted for approval');
       } else {
         const updatedOrder = result as Order;
-        if (isFactoryView) {
-          setLocalOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
-        } else {
-          setStoreOrders([...orders.map(o => o.id === updatedOrder.id ? updatedOrder : o)], totalOrders);
-        }
+        setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
         toast.success('Updated successfully');
       }
     } catch (error: any) {
@@ -324,7 +290,7 @@ function OrdersV2Content() {
   };
 
   return (
-    <AppShell title={viewTitle} subtitle={viewSubtitle}>
+    <AppShell title={viewTitle} subtitle="v2">
       <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 116px)' }}>
 
         {/* ─── Left: Order List ─── */}
@@ -363,13 +329,8 @@ function OrdersV2Content() {
               Refresh
             </button>
 
-            {/* Link to classic/table view */}
             <button
-              onClick={() => router.push(
-                viewParam === 'factory-product' ? '/factory-product'
-                : viewParam === 'factory-shipping' ? '/factory-shipping'
-                : '/orders'
-              )}
+              onClick={() => router.push(tableRoute)}
               className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
             >
               <Grid3X3 className="w-4 h-4" />
@@ -464,7 +425,7 @@ function OrdersV2Content() {
             onClose={() => setSelectedStyleId(null)}
             onCommentClick={() => handleCommentClick(selectedStyle)}
             isSupplier={isSupplier}
-            view={viewParam}
+            viewType={viewType}
             onSave={handleDetailSave}
           />
         )}
@@ -512,7 +473,6 @@ function POCard({
           isExpanded && 'rotate-90'
         )} />
 
-        {/* PO Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <span className="text-sm font-bold text-gray-900">{group.po_number}</span>
@@ -526,13 +486,11 @@ function POCard({
           </div>
         </div>
 
-        {/* Qty */}
         <div className="text-right flex-shrink-0 w-20">
           <p className="text-sm font-semibold text-gray-900">{formatQty(group.totalQty)}</p>
           <p className="text-[11px] text-gray-400">units</p>
         </div>
 
-        {/* Value */}
         {!isSupplier && (
           <div className="text-right flex-shrink-0 w-24">
             <p className="text-sm font-semibold text-gray-900">{formatCurrency(group.totalValue)}</p>
@@ -540,13 +498,11 @@ function POCard({
           </div>
         )}
 
-        {/* Ex-Factory Date */}
         <div className="text-right flex-shrink-0 w-24">
           <p className="text-xs font-medium text-gray-700">{formatDate(group.latestDate)}</p>
           <p className="text-[11px] text-gray-400">ex-factory</p>
         </div>
 
-        {/* Status */}
         <div className="flex-shrink-0 w-32 text-right">
           <span className={cn(
             'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
@@ -560,7 +516,6 @@ function POCard({
           )}
         </div>
 
-        {/* Unread comments */}
         {group.unreadComments > 0 && (
           <div className="flex-shrink-0 w-8 flex items-center justify-center">
             <div className="relative">
@@ -576,7 +531,6 @@ function POCard({
       {/* Expanded: Style List */}
       {isExpanded && (
         <div className="border-t border-gray-100">
-          {/* Style Header */}
           <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60">
             <div className="col-span-2">Style</div>
             <div className="col-span-2">Description</div>
@@ -588,7 +542,6 @@ function POCard({
             <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-2')} />
           </div>
 
-          {/* Style Rows */}
           {group.styles.map((style) => {
             const ss = getStatusStyle(style.status);
             const isSelected = style.id === selectedStyleId;
@@ -676,24 +629,21 @@ function DetailPanel({
   onClose,
   onCommentClick,
   isSupplier,
-  view,
+  viewType,
   onSave,
 }: {
   order: Order;
   onClose: () => void;
   onCommentClick: () => void;
   isSupplier: boolean;
-  view: string | null;
+  viewType: FactoryViewType;
   onSave?: (orderId: number, field: string, value: any) => void;
 }) {
-  const isProductView = view === 'factory-product';
-  const isShippingView = view === 'factory-shipping';
-  const allowedCols = isProductView ? new Set(FACTORY_PRODUCT_COLUMNS)
-    : isShippingView ? new Set(FACTORY_SHIPPING_COLUMNS)
-    : null;
-  const hasCol = (key: string) => !allowedCols || allowedCols.has(key);
+  const allowedCols = viewType === 'factory-product'
+    ? new Set(FACTORY_PRODUCT_COLUMNS)
+    : new Set(FACTORY_SHIPPING_COLUMNS);
+  const hasCol = (key: string) => allowedCols.has(key);
 
-  // Check editability from COLUMNS definitions — same source of truth as the table
   const canEdit = (key: string) => {
     if (isSupplier) {
       const col = COLUMNS.find(c => c.key === key);
@@ -702,6 +652,7 @@ function DetailPanel({
     const col = COLUMNS.find(c => c.key === key);
     return col?.editable ?? false;
   };
+
   const statusStyle = getStatusStyle(order.status);
 
   const sizes = [
@@ -817,14 +768,11 @@ function DetailPanel({
           <div className="space-y-2">
             {hasCol('description') && <DetailRow label="Description" value={order.description} />}
             {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
-            {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} />}
-            {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} />}
             {hasCol('china_orderbook_ref') && <DetailRow label="China Orderbook Ref" value={order.china_orderbook_ref} />}
             {hasCol('season') && <DetailRow label="Season" value={order.season} />}
             {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
             {hasCol('gender') && <DetailRow label="Gender" value={order.gender} />}
             {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
-            {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} />}
             {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
           </div>
         </div>
@@ -836,9 +784,7 @@ function DetailPanel({
             Timeline
           </h4>
           <div className="relative">
-            {/* Vertical line */}
             <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
-
             <div className="space-y-0">
               {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} />}
               {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} />}
@@ -871,7 +817,7 @@ function DetailPanel({
           )}
         </div>
 
-        {/* Samples (only if any sample columns are in this view) */}
+        {/* Samples */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -915,7 +861,6 @@ function DetailPanel({
           </div>
         )}
 
-        {/* Tracking only (when no vessel columns) */}
         {!hasCol('vessel_name') && order.tracking_reference && (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">

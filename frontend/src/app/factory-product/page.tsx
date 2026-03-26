@@ -203,6 +203,12 @@ function PageContent() {
               )}
             </button>
             <button
+              onClick={() => router.push('/factory-product-v2')}
+              className="btn-secondary flex items-center gap-2 text-primary-600 border-primary-200 bg-primary-50 hover:bg-primary-100"
+            >
+              Try v2
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={isLoading}
               className="btn-secondary flex items-center gap-2"
