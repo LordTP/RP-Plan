@@ -728,7 +728,8 @@ function DashboardContent() {
 
         {/* Right Column - 1/3 */}
         <div className="space-y-6">
-          {/* Quick Actions */}
+          {/* Quick Actions - hidden for suppliers */}
+          {!isSupplier && (
           <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -750,6 +751,7 @@ function DashboardContent() {
               </Link>
             </div>
           </div>
+          )}
 
           {/* Recent Activity */}
           <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm">
