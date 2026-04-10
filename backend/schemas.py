@@ -305,6 +305,53 @@ class CommentResponse(CommentBase):
         from_attributes = True
 
 
+# Order Component Schemas
+class ComponentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+
+
+class ComponentUpdate(BaseModel):
+    name: Optional[str] = None
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+
+
+class ComponentResponse(BaseModel):
+    id: int
+    order_id: int
+    name: str
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Field Change History Schemas (tracks all field changes, not just dates)
 class DateChangeCreate(BaseModel):
     po_id: int

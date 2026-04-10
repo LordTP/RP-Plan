@@ -29,6 +29,7 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
+import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -702,6 +703,8 @@ function DetailPanel({
     const col = COLUMNS.find(c => c.key === key);
     return col?.editable ?? false;
   };
+
+  const [hasComponents, setHasComponents] = useState(false);
   const statusStyle = getStatusStyle(order.status);
 
   const sizes = [
@@ -871,7 +874,12 @@ function DetailPanel({
           )}
         </div>
 
-        {/* Samples (only if any sample columns are in this view) */}
+        {/* Components — shown before samples so component data takes priority */}
+        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+          <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+        )}
+
+        {/* Samples — fit/strike off/lab dip rows hidden when components exist */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -879,16 +887,16 @@ function DetailPanel({
               Samples
             </h4>
             <div className="space-y-2">
-              {hasCol('fit_sample_required') && <DetailRow label="Fit Sample Req" value={order.fit_sample_required} />}
-              {hasCol('fit_sample_status') && <DetailRow label="Fit Sample Status" value={order.fit_sample_status} />}
-              {hasCol('fit_sample_received') && <DetailRow label="Fit Sample Rcvd" value={formatDate(order.fit_sample_received)} />}
-              {hasCol('fit_sample_approved') && <DetailRow label="Fit Sample Appr" value={formatDate(order.fit_sample_approved)} />}
-              {hasCol('strike_off_status') && <DetailRow label="Strike Off Status" value={order.strike_off_status} />}
-              {hasCol('strike_off_received') && <DetailRow label="Strike Off Rcvd" value={formatDate(order.strike_off_received)} />}
-              {hasCol('strike_off_approved') && <DetailRow label="Strike Off Appr" value={formatDate(order.strike_off_approved)} />}
-              {hasCol('lab_dip_status') && <DetailRow label="Lab Dip Status" value={order.lab_dip_status} />}
-              {hasCol('lab_dip_received') && <DetailRow label="Lab Dip Rcvd" value={formatDate(order.lab_dip_received)} />}
-              {hasCol('lab_dip_approved') && <DetailRow label="Lab Dip Appr" value={formatDate(order.lab_dip_approved)} />}
+              {!hasComponents && hasCol('fit_sample_required') && <DetailRow label="Fit Sample Req" value={order.fit_sample_required} />}
+              {!hasComponents && hasCol('fit_sample_status') && <DetailRow label="Fit Sample Status" value={order.fit_sample_status} />}
+              {!hasComponents && hasCol('fit_sample_received') && <DetailRow label="Fit Sample Rcvd" value={formatDate(order.fit_sample_received)} />}
+              {!hasComponents && hasCol('fit_sample_approved') && <DetailRow label="Fit Sample Appr" value={formatDate(order.fit_sample_approved)} />}
+              {!hasComponents && hasCol('strike_off_status') && <DetailRow label="Strike Off Status" value={order.strike_off_status} />}
+              {!hasComponents && hasCol('strike_off_received') && <DetailRow label="Strike Off Rcvd" value={formatDate(order.strike_off_received)} />}
+              {!hasComponents && hasCol('strike_off_approved') && <DetailRow label="Strike Off Appr" value={formatDate(order.strike_off_approved)} />}
+              {!hasComponents && hasCol('lab_dip_status') && <DetailRow label="Lab Dip Status" value={order.lab_dip_status} />}
+              {!hasComponents && hasCol('lab_dip_received') && <DetailRow label="Lab Dip Rcvd" value={formatDate(order.lab_dip_received)} />}
+              {!hasComponents && hasCol('lab_dip_approved') && <DetailRow label="Lab Dip Appr" value={formatDate(order.lab_dip_approved)} />}
               {hasCol('pps_status') && <DetailRow label="PPS Status" value={order.pps_status} />}
               {hasCol('pps_received') && <DetailRow label="PPS Received" value={formatDate(order.pps_received)} />}
               {hasCol('pps_sent_to_customer') && <DetailRow label="PPS Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}

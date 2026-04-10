@@ -7,6 +7,7 @@ import {
   RefreshCw,
   X,
   ChevronRight,
+  ChevronDown,
   Package,
   MessageSquare,
   Calendar,
@@ -15,15 +16,18 @@ import {
   Eye,
   Layers,
   Grid3X3,
+  Plus,
+  Trash2,
+  Copy,
 } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { ordersApi, statusesApi, settingsApi, OrderFilters } from '@/lib/api';
+import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Order } from '@/types';
+import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -897,6 +901,8 @@ function DetailPanel({
     return col?.editable ?? false;
   };
 
+  const [hasComponents, setHasComponents] = useState(false);
+
   const statusStyle = getStatusStyle(order.status);
 
   const sizes = [
@@ -1061,7 +1067,12 @@ function DetailPanel({
           )}
         </div>
 
-        {/* Samples */}
+        {/* Components — shown before samples so component data takes priority */}
+        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+          <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+        )}
+
+        {/* Samples — fit/strike off/lab dip rows hidden when components exist (data lives in components instead) */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -1069,16 +1080,16 @@ function DetailPanel({
               Samples
             </h4>
             <div className="space-y-2">
-              {hasCol('fit_sample_required') && <DetailRow label="Fit Sample Req" value={order.fit_sample_required} />}
-              {hasCol('fit_sample_status') && <DetailRow label="Fit Sample Status" value={order.fit_sample_status} />}
-              {hasCol('fit_sample_received') && <DetailRow label="Fit Sample Rcvd" value={formatDate(order.fit_sample_received)} />}
-              {hasCol('fit_sample_approved') && <DetailRow label="Fit Sample Appr" value={formatDate(order.fit_sample_approved)} />}
-              {hasCol('strike_off_status') && <DetailRow label="Strike Off Status" value={order.strike_off_status} />}
-              {hasCol('strike_off_received') && <DetailRow label="Strike Off Rcvd" value={formatDate(order.strike_off_received)} />}
-              {hasCol('strike_off_approved') && <DetailRow label="Strike Off Appr" value={formatDate(order.strike_off_approved)} />}
-              {hasCol('lab_dip_status') && <DetailRow label="Lab Dip Status" value={order.lab_dip_status} />}
-              {hasCol('lab_dip_received') && <DetailRow label="Lab Dip Rcvd" value={formatDate(order.lab_dip_received)} />}
-              {hasCol('lab_dip_approved') && <DetailRow label="Lab Dip Appr" value={formatDate(order.lab_dip_approved)} />}
+              {!hasComponents && hasCol('fit_sample_required') && <DetailRow label="Fit Sample Req" value={order.fit_sample_required} />}
+              {!hasComponents && hasCol('fit_sample_status') && <DetailRow label="Fit Sample Status" value={order.fit_sample_status} />}
+              {!hasComponents && hasCol('fit_sample_received') && <DetailRow label="Fit Sample Rcvd" value={formatDate(order.fit_sample_received)} />}
+              {!hasComponents && hasCol('fit_sample_approved') && <DetailRow label="Fit Sample Appr" value={formatDate(order.fit_sample_approved)} />}
+              {!hasComponents && hasCol('strike_off_status') && <DetailRow label="Strike Off Status" value={order.strike_off_status} />}
+              {!hasComponents && hasCol('strike_off_received') && <DetailRow label="Strike Off Rcvd" value={formatDate(order.strike_off_received)} />}
+              {!hasComponents && hasCol('strike_off_approved') && <DetailRow label="Strike Off Appr" value={formatDate(order.strike_off_approved)} />}
+              {!hasComponents && hasCol('lab_dip_status') && <DetailRow label="Lab Dip Status" value={order.lab_dip_status} />}
+              {!hasComponents && hasCol('lab_dip_received') && <DetailRow label="Lab Dip Rcvd" value={formatDate(order.lab_dip_received)} />}
+              {!hasComponents && hasCol('lab_dip_approved') && <DetailRow label="Lab Dip Appr" value={formatDate(order.lab_dip_approved)} />}
               {hasCol('pps_status') && <DetailRow label="PPS Status" value={order.pps_status} />}
               {hasCol('pps_received') && <DetailRow label="PPS Received" value={formatDate(order.pps_received)} />}
               {hasCol('pps_sent_to_customer') && <DetailRow label="PPS Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
@@ -1136,6 +1147,445 @@ function DetailPanel({
           Updated {timeAgo(order.updated_at)}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ─── Components Section ───────────────────────────────────
+
+const COMPONENT_SAMPLE_FIELDS = [
+  { key: 'fit_sample_status', label: 'Fit Status', type: 'text', colKey: 'fit_sample_status' },
+  { key: 'fit_sample_received', label: 'Fit Rcvd', type: 'date', colKey: 'fit_sample_received' },
+  { key: 'fit_sample_approved', label: 'Fit Appr', type: 'date', colKey: 'fit_sample_approved' },
+  { key: 'strike_off_status', label: 'Strike Off Status', type: 'text', colKey: 'strike_off_status' },
+  { key: 'strike_off_received', label: 'Strike Off Rcvd', type: 'date', colKey: 'strike_off_received' },
+  { key: 'strike_off_approved', label: 'Strike Off Appr', type: 'date', colKey: 'strike_off_approved' },
+  { key: 'lab_dip_status', label: 'Lab Dip Status', type: 'text', colKey: 'lab_dip_status' },
+  { key: 'lab_dip_received', label: 'Lab Dip Rcvd', type: 'date', colKey: 'lab_dip_received' },
+  { key: 'lab_dip_approved', label: 'Lab Dip Appr', type: 'date', colKey: 'lab_dip_approved' },
+];
+
+export function ComponentsSection({
+  orderId,
+  poNumber,
+  hasCol,
+  canEdit,
+  onComponentsLoaded,
+}: {
+  orderId: number;
+  poNumber: string;
+  hasCol: (key: string) => boolean;
+  canEdit: (key: string) => boolean;
+  onComponentsLoaded?: (count: number) => void;
+}) {
+  const [components, setComponents] = useState<OrderComponent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [addMode, setAddMode] = useState<'single' | 'all' | 'selected'>('single');
+  const [isAdding, setIsAdding] = useState(false);
+  const [stylesOnPO, setStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
+  const [selectedStyleIds, setSelectedStyleIds] = useState<Set<number>>(new Set());
+
+  const loadComponents = useCallback(async () => {
+    try {
+      const data = await componentsApi.getComponents(orderId);
+      setComponents(data);
+      onComponentsLoaded?.(data.length);
+    } catch (err) {
+      console.error('Failed to load components:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [orderId, onComponentsLoaded]);
+
+  useEffect(() => {
+    loadComponents();
+  }, [loadComponents]);
+
+  // Load styles on PO when add form opens
+  useEffect(() => {
+    if (showAddForm && stylesOnPO.length === 0) {
+      ordersApi.getStylesOnPO(poNumber)
+        .then(res => setStylesOnPO(res.orders))
+        .catch(console.error);
+    }
+  }, [showAddForm, poNumber]);
+
+  const handleAdd = async () => {
+    if (!newName.trim()) return;
+    setIsAdding(true);
+    try {
+      if (addMode === 'all') {
+        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim() });
+        toast.success(`Component added to ${result.components_created} styles`);
+      } else if (addMode === 'selected' && selectedStyleIds.size > 0) {
+        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), order_ids: Array.from(selectedStyleIds) });
+        toast.success(`Component added to ${result.components_created} styles`);
+      } else {
+        await componentsApi.createComponent(orderId, { name: newName.trim() });
+        toast.success('Component added');
+      }
+      setNewName('');
+      setShowAddForm(false);
+      setAddMode('single');
+      setSelectedStyleIds(new Set());
+      loadComponents();
+    } catch (err) {
+      toast.error('Failed to add component');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await componentsApi.deleteComponent(id);
+      toast.success('Component removed');
+      setComponents(prev => prev.filter(c => c.id !== id));
+      if (expandedId === id) setExpandedId(null);
+    } catch (err) {
+      toast.error('Failed to delete component');
+    }
+  };
+
+  const handleFieldSave = async (component: OrderComponent, fieldKey: string, value: string, applyToPO: boolean, selectedIds?: number[]) => {
+    const update: Record<string, any> = {};
+    update[fieldKey] = value || null;
+
+    try {
+      if (applyToPO || (selectedIds && selectedIds.length > 0)) {
+        const payload: any = { ...update };
+        if (selectedIds && selectedIds.length > 0) payload.order_ids = selectedIds;
+        const result = await componentsApi.applyFieldToPO(component.id, payload);
+        toast.success(`Updated ${result.components_updated} styles`);
+      } else {
+        await componentsApi.updateComponent(component.id, update);
+        toast.success('Updated');
+      }
+      loadComponents();
+    } catch (err) {
+      toast.error('Failed to update');
+    }
+  };
+
+  const visibleFields = COMPONENT_SAMPLE_FIELDS.filter(f => hasCol(f.colKey));
+
+  if (isLoading) {
+    return (
+      <div>
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Layers className="w-3.5 h-3.5" />
+          Components
+        </h4>
+        <div className="text-xs text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <Layers className="w-3.5 h-3.5" />
+          Components
+          {components.length > 0 && (
+            <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{components.length}</span>
+          )}
+        </span>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Add component"
+        >
+          <Plus className="w-3.5 h-3.5 text-gray-400" />
+        </button>
+      </h4>
+
+      {/* Add Form */}
+      {showAddForm && (
+        <div className="mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && addMode === 'single') handleAdd(); if (e.key === 'Escape') setShowAddForm(false); }}
+            placeholder="Component name (e.g. Main Fabric)"
+            autoFocus
+            className="w-full text-xs border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
+              <input type="radio" name="addMode" checked={addMode === 'single'} onChange={() => setAddMode('single')} className="text-primary-600 focus:ring-primary-500" />
+              This style only
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
+              <input type="radio" name="addMode" checked={addMode === 'all'} onChange={() => setAddMode('all')} className="text-primary-600 focus:ring-primary-500" />
+              All styles on PO {poNumber}
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
+              <input type="radio" name="addMode" checked={addMode === 'selected'} onChange={() => setAddMode('selected')} className="text-primary-600 focus:ring-primary-500" />
+              Selected styles
+            </label>
+          </div>
+          {addMode === 'selected' && (
+            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+              {stylesOnPO.map(style => (
+                <label key={style.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0">
+                  <input
+                    type="checkbox"
+                    checked={selectedStyleIds.has(style.id)}
+                    onChange={(e) => {
+                      const next = new Set(selectedStyleIds);
+                      if (e.target.checked) next.add(style.id); else next.delete(style.id);
+                      setSelectedStyleIds(next);
+                    }}
+                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-[11px] text-gray-700 truncate">
+                    {style.style_code} · {style.colour} — {style.description}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={handleAdd}
+              disabled={!newName.trim() || isAdding || (addMode === 'selected' && selectedStyleIds.size === 0)}
+              className="flex-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            >
+              {isAdding ? 'Adding...' : 'Add'}
+            </button>
+            <button
+              onClick={() => { setShowAddForm(false); setNewName(''); setAddMode('single'); setSelectedStyleIds(new Set()); }}
+              className="text-xs px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Component List */}
+      {components.length === 0 && !showAddForm ? (
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="w-full text-xs text-gray-500 text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 hover:bg-gray-100 hover:border-gray-400 transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Component (e.g. Main Fabric, Lining, Trim)
+        </button>
+      ) : (
+        <div className="space-y-2">
+          {components.map(comp => (
+            <div key={comp.id} className="border border-gray-200 rounded-xl overflow-hidden">
+              {/* Component Header */}
+              <button
+                onClick={() => setExpandedId(expandedId === comp.id ? null : comp.id)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', expandedId === comp.id && 'rotate-90')} />
+                  <span className="text-xs font-semibold text-gray-700">{comp.name}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Quick status summary */}
+                  {comp.fit_sample_status && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">Fit</span>}
+                  {comp.strike_off_status && <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded">SO</span>}
+                  {comp.lab_dip_status && <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded">LD</span>}
+                </div>
+              </button>
+
+              {/* Expanded Content */}
+              {expandedId === comp.id && (
+                <div className="px-3 py-2 space-y-1.5 border-t border-gray-100">
+                  {visibleFields.map(field => (
+                    <ComponentFieldRow
+                      key={field.key}
+                      label={field.label}
+                      value={(comp as any)[field.key]}
+                      type={field.type}
+                      editable={true}
+                      onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)}
+                      poNumber={poNumber}
+                      componentName={comp.name}
+                    />
+                  ))}
+                  <div className="pt-2 border-t border-gray-100 flex justify-end">
+                    <button
+                      onClick={() => handleDelete(comp.id)}
+                      className="text-[10px] text-red-500 hover:text-red-700 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComponentFieldRow({
+  label,
+  value,
+  type,
+  editable,
+  onSave,
+  poNumber,
+  componentName,
+}: {
+  label: string;
+  value: string | null | undefined;
+  type: string;
+  editable?: boolean;
+  onSave: (value: string, applyToPO: boolean, selectedIds?: number[]) => void;
+  poNumber: string;
+  componentName: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value || '');
+  const [showApplyMenu, setShowApplyMenu] = useState(false);
+  const [showStylePicker, setShowStylePicker] = useState(false);
+  const [stylesWithComp, setStylesWithComp] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [loadingStyles, setLoadingStyles] = useState(false);
+
+  const displayValue = type === 'date' && value
+    ? formatDate(value)
+    : value || '—';
+
+  const handleSave = (applyAll: boolean, ids?: number[]) => {
+    onSave(editValue, applyAll, ids);
+    setEditing(false);
+    setShowApplyMenu(false);
+    setShowStylePicker(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleShowStylePicker = async () => {
+    setLoadingStyles(true);
+    try {
+      const res = await componentsApi.getStylesWithComponent(poNumber, componentName);
+      setStylesWithComp(res.styles);
+      setShowStylePicker(true);
+    } catch {
+      toast.error('Failed to load styles');
+    } finally {
+      setLoadingStyles(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
+      <span className="text-[11px] text-gray-400">{label}</span>
+      {editing ? (
+        <div className="flex items-center gap-1">
+          <input
+            type={type === 'date' ? 'date' : 'text'}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setEditing(false); setShowApplyMenu(false); setShowStylePicker(false); } if (e.key === 'Enter') handleSave(false); }}
+            autoFocus
+            className="text-[11px] border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[120px]"
+          />
+          <div className="relative">
+            <button
+              onClick={() => { setShowApplyMenu(!showApplyMenu); setShowStylePicker(false); }}
+              className="text-[10px] px-2 py-0.5 bg-primary-600 text-white rounded hover:bg-primary-700"
+            >
+              Save
+            </button>
+            {showApplyMenu && !showStylePicker && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 w-56">
+                <button
+                  onClick={() => handleSave(false)}
+                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50"
+                >
+                  This style only
+                </button>
+                <button
+                  onClick={() => handleSave(true)}
+                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-1.5"
+                >
+                  <Copy className="w-3 h-3 text-gray-400" />
+                  All styles on {poNumber} with this component
+                </button>
+                <button
+                  onClick={handleShowStylePicker}
+                  disabled={loadingStyles}
+                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-1.5"
+                >
+                  <Eye className="w-3 h-3 text-gray-400" />
+                  {loadingStyles ? 'Loading...' : 'Select styles...'}
+                </button>
+              </div>
+            )}
+            {showStylePicker && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-64">
+                <div className="px-3 py-2 border-b border-gray-100 text-[11px] font-semibold text-gray-500">
+                  Styles with &quot;{componentName}&quot;
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {stylesWithComp.map(style => (
+                    <label key={style.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(style.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedIds);
+                          if (e.target.checked) next.add(style.id); else next.delete(style.id);
+                          setSelectedIds(next);
+                        }}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-[11px] text-gray-700 truncate">
+                        {style.style_code} · {style.colour}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="px-3 py-2 border-t border-gray-100 flex gap-2">
+                  <button
+                    onClick={() => handleSave(false, Array.from(selectedIds))}
+                    disabled={selectedIds.size === 0}
+                    className="flex-1 text-[10px] px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    Apply to {selectedIds.size} style{selectedIds.size !== 1 ? 's' : ''}
+                  </button>
+                  <button
+                    onClick={() => { setShowStylePicker(false); setShowApplyMenu(true); }}
+                    className="text-[10px] px-2 py-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <span
+          className={cn(
+            'text-[11px] font-medium text-gray-700',
+            editable && 'cursor-pointer hover:text-primary-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-200/60'
+          )}
+          onClick={() => {
+            if (editable) {
+              setEditValue(type === 'date' && value ? value.split('T')[0] : (value || ''));
+              setEditing(true);
+            }
+          }}
+        >
+          {displayValue}
+        </span>
+      )}
     </div>
   );
 }

@@ -158,6 +158,37 @@ class PurchaseOrder(Base):
     # Relationships
     comments = relationship("Comment", back_populates="purchase_order", cascade="all, delete-orphan")
     date_changes = relationship("DateChangeHistory", back_populates="purchase_order", cascade="all, delete-orphan")
+    components = relationship("OrderComponent", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderComponent(Base):
+    """Components for each order style (e.g. Main Fabric, Lining, Trim) with per-component sampling status"""
+    __tablename__ = "order_components"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(100), nullable=False)  # e.g. "Main Fabric", "Lining"
+
+    # Samples - Fit
+    fit_sample_status = Column(String(50), nullable=True)
+    fit_sample_received = Column(DateTime, nullable=True)
+    fit_sample_approved = Column(DateTime, nullable=True)
+
+    # Samples - Strike Off
+    strike_off_status = Column(String(50), nullable=True)
+    strike_off_received = Column(DateTime, nullable=True)
+    strike_off_approved = Column(DateTime, nullable=True)
+
+    # Samples - Lab Dip
+    lab_dip_status = Column(String(50), nullable=True)
+    lab_dip_received = Column(DateTime, nullable=True)
+    lab_dip_approved = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    order = relationship("PurchaseOrder", back_populates="components")
 
 
 class Comment(Base):

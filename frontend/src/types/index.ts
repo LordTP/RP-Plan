@@ -121,6 +121,23 @@ export interface Comment {
   created_at: string;
 }
 
+export interface OrderComponent {
+  id: number;
+  order_id: number;
+  name: string;
+  fit_sample_status?: string | null;
+  fit_sample_received?: string | null;
+  fit_sample_approved?: string | null;
+  strike_off_status?: string | null;
+  strike_off_received?: string | null;
+  strike_off_approved?: string | null;
+  lab_dip_status?: string | null;
+  lab_dip_received?: string | null;
+  lab_dip_approved?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DateHistory {
   id: number;
   po_id: number;

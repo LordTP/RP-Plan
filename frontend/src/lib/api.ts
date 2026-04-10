@@ -7,7 +7,8 @@ import type {
   DateHistory,
   DashboardStats,
   PaginatedResponse,
-  POSummary
+  POSummary,
+  OrderComponent
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -265,6 +266,47 @@ export const ordersApi = {
     if (poNumber) params.po_number = poNumber;
     if (since) params.since = since;
     const response = await api.get('/api/orders/recent-changes', { params });
+    return response.data;
+  },
+};
+
+// Components API
+export const componentsApi = {
+  getComponents: async (orderId: number): Promise<OrderComponent[]> => {
+    const response = await api.get<OrderComponent[]>(`/api/orders/${orderId}/components`);
+    return response.data;
+  },
+
+  createComponent: async (orderId: number, data: { name: string }): Promise<OrderComponent> => {
+    const response = await api.post<OrderComponent>(`/api/orders/${orderId}/components`, data);
+    return response.data;
+  },
+
+  updateComponent: async (componentId: number, data: Partial<OrderComponent>): Promise<OrderComponent> => {
+    const response = await api.put<OrderComponent>(`/api/components/${componentId}`, data);
+    return response.data;
+  },
+
+  deleteComponent: async (componentId: number): Promise<void> => {
+    await api.delete(`/api/components/${componentId}`);
+  },
+
+  bulkAddComponent: async (orderId: number, data: { name: string; order_ids?: number[] }): Promise<{ success: boolean; components_created: number }> => {
+    const response = await api.post(`/api/orders/${orderId}/components/bulk-add`, data);
+    return response.data;
+  },
+
+  applyFieldToPO: async (componentId: number, data: Partial<OrderComponent> & { order_ids?: number[] }): Promise<{ success: boolean; components_updated: number }> => {
+    const response = await api.post(`/api/components/${componentId}/apply-to-po`, data);
+    return response.data;
+  },
+
+  getStylesWithComponent: async (poNumber: string, componentName: string): Promise<{
+    styles: { id: number; style_code: string; description: string; colour: string; component_id: number }[];
+  }> => {
+    const response = await api.get('/api/components/styles-with-component', {
+      params: { po_number: poNumber, component_name: componentName },
+    });
     return response.data;
   },
 };
