@@ -7,12 +7,9 @@ import { Eye, EyeOff } from 'lucide-react';
 import { authApi, getErrorMessage } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 
-type LoginType = 'internal' | 'supplier';
-
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, isAuthenticated } = useStore();
-  const [loginType, setLoginType] = useState<LoginType>('internal');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -117,32 +114,6 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Login type toggle */}
-          <div className="flex mb-8 bg-gray-200/70 rounded-lg p-1">
-            <button
-              type="button"
-              onClick={() => setLoginType('internal')}
-              className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
-                loginType === 'internal'
-                  ? 'bg-gray-900 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Internal Staff
-            </button>
-            <button
-              type="button"
-              onClick={() => setLoginType('supplier')}
-              className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
-                loginType === 'supplier'
-                  ? 'bg-gray-900 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              Factory Supplier
-            </button>
-          </div>
-
           {/* Error message */}
           {error && (
             <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -165,11 +136,7 @@ export default function LoginPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder={
-                  loginType === 'internal'
-                    ? 'Enter your username'
-                    : 'Enter your supplier username'
-                }
+                placeholder="Enter your username"
                 autoComplete="username"
                 disabled={isLoading}
                 className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
