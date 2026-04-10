@@ -542,9 +542,9 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                         "border border-gray-100",
                         sizeColumns.includes(column.key) && "bg-blue-50/30",
                         column.key === 'gender' && "bg-amber-50/30",
-                        isSupplier && column.supplierEditable && "bg-green-50 border-green-200/60",
+                        isSupplierEditable(column.key) && "bg-green-50 border-green-200/60",
                         isCellChanged && "!bg-emerald-200 !border-emerald-400",
-                        isStickyCol && !isCellChanged && !( isSupplier && column.supplierEditable) && "bg-white",
+                        isStickyCol && !isCellChanged && !isSupplierEditable(column.key) && "bg-white",
                         isLastStickyCol && "sticky-shadow"
                       )}
                       style={{
