@@ -131,14 +131,15 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     statusesApi.getStatuses().then(res => setStatuses(res.statuses)).catch(console.error);
   }, []);
 
-  // Load supplier column settings
+  // Load supplier column settings (also load for factory views so admins see green highlights)
+  const isFactoryView = !!columnKeys;
   useEffect(() => {
-    if (isSupplier) {
+    if (isSupplier || isFactoryView) {
       settingsApi.getRoleColumns('supplier')
         .then(res => setSupplierColumnSettings(res.columns))
         .catch(console.error);
     }
-  }, [isSupplier]);
+  }, [isSupplier, isFactoryView]);
 
   // Fetch pending changes for visible orders (single batch request)
   useEffect(() => {
@@ -203,9 +204,9 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     return columns;
   };
 
-  // Get editable status for supplier
+  // Get editable status for supplier (also applies to factory views for green highlighting)
   const isSupplierEditable = (columnKey: string): boolean => {
-    if (!isSupplier) return false;
+    if (!isSupplier && !isFactoryView) return false;
     if (supplierColumnSettings.length > 0) {
       const setting = supplierColumnSettings.find((s) => s.column_key === columnKey);
       return setting?.is_editable ?? false;
