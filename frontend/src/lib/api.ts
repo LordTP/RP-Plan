@@ -682,6 +682,11 @@ export const analyticsApi = {
     const response = await api.get('/api/analytics/alerts');
     return response.data;
   },
+
+  getDesignAnalytics: async () => {
+    const response = await api.get('/api/analytics/design');
+    return response.data;
+  },
 };
 
 // Pending date change approval types

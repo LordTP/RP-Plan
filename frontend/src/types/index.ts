@@ -199,7 +199,26 @@ export interface ColumnDef {
   supplierEditable: boolean;
   supplierHidden: boolean;
   type: 'text' | 'number' | 'date' | 'currency';
+  options?: string[];
 }
+
+// Dropdown options for status columns
+export const FIT_SAMPLE_STATUS_OPTIONS = [
+  'NOT REQUIRED',
+  'APPROVED',
+  'OUTSTANDING',
+  'P23 ADVISE UPDATE',
+  'LATE',
+  'RECEIVED',
+];
+
+export const SAMPLE_STATUS_OPTIONS = [
+  'OUTSTANDING',
+  'P23 ADVISE UPDATE',
+  'LATE',
+  'RECEIVED',
+  'APPROVED',
+];
 
 export const COLUMNS: ColumnDef[] = [
   // Core PO identifiers - matches new CP HEADERS order
@@ -247,19 +266,19 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'factory_confirmed_ex_factory', label: 'Factory Confirmed Ex-Fac', width: 150, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Fit
   { key: 'fit_sample_required', label: 'Fit Sample Req', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
-  { key: 'fit_sample_status', label: 'Fit Sample Status', width: 120, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'fit_sample_status', label: 'Fit Sample Status', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FIT_SAMPLE_STATUS_OPTIONS },
   { key: 'fit_sample_received', label: 'Fit Sample Rcvd', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'fit_sample_approved', label: 'Fit Sample Appr', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Strike Off
-  { key: 'strike_off_status', label: 'Strike Off Status', width: 120, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'strike_off_status', label: 'Strike Off Status', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: SAMPLE_STATUS_OPTIONS },
   { key: 'strike_off_received', label: 'Strike Off Rcvd', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'strike_off_approved', label: 'Strike Off Appr', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Lab Dip
-  { key: 'lab_dip_status', label: 'Lab Dip Status', width: 115, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'lab_dip_status', label: 'Lab Dip Status', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: SAMPLE_STATUS_OPTIONS },
   { key: 'lab_dip_received', label: 'Lab Dip Rcvd', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'lab_dip_approved', label: 'Lab Dip Appr', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - PPS
-  { key: 'pps_status', label: 'PPS Status', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'pps_status', label: 'PPS Status', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: SAMPLE_STATUS_OPTIONS },
   { key: 'pps_received', label: 'PPS Received', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'pps_sent_to_customer', label: 'PPS Sent to Cust', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'pps_approved', label: 'PPS Approved', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },

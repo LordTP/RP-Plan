@@ -65,7 +65,7 @@ export default function LoginPage() {
         {/* Top content */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
-            <img src="/sourcelab-logo.png" alt="Source Lab" className="h-12" />
+            <img src="/sourcelab-logo.png" alt="Source Lab" className="h-24" />
           </div>
         </div>
 

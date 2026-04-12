@@ -251,18 +251,9 @@ function DashboardContent() {
         <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-teal-500/5 rounded-full blur-3xl translate-y-1/2" />
 
         <div className="relative z-10">
-          <div className="flex items-end justify-between mb-8">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Welcome back, {user?.username}</h2>
-              <p className="text-gray-400 text-sm mt-1">Here&apos;s what&apos;s happening with your orders today.</p>
-            </div>
-            <Link
-              href="/orders"
-              className="px-4 py-2 text-sm font-medium text-white bg-white/10 border border-white/10 rounded-lg hover:bg-white/20 backdrop-blur-sm transition-colors flex items-center gap-2"
-            >
-              Export Report
-              <Download className="w-4 h-4" />
-            </Link>
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-white">Welcome back, {user?.username}</h2>
+            <p className="text-gray-400 text-sm mt-1">Here&apos;s what&apos;s happening with your orders today.</p>
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

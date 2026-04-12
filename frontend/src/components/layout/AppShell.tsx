@@ -1,7 +1,6 @@
 'use client';
 
-import { Sidebar } from './Sidebar';
-import { TopBar } from './TopBar';
+import { Navbar } from './Navbar';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -11,14 +10,11 @@ interface AppShellProps {
 
 export function AppShell({ children, title, subtitle }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-[#fafbfc] flex">
-      <Sidebar />
-      <div className="flex-1 ml-[68px] min-w-0 overflow-hidden transition-all duration-300">
-        <TopBar title={title} subtitle={subtitle} />
-        <main className="p-8 overflow-hidden">
-          {children}
-        </main>
-      </div>
+    <div className="min-h-screen bg-[#fafbfc] flex flex-col">
+      <Navbar />
+      <main className="flex-1 p-6 overflow-hidden">
+        {children}
+      </main>
     </div>
   );
 }

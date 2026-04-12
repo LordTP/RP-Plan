@@ -204,16 +204,27 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     return columns;
   };
 
+  // Check if order has been sent to factory (all 3 dates filled)
+  const isOrderSentToFactory = (order: Order): boolean => {
+    return !!(order.order_sent_to_factory_date && order.tech_packs_sent_to_factory && order.specs_sent_to_factory);
+  };
+
   // Get editable status for supplier (also applies to factory views for green highlighting)
-  const isSupplierEditable = (columnKey: string): boolean => {
+  const isSupplierEditableCol = (columnKey: string): boolean => {
     if (!isSupplier && !isFactoryView) return false;
     if (supplierColumnSettings.length > 0) {
       const setting = supplierColumnSettings.find((s) => s.column_key === columnKey);
       return setting?.is_editable ?? false;
     }
-    // Fallback to hardcoded defaults
     const col = COLUMNS.find((c) => c.key === columnKey);
     return col?.supplierEditable ?? false;
+  };
+
+  // Full check: column is supplier-editable AND order has been sent to factory
+  const isSupplierEditable = (columnKey: string, order?: Order): boolean => {
+    if (!isSupplierEditableCol(columnKey)) return false;
+    if (isSupplier && order && !isOrderSentToFactory(order)) return false;
+    return true;
   };
 
   const visibleColumns = getVisibleColumns();
@@ -543,9 +554,9 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                         "border border-gray-100",
                         sizeColumns.includes(column.key) && "bg-blue-50/30",
                         column.key === 'gender' && "bg-amber-50/30",
-                        isSupplierEditable(column.key) && "bg-green-50 border-green-200/60",
+                        isSupplierEditable(column.key, order) && "bg-green-50 border-green-200/60",
                         isCellChanged && "!bg-emerald-200 !border-emerald-400",
-                        isStickyCol && !isCellChanged && !isSupplierEditable(column.key) && "bg-white",
+                        isStickyCol && !isCellChanged && !isSupplierEditable(column.key, order) && "bg-white",
                         isLastStickyCol && "sticky-shadow"
                       )}
                       style={{
@@ -606,7 +617,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                           column={column}
                           order={order}
                           isEditable={column.editable}
-                          isSupplierEditable={isSupplierEditable(column.key)}
+                          isSupplierEditable={isSupplierEditable(column.key, order)}
                           userRole={user?.role || 'supplier'}
                           onSave={handleSave}
                           onBulkSave={() => {

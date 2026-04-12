@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Check, X, Loader2 } from 'lucide-react';
 import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from '@/lib/utils';
 import { ordersApi } from '@/lib/api';
+import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import type { ColumnDef, Order } from '@/types';
 
 type ApplyMode = 'single' | 'all' | 'selected';
@@ -100,7 +101,7 @@ export function EditableCell({
       initialValue = value?.toString() || '';
     }
 
-    setEditValue(initialValue);
+    setEditValue(column.options ? (initialValue?.toUpperCase() || '') : initialValue);
     setApplyMode('single');
     setSelectedOrderIds([order.id]);
     setIsEditing(true);
@@ -271,7 +272,34 @@ export function EditableCell({
             </div>
 
             <div className="mb-4">
-              {column.type === 'text' && column.key === 'description' ? (
+              {column.options ? (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setEditValue('')}
+                    className={cn(
+                      'w-full text-left px-3 py-2 text-sm transition-colors border-b border-gray-100',
+                      editValue === '' ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-400 hover:bg-gray-50'
+                    )}
+                  >
+                    <span className="italic">None</span>
+                  </button>
+                  {column.options.map(opt => (
+                    <button
+                      key={opt}
+                      onClick={() => setEditValue(opt)}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors border-b border-gray-50 last:border-0',
+                        editValue === opt
+                          ? 'bg-primary-100 text-primary-800 font-semibold'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      )}
+                    >
+                      <span>{opt}</span>
+                      {editValue === opt && <Check className="w-4 h-4 text-primary-600" />}
+                    </button>
+                  ))}
+                </div>
+              ) : column.type === 'text' && column.key === 'description' ? (
                 <textarea
                   ref={inputRef as React.RefObject<HTMLTextAreaElement>}
                   value={editValue}

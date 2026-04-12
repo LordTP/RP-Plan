@@ -15,6 +15,7 @@ import {
   XCircle,
   RefreshCw,
   Calendar,
+  ChevronDown,
 } from 'lucide-react';
 import {
   BarChart,
@@ -81,6 +82,7 @@ function AnalyticsContent() {
   const [dateChanges, setDateChanges] = useState<any>(null);
   const [pipeline, setPipeline] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any>(null);
+  const [designData, setDesignData] = useState<any>(null);
 
   const isInternal = user?.role === 'admin' || user?.role === 'internal';
 
@@ -115,6 +117,12 @@ function AnalyticsContent() {
       setDateChanges(dateChangeData);
       setPipeline(pipelineData.pipeline);
       setAlerts(alertsData);
+
+      // Load design analytics
+      try {
+        const designResult = await analyticsApi.getDesignAnalytics();
+        setDesignData(designResult);
+      } catch { /* design data is optional */ }
     } catch (error) {
       toast.error('Failed to load analytics');
     } finally {
@@ -496,6 +504,197 @@ function AnalyticsContent() {
             ))}
           </AlertCard>
         </div>
+
+        {/* ═══ DESIGN ANALYTICS ═══ */}
+        {designData && (
+          <>
+            <div className="mt-10 mb-6">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center">
+                  <Package className="w-4 h-4 text-violet-600" />
+                </span>
+                Design &amp; Sampling
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Sample pipeline, component tracking, and factory performance</p>
+            </div>
+
+            {/* Sample Pipeline — expandable status groups */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {['fit_sample', 'strike_off', 'lab_dip', 'pps'].map(type => {
+                const groups: any[] = designData.sample_pipeline?.[type] || [];
+                const total = groups.reduce((s: number, g: any) => s + g.count, 0);
+                const label = type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                const STATUS_COLORS: Record<string, string> = {
+                  'OUTSTANDING': 'bg-amber-100 text-amber-700',
+                  'RECEIVED': 'bg-blue-100 text-blue-700',
+                  'APPROVED': 'bg-green-100 text-green-700',
+                  'LATE': 'bg-red-100 text-red-700',
+                  'NOT REQUIRED': 'bg-gray-100 text-gray-600',
+                  'P23 ADVISE UPDATE': 'bg-purple-100 text-purple-700',
+                  'NOT SET': 'bg-gray-50 text-gray-400',
+                };
+                return (
+                  <div key={type} className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">{label} Pipeline</h3>
+                      <span className="text-xs text-gray-400">{total} total</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {groups.map((g: any) => (
+                        <SamplePipelineGroup key={g.status} group={g} colorClass={STATUS_COLORS[g.status] || 'bg-gray-100 text-gray-600'} total={total} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Component Coverage + Factory Sample Performance */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              {/* Component Coverage */}
+              <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">Component Coverage</h3>
+                <div className="text-center mb-4">
+                  <p className="text-3xl font-bold text-violet-600">{designData.component_coverage?.coverage_pct || 0}%</p>
+                  <p className="text-xs text-gray-400 mt-1">of orders have components</p>
+                </div>
+                {/* By component name */}
+                {(designData.component_coverage?.by_component_name || []).length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Components</p>
+                    <div className="space-y-1.5">
+                      {(designData.component_coverage?.by_component_name || []).map((c: any) => (
+                        <div key={c.name} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-700 font-medium">{c.name}</span>
+                          <span className="text-gray-500">{c.count} styles</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Summary stats */}
+                <div className="space-y-1 text-xs border-t border-gray-100 pt-3">
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">With components</span>
+                    <span className="font-semibold text-green-600">{designData.component_coverage?.orders_with_components || 0}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Without components</span>
+                    <span className="font-semibold text-red-500">{designData.component_coverage?.orders_without_components || 0}</span>
+                  </div>
+                </div>
+                {/* Orders missing components — expandable */}
+                {(designData.component_coverage?.orders_missing_components || []).length > 0 && (
+                  <MissingComponentsList orders={designData.component_coverage.orders_missing_components} />
+                )}
+              </div>
+
+              {/* Factory Sample Performance */}
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">Factory Sample Performance (Avg Days to Approve)</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 font-semibold text-gray-500">Factory</th>
+                        <th className="text-center py-2 font-semibold text-gray-500">Orders</th>
+                        <th className="text-center py-2 font-semibold text-blue-500">Fit</th>
+                        <th className="text-center py-2 font-semibold text-purple-500">Strike Off</th>
+                        <th className="text-center py-2 font-semibold text-amber-500">Lab Dip</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(designData.factory_sample_performance || []).map((f: any) => (
+                        <tr key={f.factory} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="py-2 font-medium text-gray-900">{f.factory}</td>
+                          <td className="py-2 text-center text-gray-600">{f.total_orders}</td>
+                          <td className="py-2 text-center">
+                            {f.avg_fit_days != null ? <span className={cn('font-semibold', f.avg_fit_days > 14 ? 'text-red-500' : f.avg_fit_days > 7 ? 'text-amber-500' : 'text-green-500')}>{f.avg_fit_days}d</span> : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="py-2 text-center">
+                            {f.avg_strike_off_days != null ? <span className={cn('font-semibold', f.avg_strike_off_days > 14 ? 'text-red-500' : f.avg_strike_off_days > 7 ? 'text-amber-500' : 'text-green-500')}>{f.avg_strike_off_days}d</span> : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="py-2 text-center">
+                            {f.avg_lab_dip_days != null ? <span className={cn('font-semibold', f.avg_lab_dip_days > 14 ? 'text-red-500' : f.avg_lab_dip_days > 7 ? 'text-amber-500' : 'text-green-500')}>{f.avg_lab_dip_days}d</span> : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                      {(designData.factory_sample_performance || []).length === 0 && (
+                        <tr><td colSpan={5} className="py-6 text-center text-gray-400">No factory data yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* At Risk + Awaiting Action */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {/* At Risk Samples */}
+              <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Late / At Risk Samples</h3>
+                <p className="text-[11px] text-gray-400 mb-4">Approaching ex-factory with unapproved samples</p>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {(designData.at_risk_samples || []).length === 0 ? (
+                    <div className="text-center py-8 text-xs text-gray-400">
+                      <CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />
+                      No at-risk samples
+                    </div>
+                  ) : (designData.at_risk_samples || []).map((item: any) => (
+                    <div key={item.id} className="px-3 py-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                        <span className={cn(
+                          'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                          item.days_until_ex_factory <= 14 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                        )}>
+                          {item.days_until_ex_factory}d to ex-fac
+                        </span>
+                      </div>
+                      <p className="text-gray-500">{item.factory} · {item.customer}</p>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {item.issues.map((issue: string, i: number) => (
+                          <span key={i} className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">{issue}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Awaiting Action */}
+              <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Awaiting Action</h3>
+                <p className="text-[11px] text-gray-400 mb-4">Samples received but not yet approved</p>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {(designData.awaiting_action || []).length === 0 ? (
+                    <div className="text-center py-8 text-xs text-gray-400">
+                      <CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />
+                      All samples actioned
+                    </div>
+                  ) : (designData.awaiting_action || []).map((item: any) => (
+                    <div key={item.id} className="px-3 py-2.5 bg-amber-50/60 rounded-xl border border-amber-100 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                        <span className="text-[10px] text-gray-400">{item.factory}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.actions.map((a: any, i: number) => (
+                          <span key={i} className={cn(
+                            'text-[9px] px-1.5 py-0.5 rounded font-medium',
+                            a.received_days_ago > 14 ? 'bg-red-100 text-red-600' : a.received_days_ago > 7 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
+                          )}>
+                            {a.type} · {a.received_days_ago}d ago
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
     </AppShell>
   );
 }
@@ -587,6 +786,79 @@ function AlertCard({
           children
         )}
       </div>
+    </div>
+  );
+}
+
+function SamplePipelineGroup({ group, colorClass, total }: { group: any; colorClass: string; total: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const pct = total > 0 ? Math.round((group.count / total) * 100) : 0;
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', colorClass)}>
+            {group.status}
+          </span>
+          <span className="text-sm font-semibold text-gray-900">{group.count}</span>
+          <span className="text-xs text-gray-400">{pct}%</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-primary-400 rounded-full" style={{ width: `${pct}%` }} />
+          </div>
+          <ChevronDown className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', expanded && 'rotate-180')} />
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-5 pb-3">
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {group.orders.map((o: any) => (
+              <div key={o.id} className="flex items-center justify-between text-xs py-1.5 border-b border-gray-50 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-900">{o.po_number}</span>
+                  <span className="text-gray-500">{o.style_code}</span>
+                </div>
+                <div className="flex items-center gap-2 text-gray-400">
+                  <span>{o.customer}</span>
+                  <span className="text-gray-300">·</span>
+                  <span>{o.factory}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MissingComponentsList({ orders }: { orders: any[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center justify-between w-full text-left"
+      >
+        <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Missing Components ({orders.length})</span>
+        <ChevronDown className={cn('w-3 h-3 text-gray-400 transition-transform', expanded && 'rotate-180')} />
+      </button>
+      {expanded && (
+        <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+          {orders.map((o: any) => (
+            <div key={o.id} className="text-[11px] flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
+              <span className="font-medium text-gray-700">{o.po_number} · {o.style_code}</span>
+              <span className="text-gray-400">{o.factory}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

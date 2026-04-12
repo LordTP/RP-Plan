@@ -311,6 +311,9 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                     'po_number', 'style_code',  # Key fields
                     'status',  # Status is set manually in the app
                     'is_late',  # Calculated/set in the app
+                    # Auto-calculated fields — always computed, never imported
+                    'eta_to_uk', 'eta_to_customer', 'total_quantity', 'total_order_value',
+                    'estimated_del_to_customer',
                 ]
 
                 # Check if any fields have changed
@@ -526,6 +529,26 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
     unchanged_orders = []
     conflicts = []
     errors = []
+    warnings = []
+
+    # Auto-calculated fields — values in Excel will be ignored
+    AUTO_CALC_FIELDS = {'eta_to_uk', 'eta_to_customer', 'total_quantity', 'total_order_value',
+                        'customer_po_open_month', 'expected_dispatch_arrive_uk_month', 'estimated_del_to_customer'}
+
+    # Check if the Excel contains auto-calculated columns
+    auto_calc_in_file = [f for f in AUTO_CALC_FIELDS if f in col_map]
+    if auto_calc_in_file:
+        labels = {
+            'eta_to_uk': 'ETA TO UK',
+            'eta_to_customer': 'ETA TO CUSTOMER',
+            'total_quantity': 'TOTAL',
+            'total_order_value': 'TOTAL ORDER COST',
+            'customer_po_open_month': 'CUSTOMER PO OPEN MONTH',
+            'expected_dispatch_arrive_uk_month': 'EXPECTED CUSTOMER DELIVERY MONTH',
+            'estimated_del_to_customer': 'ESTIMATED DEL TO CUSTOMER',
+        }
+        col_names = [labels.get(f, f) for f in auto_calc_in_file]
+        warnings.append(f"Auto-calculated columns found in file and will be ignored: {', '.join(col_names)}. These are calculated automatically by the system.")
 
     # Fields that can have pending supplier approvals
     SUPPLIER_DATE_FIELDS = {'date_approved_to_production', 'revised_po_ex_factory', 'actual_date_del_to_uk'}
@@ -558,7 +581,7 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
                 changes = []
 
                 for field, new_value in po_data.items():
-                    if field in protected_fields:
+                    if field in protected_fields or field in AUTO_CALC_FIELDS:
                         continue
                     if new_value is None or new_value == '':
                         continue
@@ -645,7 +668,8 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
             "unchanged_count": len(unchanged_orders),
             "conflict_count": len(conflicts),
         },
-        "errors": errors[:10] if errors else []
+        "errors": errors[:10] if errors else [],
+        "warnings": warnings
     }
 
 
@@ -966,6 +990,12 @@ def _calculate_order_totals(order) -> None:
     # Calculate total_order_value = trade_price × total_quantity
     if order.trade_price is not None and order.total_quantity is not None:
         order.total_order_value = round(order.trade_price * order.total_quantity, 2)
+
+    # Auto-calculate ETA dates from revised_po_ex_factory
+    from datetime import timedelta
+    if order.revised_po_ex_factory:
+        order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
+        order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
 
 def _values_different(old_value: Any, new_value: Any) -> bool:

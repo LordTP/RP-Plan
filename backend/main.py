@@ -645,7 +645,14 @@ async def update_order(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
             )
-        
+
+        # Suppliers can only edit if the order has been sent to factory
+        if not order.order_sent_to_factory_date or not order.tech_packs_sent_to_factory or not order.specs_sent_to_factory:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This order cannot be edited yet. Order Sent to Factory, Tech Packs, and Specs must all be sent first."
+            )
+
         # Build supplier allowed fields from DB settings, fall back to defaults
         db_settings = db.query(RoleColumnSettings).filter(
             RoleColumnSettings.role == 'supplier',
@@ -890,6 +897,11 @@ async def update_order(
     # Auto-calculate total_order_value = trade_price × total_quantity
     if order.trade_price is not None and order.total_quantity is not None:
         order.total_order_value = round(order.trade_price * order.total_quantity, 2)
+
+    # Auto-calculate ETA dates when revised_po_ex_factory changes
+    if order.revised_po_ex_factory:
+        order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
+        order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
     db.commit()
     db.refresh(order)
@@ -2301,6 +2313,11 @@ async def approve_date_change(
     pending.reviewed_by_username = current_user.username
     pending.reviewed_at = datetime.utcnow()
 
+    # Auto-calculate ETA dates if revised_po_ex_factory was approved
+    if pending.field_name == 'revised_po_ex_factory' and order.revised_po_ex_factory:
+        order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
+        order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
+
     db.commit()
 
     return {"success": True, "message": "Date change approved"}
@@ -2396,6 +2413,11 @@ async def bulk_approve_date_changes(
         pending.reviewed_by_id = current_user.id
         pending.reviewed_by_username = current_user.username
         pending.reviewed_at = datetime.utcnow()
+
+        # Auto-calculate ETA dates if revised_po_ex_factory was approved
+        if pending.field_name == 'revised_po_ex_factory' and order.revised_po_ex_factory:
+            order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
+            order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
         approved_count += 1
 
@@ -3457,6 +3479,189 @@ async def get_analytics_alerts(
         "overdue_production": [order_to_dict(o) for o in overdue_production],
         "stale_orders": [order_to_dict(o) for o in stale_orders],
         "upcoming_deliveries": [order_to_dict(o) for o in upcoming_deliveries]
+    }
+
+
+# ============================================================================
+# DESIGN ANALYTICS
+# ============================================================================
+
+@app.get("/api/analytics/design")
+async def get_design_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Design team analytics: sample pipeline, component coverage, factory performance, awaiting action"""
+
+    all_orders = db.query(PurchaseOrder).filter(
+        ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"])
+    ).all()
+
+    now = datetime.utcnow()
+
+    # --- Sample Pipeline: status breakdown with order details per status ---
+    def build_pipeline(field):
+        groups = {}
+        for o in all_orders:
+            val = getattr(o, field, None) or ''
+            val = val.strip().upper() if val else 'NOT SET'
+            if val not in groups:
+                groups[val] = []
+            groups[val].append({
+                "id": o.id,
+                "po_number": o.po_number,
+                "style_code": o.style_code,
+                "customer": o.customer,
+                "factory": o.factory,
+                "colour": o.colour,
+            })
+        # Convert to sorted list
+        result = [{"status": k, "count": len(v), "orders": v} for k, v in groups.items()]
+        result.sort(key=lambda x: x["count"], reverse=True)
+        return result
+
+    sample_pipeline = {
+        "fit_sample": build_pipeline("fit_sample_status"),
+        "strike_off": build_pipeline("strike_off_status"),
+        "lab_dip": build_pipeline("lab_dip_status"),
+        "pps": build_pipeline("pps_status"),
+    }
+
+    # --- Component Coverage: detailed breakdown ---
+    orders_with_components = db.query(func.count(func.distinct(OrderComponent.order_id))).scalar() or 0
+    total_active_orders = len(all_orders)
+    total_components = db.query(func.count(OrderComponent.id)).scalar() or 0
+
+    # Group by component name: how many styles have each component
+    component_names = db.query(
+        OrderComponent.name,
+        func.count(OrderComponent.id)
+    ).group_by(OrderComponent.name).order_by(func.count(OrderComponent.id).desc()).all()
+
+    component_name_breakdown = [{"name": name, "count": count} for name, count in component_names]
+
+    # Orders WITHOUT any components
+    order_ids_with_comps = {c.order_id for c in db.query(OrderComponent.order_id).distinct().all()}
+    orders_without = []
+    for o in all_orders:
+        if o.id not in order_ids_with_comps:
+            orders_without.append({
+                "id": o.id,
+                "po_number": o.po_number,
+                "style_code": o.style_code,
+                "customer": o.customer,
+                "factory": o.factory,
+            })
+
+    component_coverage = {
+        "orders_with_components": orders_with_components,
+        "orders_without_components": total_active_orders - orders_with_components,
+        "total_active_orders": total_active_orders,
+        "total_components": total_components,
+        "coverage_pct": round((orders_with_components / total_active_orders * 100) if total_active_orders > 0 else 0, 1),
+        "by_component_name": component_name_breakdown,
+        "orders_missing_components": orders_without[:50],
+    }
+
+    # --- Late/At Risk Samples: approaching ex-factory but samples not approved ---
+    at_risk = []
+    for o in all_orders:
+        ex_fac = o.revised_po_ex_factory or o.original_po_ex_factory
+        if not ex_fac:
+            continue
+        days_until = (ex_fac - now).days
+        if days_until > 60:
+            continue  # Not urgent
+
+        issues = []
+        if o.fit_sample_required and o.fit_sample_required.upper() in ['Y', 'YES'] and not o.fit_sample_approved:
+            issues.append("Fit sample not approved")
+        if not o.strike_off_approved and o.strike_off_status and o.strike_off_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
+            issues.append("Strike off not approved")
+        if not o.lab_dip_approved and o.lab_dip_status and o.lab_dip_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
+            issues.append("Lab dip not approved")
+        if not o.pps_approved and o.pps_status and o.pps_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
+            issues.append("PPS not approved")
+
+        if issues:
+            at_risk.append({
+                "id": o.id,
+                "po_number": o.po_number,
+                "style_code": o.style_code,
+                "factory": o.factory,
+                "customer": o.customer,
+                "days_until_ex_factory": days_until,
+                "ex_factory_date": ex_fac.isoformat(),
+                "issues": issues,
+            })
+
+    at_risk.sort(key=lambda x: x["days_until_ex_factory"])
+
+    # --- Factory Sample Performance: avg days received→approved per factory ---
+    factory_perf = {}
+    for o in all_orders:
+        factory = o.factory or "Unknown"
+        if factory not in factory_perf:
+            factory_perf[factory] = {"fit_days": [], "strike_off_days": [], "lab_dip_days": [], "total_orders": 0}
+        factory_perf[factory]["total_orders"] += 1
+
+        if o.fit_sample_received and o.fit_sample_approved:
+            factory_perf[factory]["fit_days"].append((o.fit_sample_approved - o.fit_sample_received).days)
+        if o.strike_off_received and o.strike_off_approved:
+            factory_perf[factory]["strike_off_days"].append((o.strike_off_approved - o.strike_off_received).days)
+        if o.lab_dip_received and o.lab_dip_approved:
+            factory_perf[factory]["lab_dip_days"].append((o.lab_dip_approved - o.lab_dip_received).days)
+
+    factory_sample_performance = []
+    for factory, data in factory_perf.items():
+        if data["total_orders"] < 2:
+            continue
+        entry = {
+            "factory": factory,
+            "total_orders": data["total_orders"],
+            "avg_fit_days": round(sum(data["fit_days"]) / len(data["fit_days"]), 1) if data["fit_days"] else None,
+            "avg_strike_off_days": round(sum(data["strike_off_days"]) / len(data["strike_off_days"]), 1) if data["strike_off_days"] else None,
+            "avg_lab_dip_days": round(sum(data["lab_dip_days"]) / len(data["lab_dip_days"]), 1) if data["lab_dip_days"] else None,
+        }
+        factory_sample_performance.append(entry)
+    factory_sample_performance.sort(key=lambda x: x["total_orders"], reverse=True)
+
+    # --- Awaiting Action: samples received but not yet approved ---
+    awaiting_action = []
+    for o in all_orders:
+        actions = []
+        if o.fit_sample_received and not o.fit_sample_approved:
+            days = (now - o.fit_sample_received).days
+            actions.append({"type": "Fit Sample", "received_days_ago": days})
+        if o.strike_off_received and not o.strike_off_approved:
+            days = (now - o.strike_off_received).days
+            actions.append({"type": "Strike Off", "received_days_ago": days})
+        if o.lab_dip_received and not o.lab_dip_approved:
+            days = (now - o.lab_dip_received).days
+            actions.append({"type": "Lab Dip", "received_days_ago": days})
+        if o.pps_received and not o.pps_approved:
+            days = (now - o.pps_received).days
+            actions.append({"type": "PPS", "received_days_ago": days})
+
+        if actions:
+            awaiting_action.append({
+                "id": o.id,
+                "po_number": o.po_number,
+                "style_code": o.style_code,
+                "factory": o.factory,
+                "customer": o.customer,
+                "actions": actions,
+            })
+
+    # Sort by oldest unactioned
+    awaiting_action.sort(key=lambda x: max(a["received_days_ago"] for a in x["actions"]), reverse=True)
+
+    return {
+        "sample_pipeline": sample_pipeline,
+        "component_coverage": component_coverage,
+        "at_risk_samples": at_risk[:20],
+        "factory_sample_performance": factory_sample_performance[:15],
+        "awaiting_action": awaiting_action[:20],
     }
 
 

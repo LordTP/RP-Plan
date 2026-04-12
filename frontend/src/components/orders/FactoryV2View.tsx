@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search,
@@ -19,6 +19,7 @@ import {
   Plus,
   Trash2,
   Copy,
+  Ruler,
 } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -26,9 +27,11 @@ import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
+import { StatusDropdown } from '@/components/orders/StatusDropdown';
+import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -533,11 +536,8 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       })()}
       <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 116px)' }}>
 
-        {/* ─── Left: Order List ─── */}
-        <div className={cn(
-          'flex flex-col min-w-0 transition-all duration-300',
-          selectedStyle ? 'flex-1' : 'w-full'
-        )}>
+        {/* ─── Order List ─── */}
+        <div className="flex flex-col min-w-0 w-full">
 
           {/* Search + Actions */}
           <div className="flex items-center gap-3 mb-4">
@@ -863,6 +863,124 @@ function POCard({
   );
 }
 
+// ─── Size Guide ───────────────────────────────────────────
+
+const SIZE_SLOT_KEYS: (keyof Order)[] = [
+  'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl',
+  'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl', 'size_11', 'size_12', 'size_13', 'size_14',
+];
+const DEFAULT_SIZE_LABELS = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'S11', 'S12', 'S13', 'S14'];
+
+const SIZE_GUIDE = [
+  { code: '001', label: 'MENS/ ADULTS', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'] },
+  { code: '002', label: 'LADIES', sizes: ['6', '8', '10', '12', '14', '16', '18', '20', '22', '24'] },
+  { code: '003', label: 'KIDS LETTER', sizes: ['XSB', 'SB', 'MB', 'LB', 'XLB'] },
+  { code: '004', label: 'KIDS', sizes: ['2-3', '4-5', '6-7', '8-9', '10-11', '12-13', '14-15'] },
+  { code: '005', label: 'KIDS ALT 1', sizes: ['2-3', '3-4', '5-6', '7-8', '9-10', '11-12', '13'] },
+  { code: '006', label: 'LADIES LETTER', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] },
+  { code: '007', label: 'KIDS ALT 2', sizes: ['3-4', '4-5', '6-7', '8-9', '10-11', '12-13'] },
+  { code: '008', label: 'BABY', sizes: ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M/ 18-23M'] },
+  { code: '009', label: 'ACCESSORIES/ HEADWEAR', sizes: ['ONE SIZE', 'BABY', 'JUNIOR', 'ADULT', '6-12 M', '1-3 YRS', 'INFANT'] },
+  { code: '010', label: 'MENS FOOTWEAR', sizes: ['3-6', '7-11', '7-8', '9-10', '11-12'] },
+  { code: '011', label: 'KIDS FOOTWEAR', sizes: ['10-11', '12-13', '1-2', '3-4', '5-6'] },
+  { code: '012', label: 'DOG', sizes: ['XS', 'S', 'M', 'L', 'XL', 'S/M', 'M/L'] },
+  { code: '013', label: 'LADIES DUAL', sizes: ['8-10', '12-14', '16-18', '20-22'] },
+  { code: '014', label: 'KIDS DRY ROBE', sizes: ['5-9 YRS', '10-13YRS'] },
+  { code: '015', label: 'KIDS 3-15', sizes: ['3/4', '4/5', '5/6', '6/7', '7/8', '8/9', '9/10', '10/11', '11/12', '12/13', '13/14', '14/15'] },
+];
+
+function getSizeBreakdown(order: Order): { label: string; value: number }[] {
+  const genderCode = order.gender ? order.gender.split('-')[0]?.trim() : '';
+  const guide = SIZE_GUIDE.find(g => g.code === genderCode);
+  const labels = guide ? guide.sizes : DEFAULT_SIZE_LABELS;
+  return SIZE_SLOT_KEYS.map((key, i) => ({
+    label: labels[i] || DEFAULT_SIZE_LABELS[i] || `S${i + 1}`,
+    value: (order[key] as number) || 0,
+  })).filter(s => s.value > 0);
+}
+
+function SizeGuideTooltip({ gender }: { gender: string | undefined }) {
+  const [show, setShow] = useState(false);
+  const matchCode = gender ? gender.split('-')[0]?.trim() : '';
+
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShow(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [show]);
+
+  return (
+    <>
+      <button
+        onClick={() => setShow(true)}
+        className="p-0.5 text-gray-300 hover:text-primary-500 transition-colors"
+        title="Size guide"
+      >
+        <Ruler className="w-3 h-3" />
+      </button>
+      {show && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShow(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl overflow-hidden animate-scale-in max-w-[800px] w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-gray-900 to-gray-800">
+              <div>
+                <h3 className="text-sm font-bold text-white">Size Guide</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {matchCode ? `Current: ${gender}` : 'No gender code set'}
+                </p>
+              </div>
+              <button onClick={() => setShow(false)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[60vh]">
+              <table className="text-xs w-full border-collapse">
+                <thead className="sticky top-0">
+                  <tr className="bg-gray-50">
+                    <th className="px-4 py-2.5 text-left font-semibold whitespace-nowrap text-gray-600 border-b border-gray-200">Gender</th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-gray-600 border-b border-gray-200" colSpan={15}>Size Range</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SIZE_GUIDE.map(row => {
+                    const isMatch = matchCode && row.code === matchCode;
+                    return (
+                      <tr
+                        key={row.code}
+                        className={cn(
+                          'border-b border-gray-50 transition-colors',
+                          isMatch ? 'bg-primary-50 font-semibold' : 'hover:bg-gray-50'
+                        )}
+                      >
+                        <td className={cn('px-4 py-2 whitespace-nowrap font-medium', isMatch ? 'text-primary-700' : 'text-gray-700')}>
+                          {row.code}-{row.label}
+                          {isMatch && <span className="ml-2 text-[9px] bg-primary-100 text-primary-600 px-1.5 py-0.5 rounded-full font-bold">CURRENT</span>}
+                        </td>
+                        {row.sizes.map((s, i) => (
+                          <td key={i} className={cn('px-2 py-2 text-center whitespace-nowrap', isMatch ? 'text-primary-700' : 'text-gray-500')}>{s}</td>
+                        ))}
+                        {Array.from({ length: Math.max(0, 15 - row.sizes.length) }).map((_, i) => (
+                          <td key={`pad-${i}`} className="px-2 py-2" />
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Detail Panel ──────────────────────────────────────────
 
 function DetailPanel({
@@ -887,9 +1005,11 @@ function DetailPanel({
     : new Set(FACTORY_SHIPPING_COLUMNS);
   const hasCol = (key: string) => allowedCols.has(key);
 
+  const orderSentToFactory = !!(order.order_sent_to_factory_date && order.tech_packs_sent_to_factory && order.specs_sent_to_factory);
+
   const canEdit = (key: string) => {
     if (isSupplier) {
-      // Use DB settings if available, fall back to hardcoded
+      if (!orderSentToFactory) return false;
       if (supplierColumnSettings.length > 0) {
         const setting = supplierColumnSettings.find(s => s.column_key === key);
         return setting?.is_editable ?? false;
@@ -902,65 +1022,88 @@ function DetailPanel({
   };
 
   const [hasComponents, setHasComponents] = useState(false);
+  const [modalTab, setModalTab] = useState<'details' | 'comments'>('details');
+  const modalContentRef = useRef<HTMLDivElement>(null);
 
   const statusStyle = getStatusStyle(order.status);
 
-  const sizes = [
-    { label: '2XS', value: order.size_2xs },
-    { label: 'XS', value: order.size_xs },
-    { label: 'S', value: order.size_s },
-    { label: 'M', value: order.size_m },
-    { label: 'L', value: order.size_l },
-    { label: 'XL', value: order.size_xl },
-    { label: '2XL', value: order.size_2xl },
-    { label: '3XL', value: order.size_3xl },
-    { label: '4XL', value: order.size_4xl },
-    { label: '5XL', value: order.size_5xl },
-    { label: 'S11', value: order.size_11 },
-    { label: 'S12', value: order.size_12 },
-    { label: 'S13', value: order.size_13 },
-    { label: 'S14', value: order.size_14 },
-  ].filter(s => s.value && s.value > 0);
-
+  const sizes = getSizeBreakdown(order);
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
 
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="w-[420px] flex-shrink-0 bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden shadow-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[1200px] max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
-      <div className="px-5 py-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white">
-        <div className="flex items-center justify-between mb-3">
+      <div className="px-6 py-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex-shrink-0">
+        <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold">{order.po_number}</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-bold">{order.po_number}</h3>
+              <span className={cn(
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+                statusStyle.bg, statusStyle.text
+              )}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
+                {order.status || 'Unknown'}
+              </span>
+              {order.is_late && (
+                <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded-full text-[10px] font-semibold">
+                  LATE
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">
               {order.style_code && <span className="text-gray-300">{order.style_code}</span>}
               {order.colour && <span> · {order.colour}</span>}
+              {order.description && <span className="text-gray-400"> · {order.description}</span>}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <X className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={cn(
-            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
-            statusStyle.bg, statusStyle.text
-          )}>
-            <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
-            {order.status || 'Unknown'}
-          </span>
-          {order.is_late && (
-            <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded-full text-[10px] font-semibold">
-              LATE
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setModalTab(modalTab === 'comments' ? 'details' : 'comments'); modalContentRef.current?.scrollTo(0, 0); }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5",
+                modalTab === 'comments'
+                  ? 'text-white bg-white/25'
+                  : 'text-white bg-white/10 hover:bg-white/20'
+              )}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              {modalTab === 'comments' ? 'Details' : 'Comments'}
+              {modalTab !== 'comments' && (order.unread_comment_count || 0) > 0 && (
+                <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                  {order.unread_comment_count}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              title="Close (Esc)"
+            >
+              <X className="w-4 h-4 text-gray-300" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      {/* Content - 2 column layout */}
+      <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* LEFT COLUMN */}
+        <div className={cn('lg:col-span-2 space-y-5', modalTab === 'comments' && 'hidden')}>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3">
@@ -1021,12 +1164,20 @@ function DetailPanel({
             {hasCol('china_orderbook_ref') && <DetailRow label="China Orderbook Ref" value={order.china_orderbook_ref} />}
             {hasCol('season') && <DetailRow label="Season" value={order.season} />}
             {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
-            {hasCol('gender') && <DetailRow label="Gender" value={order.gender} />}
+            {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
             {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
             {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
           </div>
         </div>
+        </div>
 
+        {/* RIGHT COLUMN */}
+        <div className={cn('space-y-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
+
+        {modalTab === 'comments' ? (
+          <InlineComments order={order} />
+        ) : (
+        <>
         {/* Timeline / Key Dates */}
         <div>
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -1079,24 +1230,50 @@ function DetailPanel({
               <Clock className="w-3.5 h-3.5" />
               Samples
             </h4>
-            <div className="space-y-2">
-              {!hasComponents && hasCol('fit_sample_required') && <DetailRow label="Fit Sample Req" value={order.fit_sample_required} />}
-              {!hasComponents && hasCol('fit_sample_status') && <DetailRow label="Fit Sample Status" value={order.fit_sample_status} />}
-              {!hasComponents && hasCol('fit_sample_received') && <DetailRow label="Fit Sample Rcvd" value={formatDate(order.fit_sample_received)} />}
-              {!hasComponents && hasCol('fit_sample_approved') && <DetailRow label="Fit Sample Appr" value={formatDate(order.fit_sample_approved)} />}
-              {!hasComponents && hasCol('strike_off_status') && <DetailRow label="Strike Off Status" value={order.strike_off_status} />}
-              {!hasComponents && hasCol('strike_off_received') && <DetailRow label="Strike Off Rcvd" value={formatDate(order.strike_off_received)} />}
-              {!hasComponents && hasCol('strike_off_approved') && <DetailRow label="Strike Off Appr" value={formatDate(order.strike_off_approved)} />}
-              {!hasComponents && hasCol('lab_dip_status') && <DetailRow label="Lab Dip Status" value={order.lab_dip_status} />}
-              {!hasComponents && hasCol('lab_dip_received') && <DetailRow label="Lab Dip Rcvd" value={formatDate(order.lab_dip_received)} />}
-              {!hasComponents && hasCol('lab_dip_approved') && <DetailRow label="Lab Dip Appr" value={formatDate(order.lab_dip_approved)} />}
-              {hasCol('pps_status') && <DetailRow label="PPS Status" value={order.pps_status} />}
-              {hasCol('pps_received') && <DetailRow label="PPS Received" value={formatDate(order.pps_received)} />}
-              {hasCol('pps_sent_to_customer') && <DetailRow label="PPS Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
-              {hasCol('pps_approved') && <DetailRow label="PPS Approved" value={formatDate(order.pps_approved)} />}
-              {hasCol('photo_sample_received') && <DetailRow label="Photo Sample Rcvd" value={formatDate(order.photo_sample_received)} />}
-              {hasCol('ex_factory_from_pp_approval') && <DetailRow label="Ex-Fac from PP Appr" value={formatDate(order.ex_factory_from_pp_approval)} />}
-              {hasCol('shipment_sample_received') && <DetailRow label="Shipment Sample Rcvd" value={formatDate(order.shipment_sample_received)} />}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+              {!hasComponents && (hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Fit Sample</p>
+                  {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
+                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                  {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
+                  {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
+                </div>
+              )}
+              {!hasComponents && (hasCol('strike_off_status') || hasCol('strike_off_received')) && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Strike Off</p>
+                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
+                  {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} />}
+                  {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} />}
+                </div>
+              )}
+              {!hasComponents && (hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Lab Dip</p>
+                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
+                  {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} />}
+                  {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} />}
+                </div>
+              )}
+              {(hasCol('pps_status') || hasCol('pps_received')) && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">PPS</p>
+                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
+                  {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} />}
+                  {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
+                  {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} />}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 mt-1">
+              <div>
+                {hasCol('photo_sample_received') && <DetailRow label="Photo Sample Rcvd" value={formatDate(order.photo_sample_received)} />}
+                {hasCol('ex_factory_from_pp_approval') && <DetailRow label="Ex-Fac from PP Appr" value={formatDate(order.ex_factory_from_pp_approval)} />}
+              </div>
+              <div>
+                {hasCol('shipment_sample_received') && <DetailRow label="Shipment Sample Rcvd" value={formatDate(order.shipment_sample_received)} />}
+              </div>
             </div>
           </div>
         )}
@@ -1127,25 +1304,18 @@ function DetailPanel({
             </div>
           </div>
         )}
+        </>
+        )}
+
+        </div>
       </div>
 
-      {/* Footer Actions */}
-      <div className="border-t border-gray-100 px-5 py-3 flex items-center gap-2">
-        <button
-          onClick={onCommentClick}
-          className="flex-1 px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-xl hover:bg-primary-100 transition-colors flex items-center justify-center gap-2"
-        >
-          <MessageSquare className="w-4 h-4" />
-          Comments
-          {(order.unread_comment_count || 0) > 0 && (
-            <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
-              {order.unread_comment_count}
-            </span>
-          )}
-        </button>
+      {/* Footer */}
+      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
         <p className="text-[11px] text-gray-400">
           Updated {timeAgo(order.updated_at)}
         </p>
+      </div>
       </div>
     </div>
   );
@@ -1153,14 +1323,14 @@ function DetailPanel({
 
 // ─── Components Section ───────────────────────────────────
 
-const COMPONENT_SAMPLE_FIELDS = [
-  { key: 'fit_sample_status', label: 'Fit Status', type: 'text', colKey: 'fit_sample_status' },
+const COMPONENT_SAMPLE_FIELDS: { key: string; label: string; type: string; colKey: string; options?: string[] }[] = [
+  { key: 'fit_sample_status', label: 'Fit Status', type: 'text', colKey: 'fit_sample_status', options: FIT_SAMPLE_STATUS_OPTIONS },
   { key: 'fit_sample_received', label: 'Fit Rcvd', type: 'date', colKey: 'fit_sample_received' },
   { key: 'fit_sample_approved', label: 'Fit Appr', type: 'date', colKey: 'fit_sample_approved' },
-  { key: 'strike_off_status', label: 'Strike Off Status', type: 'text', colKey: 'strike_off_status' },
+  { key: 'strike_off_status', label: 'Strike Off Status', type: 'text', colKey: 'strike_off_status', options: SAMPLE_STATUS_OPTIONS },
   { key: 'strike_off_received', label: 'Strike Off Rcvd', type: 'date', colKey: 'strike_off_received' },
   { key: 'strike_off_approved', label: 'Strike Off Appr', type: 'date', colKey: 'strike_off_approved' },
-  { key: 'lab_dip_status', label: 'Lab Dip Status', type: 'text', colKey: 'lab_dip_status' },
+  { key: 'lab_dip_status', label: 'Lab Dip Status', type: 'text', colKey: 'lab_dip_status', options: SAMPLE_STATUS_OPTIONS },
   { key: 'lab_dip_received', label: 'Lab Dip Rcvd', type: 'date', colKey: 'lab_dip_received' },
   { key: 'lab_dip_approved', label: 'Lab Dip Appr', type: 'date', colKey: 'lab_dip_approved' },
 ];
@@ -1400,19 +1570,36 @@ export function ComponentsSection({
 
               {/* Expanded Content */}
               {expandedId === comp.id && (
-                <div className="px-3 py-2 space-y-1.5 border-t border-gray-100">
-                  {visibleFields.map(field => (
-                    <ComponentFieldRow
-                      key={field.key}
-                      label={field.label}
-                      value={(comp as any)[field.key]}
-                      type={field.type}
-                      editable={true}
-                      onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)}
-                      poNumber={poNumber}
-                      componentName={comp.name}
-                    />
-                  ))}
+                <div className="px-3 py-2 border-t border-gray-100">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0">
+                    {/* Fit Sample */}
+                    {visibleFields.some(f => f.key.startsWith('fit_')) && (
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1">Fit Sample</p>
+                        {visibleFields.filter(f => f.key.startsWith('fit_')).map(field => (
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Fit ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                        ))}
+                      </div>
+                    )}
+                    {/* Strike Off */}
+                    {visibleFields.some(f => f.key.startsWith('strike_off_')) && (
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1">Strike Off</p>
+                        {visibleFields.filter(f => f.key.startsWith('strike_off_')).map(field => (
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Strike Off ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                        ))}
+                      </div>
+                    )}
+                    {/* Lab Dip */}
+                    {visibleFields.some(f => f.key.startsWith('lab_dip_')) && (
+                      <div className="pt-3">
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Lab Dip</p>
+                        {visibleFields.filter(f => f.key.startsWith('lab_dip_')).map(field => (
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Lab Dip ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="pt-2 border-t border-gray-100 flex justify-end">
                     <button
                       onClick={() => handleDelete(comp.id)}
@@ -1440,6 +1627,7 @@ function ComponentFieldRow({
   onSave,
   poNumber,
   componentName,
+  options,
 }: {
   label: string;
   value: string | null | undefined;
@@ -1448,6 +1636,7 @@ function ComponentFieldRow({
   onSave: (value: string, applyToPO: boolean, selectedIds?: number[]) => void;
   poNumber: string;
   componentName: string;
+  options?: string[];
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(value || '');
@@ -1487,6 +1676,15 @@ function ComponentFieldRow({
       <span className="text-[11px] text-gray-400">{label}</span>
       {editing ? (
         <div className="flex items-center gap-1">
+          {options ? (
+            <StatusDropdown
+              value={editValue}
+              options={options}
+              onSave={(v) => { setEditValue(v); setShowApplyMenu(true); }}
+              onCancel={() => setEditing(false)}
+              size="sm"
+            />
+          ) : (
           <input
             type={type === 'date' ? 'date' : 'text'}
             value={editValue}
@@ -1495,6 +1693,7 @@ function ComponentFieldRow({
             autoFocus
             className="text-[11px] border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[120px]"
           />
+          )}
           <div className="relative">
             <button
               onClick={() => { setShowApplyMenu(!showApplyMenu); setShowStylePicker(false); }}
@@ -1592,33 +1791,45 @@ function ComponentFieldRow({
 
 // ─── Sub-components ────────────────────────────────────────
 
-function DetailRow({ label, value, editable, onSave }: {
+function DetailRow({ label, value, editable, onSave, options, extra }: {
   label: string;
   value: string | number | null | undefined;
   editable?: boolean;
   onSave?: (value: string) => void;
+  options?: string[];
+  extra?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(String(value || ''));
 
-  const handleSave = () => {
-    onSave?.(editValue);
+  const handleSave = (val?: string) => {
+    onSave?.(val ?? editValue);
     setEditing(false);
   };
 
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-400">{label}</span>
+      <span className="text-xs text-gray-400 flex items-center gap-1">{label}{extra}</span>
       {editing ? (
-        <input
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
-          autoFocus
-          className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
-        />
+        options ? (
+          <StatusDropdown
+            value={editValue}
+            options={options}
+            onSave={(v) => handleSave(v)}
+            onCancel={() => setEditing(false)}
+            size="sm"
+          />
+        ) : (
+          <input
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={() => handleSave()}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
+            autoFocus
+            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
+          />
+        )
       ) : (
         <span
           className={cn(
@@ -1652,7 +1863,7 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
   };
 
   return (
-    <div className="flex items-center gap-3 py-2 relative">
+    <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
       <div className={cn(
         'w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10',
         hasDate

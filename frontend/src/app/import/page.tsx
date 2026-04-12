@@ -497,6 +497,20 @@ function ImportContent() {
                   </div>
                 </div>
 
+                {/* Warnings */}
+                {(preview as any).warnings?.length > 0 && (
+                  <div className="card p-4 bg-amber-50 border-amber-200">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <div className="space-y-1">
+                        {(preview as any).warnings.map((w: string, i: number) => (
+                          <p key={i} className="text-sm text-amber-800">{w}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* New Orders Section */}
                 {preview.new_orders.length > 0 && (
                   <div className="card overflow-hidden">
