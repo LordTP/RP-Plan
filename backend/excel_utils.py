@@ -997,6 +997,13 @@ def _calculate_order_totals(order) -> None:
         order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
         order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
+    # Auto-calculate estimated_del_to_customer from vessel ETA + FCL/LCL
+    vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+    if vessel_eta:
+        fcl_lcl = (order.fcl_lcl or '').strip().upper()
+        days_to_add = 7 if fcl_lcl == 'LCL' else 5
+        order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
+
 
 def _values_different(old_value: Any, new_value: Any) -> bool:
     """Check if two values are meaningfully different"""

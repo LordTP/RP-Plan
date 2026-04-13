@@ -903,6 +903,13 @@ async def update_order(
         order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
         order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
+    # Auto-calculate estimated_del_to_customer from vessel ETA + FCL/LCL
+    vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+    if vessel_eta:
+        fcl_lcl = (order.fcl_lcl or '').strip().upper()
+        days_to_add = 7 if fcl_lcl == 'LCL' else 5
+        order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
+
     db.commit()
     db.refresh(order)
 
@@ -2318,6 +2325,14 @@ async def approve_date_change(
         order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
         order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
 
+    # Auto-calculate estimated_del_to_customer if vessel ETA fields approved
+    if pending.field_name in ('vessel_eta_to_port', 'revised_vessel_eta_to_port'):
+        vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+        if vessel_eta:
+            fcl_lcl = (order.fcl_lcl or '').strip().upper()
+            days_to_add = 7 if fcl_lcl == 'LCL' else 5
+            order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
+
     db.commit()
 
     return {"success": True, "message": "Date change approved"}
@@ -2418,6 +2433,14 @@ async def bulk_approve_date_changes(
         if pending.field_name == 'revised_po_ex_factory' and order.revised_po_ex_factory:
             order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
             order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
+
+        # Auto-calculate estimated_del_to_customer if vessel ETA fields approved
+        if pending.field_name in ('vessel_eta_to_port', 'revised_vessel_eta_to_port'):
+            vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+            if vessel_eta:
+                fcl_lcl = (order.fcl_lcl or '').strip().upper()
+                days_to_add = 7 if fcl_lcl == 'LCL' else 5
+                order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
 
         approved_count += 1
 
