@@ -213,12 +213,15 @@ export const FIT_SAMPLE_STATUS_OPTIONS = [
 ];
 
 export const SAMPLE_STATUS_OPTIONS = [
+  'NOT REQUIRED',
   'OUTSTANDING',
   'P23 ADVISE UPDATE',
   'LATE',
   'RECEIVED',
   'APPROVED',
 ];
+
+export const FCL_LCL_OPTIONS = ['FCL', 'LCL', 'AIR'];
 
 export const COLUMNS: ColumnDef[] = [
   // Core PO identifiers - matches new CP HEADERS order
@@ -284,7 +287,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'pps_approved', label: 'PPS Approved', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Other
   { key: 'photo_sample_received', label: 'Photo Sample Rcvd', width: 125, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
-  { key: 'ex_factory_from_pp_approval', label: 'Ex-Fac from PP Appr', width: 135, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
+  { key: 'ex_factory_from_pp_approval', label: 'Ex-Fac from PP Appr', width: 135, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'revised_po_ex_factory', label: 'Revised Ex-Fac', width: 115, editable: true, supplierEditable: true, supplierHidden: false, type: 'date' },
   { key: 'shipment_sample_received', label: 'Shipment Sample Rcvd', width: 140, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Delivery dates
@@ -294,7 +297,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'customer_po_open_month', label: 'PO Open Month', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'expected_dispatch_arrive_uk_month', label: 'Exp Cust Del Month', width: 125, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
   // Shipping / Vessel
-  { key: 'fcl_lcl', label: 'FCL/LCL', width: 75, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'fcl_lcl', label: 'FCL/LCL', width: 75, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FCL_LCL_OPTIONS },
   { key: 'vessel_name', label: 'Vessel Name', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'vessel_etd', label: 'Vessel ETD', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'vessel_eta_to_port', label: 'Vessel ETA Port', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },

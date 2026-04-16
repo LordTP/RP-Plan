@@ -136,6 +136,10 @@ function OrdersV2Content() {
   const viewParam = searchParams.get('view');
   const isFactoryView = viewParam === 'factory-product' || viewParam === 'factory-shipping';
 
+  // Deep-link params from dashboard warnings centre
+  const openStyleParam = searchParams.get('openStyle');
+  const expandPOParam = searchParams.get('expandPO');
+
   // Use local state for factory views, global store for main orders
   const [localOrders, setLocalOrders] = useState<Order[]>([]);
   const [localTotal, setLocalTotal] = useState(0);
@@ -150,6 +154,7 @@ function OrdersV2Content() {
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
 
   const isSupplier = user?.role === 'supplier';
+  const isDesigner = user?.role === 'sourcelab_designer';
 
   const viewTitle = viewParam === 'factory-product' ? 'Factory Product'
     : viewParam === 'factory-shipping' ? 'Factory Shipping'
@@ -184,6 +189,26 @@ function OrdersV2Content() {
   useEffect(() => {
     loadOrders();
   }, []);
+
+  // Handle deep-link from dashboard warnings centre
+  useEffect(() => {
+    if (!orders.length) return;
+    if (openStyleParam) {
+      const id = parseInt(openStyleParam, 10);
+      const found = orders.find(o => o.id === id);
+      if (found) {
+        setExpandedPOs(prev => new Set(prev).add(found.po_number));
+        setSelectedStyleId(id);
+      }
+    } else if (expandPOParam) {
+      setExpandedPOs(prev => new Set(prev).add(expandPOParam));
+      // Scroll to the PO card
+      setTimeout(() => {
+        const el = document.getElementById(`po-card-${expandPOParam}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 200);
+    }
+  }, [orders.length, openStyleParam, expandPOParam]);
 
   // Group orders by PO number
   const poGroups = useMemo(() => {
@@ -423,7 +448,11 @@ function OrdersV2Content() {
             <span className="text-gray-300">·</span>
             <span>{orders.length} total lines</span>
             <span className="text-gray-300">·</span>
-            <span>{formatCurrency(orders.reduce((sum, o) => sum + (o.total_order_value || 0), 0))} total value</span>
+            <span>{orders.reduce((sum, o) => sum + (o.total_quantity || 0), 0).toLocaleString()} total units</span>
+            {!isDesigner && <>
+              <span className="text-gray-300">·</span>
+              <span>{formatCurrency(orders.reduce((sum, o) => sum + (o.total_order_value || 0), 0))} total value</span>
+            </>}
           </div>
 
           {/* PO List */}
@@ -454,6 +483,7 @@ function OrdersV2Content() {
                   onCommentClick={handleCommentClick}
                   selectedStyleId={selectedStyleId}
                   isSupplier={isSupplier}
+                  isDesigner={isDesigner}
                 />
               ))
             )}
@@ -467,6 +497,7 @@ function OrdersV2Content() {
             onClose={() => { setSelectedStyleId(null); setOpenOnComments(false); }}
             onCommentClick={() => handleCommentClick(selectedStyle)}
             isSupplier={isSupplier}
+            isDesigner={isDesigner}
             view={viewParam}
             onSave={handleDetailSave}
             initialTab={openOnComments ? 'comments' : 'details'}
@@ -489,6 +520,7 @@ function POCard({
   onCommentClick,
   selectedStyleId,
   isSupplier,
+  isDesigner,
 }: {
   group: POGroup;
   isExpanded: boolean;
@@ -497,12 +529,13 @@ function POCard({
   onCommentClick: (order: Order) => void;
   selectedStyleId: number | null;
   isSupplier: boolean;
+  isDesigner?: boolean;
 }) {
   const statusStyle = getStatusStyle(group.statusSummary);
   const hasMultipleStatuses = new Set(group.styles.map(s => s.status)).size > 1;
 
   return (
-    <div className={cn(
+    <div id={`po-card-${group.po_number}`} className={cn(
       'bg-white rounded-xl border transition-all',
       isExpanded ? 'border-primary-200 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
     )}>
@@ -537,7 +570,7 @@ function POCard({
         </div>
 
         {/* Value */}
-        {!isSupplier && (
+        {!isSupplier && !isDesigner && (
           <div className="text-right flex-shrink-0 w-24">
             <p className="text-sm font-semibold text-gray-900">{formatCurrency(group.totalValue)}</p>
             <p className="text-[11px] text-gray-400">value</p>
@@ -586,7 +619,7 @@ function POCard({
             <div className="col-span-2">Description</div>
             <div className="col-span-1">Colour</div>
             <div className="col-span-1 text-right">Qty</div>
-            {!isSupplier && <div className="col-span-1 text-right">Value</div>}
+            {!isSupplier && !isDesigner && <div className="col-span-1 text-right">Value</div>}
             <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-1')}>Ex-Factory</div>
             <div className="col-span-2">Status</div>
             <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-2')} />
@@ -620,12 +653,12 @@ function POCard({
                 <div className="col-span-1 text-right">
                   <p className="text-sm font-medium text-gray-900">{formatQty(style.total_quantity)}</p>
                 </div>
-                {!isSupplier && (
+                {!isSupplier && !isDesigner && (
                   <div className="col-span-1 text-right">
                     <p className="text-xs text-gray-500">{formatCurrency(style.total_order_value)}</p>
                   </div>
                 )}
-                <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-1')}>
+                <div className={cn('text-right', (isSupplier || isDesigner) ? 'col-span-2' : 'col-span-1')}>
                   <p className="text-xs text-gray-600">
                     {formatDate(style.revised_po_ex_factory || style.original_po_ex_factory)}
                   </p>
@@ -680,6 +713,7 @@ function DetailPanel({
   onClose,
   onCommentClick,
   isSupplier,
+  isDesigner,
   view,
   onSave,
   initialTab = 'details',
@@ -688,6 +722,7 @@ function DetailPanel({
   onClose: () => void;
   onCommentClick: () => void;
   isSupplier: boolean;
+  isDesigner?: boolean;
   view: string | null;
   onSave?: (orderId: number, field: string, value: any) => void;
   initialTab?: 'details' | 'comments';
@@ -803,13 +838,13 @@ function DetailPanel({
               <p className="text-[11px] text-gray-400 mt-0.5">Total Qty</p>
             </div>
           )}
-          {hasCol('trade_price') && (
+          {hasCol('trade_price') && !isDesigner && (
             <div className="bg-gray-50 rounded-xl p-3 text-center">
               <p className="text-lg font-bold text-gray-900">{formatCurrency(order.trade_price)}</p>
               <p className="text-[11px] text-gray-400 mt-0.5">Cost Price</p>
             </div>
           )}
-          {hasCol('total_order_value') && (
+          {hasCol('total_order_value') && !isDesigner && (
             <div className="bg-gray-50 rounded-xl p-3 text-center">
               <p className="text-lg font-bold text-gray-900">{formatCurrency(order.total_order_value)}</p>
               <p className="text-[11px] text-gray-400 mt-0.5">Order Value</p>
@@ -880,14 +915,14 @@ function DetailPanel({
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className={cn('space-y-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
+        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
 
         {modalTab === 'comments' ? (
           <InlineComments order={order} />
         ) : (
         <>
         {/* Timeline / Key Dates */}
-        <div>
+        <div className="order-3">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Calendar className="w-3.5 h-3.5" />
             Timeline
@@ -930,12 +965,14 @@ function DetailPanel({
 
         {/* Components — shown before samples so component data takes priority */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
-          <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+          <div className="order-1">
+            <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+          </div>
         )}
 
         {/* Samples — fit/strike off/lab dip rows hidden when components exist */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
-          <div>
+          <div className="order-2">
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5" />
               Samples

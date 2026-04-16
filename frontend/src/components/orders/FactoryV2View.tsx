@@ -1172,14 +1172,14 @@ function DetailPanel({
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className={cn('space-y-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
+        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
 
         {modalTab === 'comments' ? (
           <InlineComments order={order} />
         ) : (
         <>
         {/* Timeline / Key Dates */}
-        <div>
+        <div className="order-3">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Calendar className="w-3.5 h-3.5" />
             Timeline
@@ -1220,12 +1220,14 @@ function DetailPanel({
 
         {/* Components — shown before samples so component data takes priority */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
-          <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+          <div className="order-1">
+            <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+          </div>
         )}
 
         {/* Samples — fit/strike off/lab dip rows hidden when components exist (data lives in components instead) */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
-          <div>
+          <div className="order-2">
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5" />
               Samples

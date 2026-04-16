@@ -313,7 +313,8 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                     'is_late',  # Calculated/set in the app
                     # Auto-calculated fields — always computed, never imported
                     'eta_to_uk', 'eta_to_customer', 'total_quantity', 'total_order_value',
-                    'estimated_del_to_customer',
+                    'estimated_del_to_customer', 'ex_factory_from_pp_approval',
+                    'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
                 ]
 
                 # Check if any fields have changed
@@ -533,7 +534,8 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
 
     # Auto-calculated fields — values in Excel will be ignored
     AUTO_CALC_FIELDS = {'eta_to_uk', 'eta_to_customer', 'total_quantity', 'total_order_value',
-                        'customer_po_open_month', 'expected_dispatch_arrive_uk_month', 'estimated_del_to_customer'}
+                        'customer_po_open_month', 'expected_dispatch_arrive_uk_month', 'estimated_del_to_customer',
+                        'ex_factory_from_pp_approval'}
 
     # Check if the Excel contains auto-calculated columns
     auto_calc_in_file = [f for f in AUTO_CALC_FIELDS if f in col_map]
@@ -546,6 +548,7 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
             'customer_po_open_month': 'CUSTOMER PO OPEN MONTH',
             'expected_dispatch_arrive_uk_month': 'EXPECTED CUSTOMER DELIVERY MONTH',
             'estimated_del_to_customer': 'ESTIMATED DEL TO CUSTOMER',
+            'ex_factory_from_pp_approval': 'EX FACTORY BASED FROM PP APPROVAL',
         }
         col_names = [labels.get(f, f) for f in auto_calc_in_file]
         warnings.append(f"Auto-calculated columns found in file and will be ignored: {', '.join(col_names)}. These are calculated automatically by the system.")
@@ -991,8 +994,13 @@ def _calculate_order_totals(order) -> None:
     if order.trade_price is not None and order.total_quantity is not None:
         order.total_order_value = round(order.trade_price * order.total_quantity, 2)
 
-    # Auto-calculate ETA dates from revised_po_ex_factory
     from datetime import timedelta
+
+    # If revised_po_ex_factory is blank, default to factory_confirmed_ex_factory
+    if not order.revised_po_ex_factory and order.factory_confirmed_ex_factory:
+        order.revised_po_ex_factory = order.factory_confirmed_ex_factory
+
+    # Auto-calculate ETA dates from revised_po_ex_factory
     if order.revised_po_ex_factory:
         order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
         order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
@@ -1001,8 +1009,18 @@ def _calculate_order_totals(order) -> None:
     vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
     if vessel_eta:
         fcl_lcl = (order.fcl_lcl or '').strip().upper()
-        days_to_add = 7 if fcl_lcl == 'LCL' else 5
+        days_to_add = 7 if fcl_lcl == 'LCL' else 2 if fcl_lcl == 'AIR' else 5
         order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
+
+    # Auto-calculate month fields
+    if order.original_del_date_to_customer:
+        order.customer_po_open_month = order.original_del_date_to_customer.strftime('%B')
+    if order.eta_to_customer:
+        order.expected_dispatch_arrive_uk_month = order.eta_to_customer.strftime('%B')
+
+    # Auto-calculate ex_factory_from_pp_approval = PPS Approved + 35 days
+    if order.pps_approved:
+        order.ex_factory_from_pp_approval = order.pps_approved + timedelta(days=35)
 
 
 def _values_different(old_value: Any, new_value: Any) -> bool:

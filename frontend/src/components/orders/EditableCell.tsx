@@ -64,6 +64,7 @@ export function EditableCell({
   const [loadingStyles, setLoadingStyles] = useState(false);
 
   const isDateField = column.type === 'date';
+  const isBulkable = isDateField || !!column.options;
 
   const canEdit =
     ((userRole === 'internal' || userRole === 'admin') && isEditable) ||
@@ -106,8 +107,8 @@ export function EditableCell({
     setSelectedOrderIds([order.id]);
     setIsEditing(true);
 
-    // For date fields, fetch all styles on this PO
-    if (isDateField && order.po_number) {
+    // For date/dropdown fields, fetch all styles on this PO
+    if (isBulkable && order.po_number) {
       setLoadingStyles(true);
       try {
         const result = await ordersApi.getStylesOnPO(order.po_number);
@@ -136,8 +137,8 @@ export function EditableCell({
         saveValue = editValue === '' ? null : editValue;
       }
 
-      // For date fields with bulk apply mode, use the bulk API
-      if (isDateField && applyMode !== 'single' && order.po_number) {
+      // For bulkable fields with bulk apply mode, use the bulk API
+      if (isBulkable && applyMode !== 'single' && order.po_number) {
         const orderIdsToUpdate = applyMode === 'all'
           ? [] // Empty array means all orders on PO
           : selectedOrderIds;
@@ -345,8 +346,8 @@ export function EditableCell({
               </div>
             )}
 
-            {/* Bulk update options for date fields */}
-            {isDateField && stylesOnPO.length > 1 && (
+            {/* Bulk update options */}
+            {isBulkable && stylesOnPO.length > 1 && (
               <div className="mb-4 border-t pt-4">
                 <p className="text-sm font-medium text-gray-700 mb-3">Apply to:</p>
 

@@ -29,7 +29,7 @@ const navItems = [
   { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
-  { href: '/settings', label: 'Settings', icon: Settings, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
+  { href: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },
 ];
 
 const factorySubItems = [

@@ -687,6 +687,11 @@ export const analyticsApi = {
     const response = await api.get('/api/analytics/design');
     return response.data;
   },
+
+  getDashboardWarnings: async () => {
+    const response = await api.get('/api/warnings/dashboard');
+    return response.data;
+  },
 };
 
 // Pending date change approval types

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -26,13 +26,14 @@ import {
   BarChart3,
   FileSpreadsheet,
   Download,
+  Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { statsApi, approvalsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange, MyPendingChange, MyApprovedChange, RecentActivityEvent } from '@/lib/api';
+import { statsApi, approvalsApi, analyticsApi, ActivitySummary, MissedActivity, PendingApprovalGroup, RejectedChange, MyPendingChange, MyApprovedChange, RecentActivityEvent } from '@/lib/api';
 import { formatCurrency, formatNumber, formatDate, cn, getStatusColor } from '@/lib/utils';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import type { DashboardStats, POSummary } from '@/types';
@@ -74,6 +75,7 @@ function DashboardContent() {
   const [myApprovedChanges, setMyApprovedChanges] = useState<MyApprovedChange[]>([]);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivityEvent[]>([]);
+  const [warnings, setWarnings] = useState<any[]>([]);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -100,6 +102,12 @@ function DashboardContent() {
       setActivitySummary(activity);
       setMissedActivity(missed);
       setRecentActivity(recentActivityResult?.events || []);
+
+      // Load dashboard warnings
+      try {
+        const warningsResult = await analyticsApi.getDashboardWarnings();
+        setWarnings(warningsResult?.warnings || []);
+      } catch { /* warnings optional */ }
 
       try {
         const [myPendingResult, myApprovedResult, rejectedResult] = await Promise.all([
@@ -245,68 +253,29 @@ function DashboardContent() {
 
   return (
     <AppShell title="Dashboard">
-      {/* Dark Hero Banner with Stats */}
-      <div className="bg-gradient-to-r from-gray-900 via-gray-900 to-gray-800 rounded-2xl p-8 mb-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-        <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-teal-500/5 rounded-full blur-3xl translate-y-1/2" />
-
-        <div className="relative z-10">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white">Welcome back, {user?.username}</h2>
-            <p className="text-gray-400 text-sm mt-1">Here&apos;s what&apos;s happening with your orders today.</p>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <div
-              onClick={() => handleStatusClick()}
-              className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3 cursor-pointer hover:bg-white/[0.1] transition-colors"
-            >
-              <p className="text-gray-400 text-xs font-medium">Total Orders</p>
-              <p className="text-2xl font-bold text-white mt-1">{formatNumber(stats?.total_orders || 0)}</p>
-            </div>
-            <div
-              onClick={() => handleStatusClick('In Production')}
-              className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3 cursor-pointer hover:bg-white/[0.1] transition-colors"
-            >
-              <p className="text-gray-400 text-xs font-medium">In Production</p>
-              <p className="text-2xl font-bold text-amber-400 mt-1">{formatNumber(stats?.orders_in_production || 0)}</p>
-            </div>
-            <div
-              onClick={() => handleStatusClick('Shipped')}
-              className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3 cursor-pointer hover:bg-white/[0.1] transition-colors"
-            >
-              <p className="text-gray-400 text-xs font-medium">Shipped</p>
-              <p className="text-2xl font-bold text-blue-400 mt-1">{formatNumber(stats?.orders_shipped || 0)}</p>
-            </div>
-            {isInternal && (
-              <div className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3">
-                <p className="text-gray-400 text-xs font-medium">Open Value</p>
-                <p className="text-2xl font-bold text-teal-400 mt-1">{formatCurrency(stats?.total_open_value || 0)}</p>
-              </div>
-            )}
-            {!isInternal && (
-              <div
-                onClick={() => handleStatusClick('Delivered')}
-                className="bg-white/[0.06] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3 cursor-pointer hover:bg-white/[0.1] transition-colors"
-              >
-                <p className="text-gray-400 text-xs font-medium">Delivered</p>
-                <p className="text-2xl font-bold text-green-400 mt-1">{formatNumber(stats?.orders_delivered || 0)}</p>
-              </div>
-            )}
-            <div
-              onClick={() => handleStatusClick('Delayed')}
-              className="bg-red-500/10 backdrop-blur-sm border border-red-500/20 rounded-xl px-4 py-3 cursor-pointer hover:bg-red-500/15 transition-colors"
-            >
-              <p className="text-red-300 text-xs font-medium">Overdue</p>
-              <p className="text-2xl font-bold text-red-400 mt-1">{formatNumber(stats?.overdue_orders || 0)}</p>
-            </div>
-          </div>
+      {/* Welcome header with inline metrics */}
+      <div className="mb-8 flex items-end justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Welcome back, {user?.username}</h2>
+          <p className="text-gray-500 text-sm mt-1">Here&apos;s what&apos;s happening with your orders today.</p>
+        </div>
+        <div className="flex items-center gap-5">
+          <InlineMetric label="Total" value={formatNumber(stats?.total_orders || 0)} onClick={() => handleStatusClick()} />
+          <div className="w-px h-8 bg-gray-200" />
+          <InlineMetric label="In Production" value={formatNumber(stats?.orders_in_production || 0)} color="text-amber-600" onClick={() => handleStatusClick('In Production')} />
+          <InlineMetric label="Shipped" value={formatNumber(stats?.orders_shipped || 0)} color="text-blue-600" onClick={() => handleStatusClick('Shipped')} />
+          {isInternal ? (
+            <InlineMetric label="Open Value" value={formatCurrency(stats?.total_open_value || 0)} color="text-teal-600" />
+          ) : (
+            <InlineMetric label="Delivered" value={formatNumber(stats?.orders_delivered || 0)} color="text-green-600" onClick={() => handleStatusClick('Delivered')} />
+          )}
+          <InlineMetric label="Overdue" value={formatNumber(stats?.overdue_orders || 0)} color="text-red-600" onClick={() => handleStatusClick('Delayed')} />
         </div>
       </div>
 
       {/* While You Were Away */}
       {missedActivity && missedActivity.since && (missedActivity.new_orders.count > 0 || missedActivity.updated_orders.count > 0 || missedActivity.new_comments.count > 0) && (
-        <div className="mb-6 bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+        <div className="mb-6 bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center">
@@ -385,7 +354,7 @@ function DashboardContent() {
         <div className="lg:col-span-2 space-y-6">
           {/* Pending Approvals (Internal) */}
           {isInternal && !isDesigner && pendingApprovals.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm">
+            <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -525,7 +494,7 @@ function DashboardContent() {
           {/* Supplier Date Change Dashboard */}
           {isSupplier && (myPendingChanges.length > 0 || myApprovedChanges.length > 0 || rejectedChanges.length > 0) && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
                 <div className="px-4 py-2.5 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
                   <Clock className="w-3.5 h-3.5 text-orange-600" />
                   <span className="text-[11px] font-medium text-orange-800">Pending</span>
@@ -554,7 +523,7 @@ function DashboardContent() {
                   ))}
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
                 <div className="px-4 py-2.5 bg-green-50 border-b border-green-100 flex items-center gap-2">
                   <CheckCircle className="w-3.5 h-3.5 text-green-600" />
                   <span className="text-[11px] font-medium text-green-800">Approved</span>
@@ -572,7 +541,7 @@ function DashboardContent() {
                   ))}
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
                 <div className="px-4 py-2.5 bg-red-50 border-b border-red-100 flex items-center gap-2">
                   <XCircle className="w-3.5 h-3.5 text-red-600" />
                   <span className="text-[11px] font-medium text-red-800">Rejected</span>
@@ -595,7 +564,7 @@ function DashboardContent() {
 
           {/* Activity This Session */}
           {activitySummary && (activitySummary.new_orders.count > 0 || activitySummary.updated_orders.count > 0 || activitySummary.new_comments.count > 0) && (
-            <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2.5">
                   <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -664,8 +633,11 @@ function DashboardContent() {
             </div>
           )}
 
+          {/* Warnings Centre */}
+          {warnings.length > 0 && <WarningsCentre warnings={warnings} />}
+
           {/* Active Purchase Orders */}
-          <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">Active Purchase Orders</h3>
               <Link href="/orders" className="text-sm text-primary-500 font-medium hover:text-primary-700 flex items-center gap-1">
@@ -719,41 +691,55 @@ function DashboardContent() {
 
         {/* Right Column - 1/3 */}
         <div className="space-y-6">
-          {/* Quick Actions - hidden for suppliers */}
-          {!isSupplier && (
-          <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm p-5">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <Link href="/orders" className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors group">
-                <Package className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                <span className="text-[11px] text-gray-500 font-medium">Orders</span>
-              </Link>
-              <Link href="/import" className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors group">
-                <FileSpreadsheet className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                <span className="text-[11px] text-gray-500 font-medium">Import</span>
-              </Link>
-              <Link href="/analytics" className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors group">
-                <BarChart3 className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                <span className="text-[11px] text-gray-500 font-medium">Analytics</span>
-              </Link>
-              <Link href="/settings" className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors group">
-                <TrendingUp className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                <span className="text-[11px] text-gray-500 font-medium">Reports</span>
-              </Link>
+          {/* Order Status Breakdown */}
+          <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100">
+            <div className="px-4 py-3.5 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900">Order Breakdown</h3>
             </div>
+            <div className="p-4 space-y-2.5">
+              {[
+                { label: 'In Production', value: stats?.orders_in_production || 0, color: 'bg-amber-400', onClick: () => handleStatusClick('In Production') },
+                { label: 'Shipped', value: stats?.orders_shipped || 0, color: 'bg-blue-400', onClick: () => handleStatusClick('Shipped') },
+                { label: 'Delivered', value: stats?.orders_delivered || 0, color: 'bg-green-400', onClick: () => handleStatusClick('Delivered') },
+                { label: 'Pending', value: stats?.orders_pending_approval || 0, color: 'bg-orange-400', onClick: () => handleStatusClick('Pending') },
+                { label: 'Cancelled', value: stats?.orders_cancelled || 0, color: 'bg-gray-400', onClick: () => handleStatusClick('Cancelled') },
+              ].map((item) => {
+                const total = stats?.total_orders || 1;
+                const pct = Math.round((item.value / total) * 100);
+                return (
+                  <div key={item.label} onClick={item.onClick} className="cursor-pointer group">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors">{item.label}</span>
+                      <span className="text-[11px] font-semibold text-gray-700">{item.value}</span>
+                    </div>
+                    <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={cn('h-full rounded-full transition-all', item.color)} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {isInternal && (
+              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/40 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">This Month</p>
+                  <p className="text-[10px] text-gray-400">new orders</p>
+                </div>
+                <p className="text-xl font-bold text-gray-900 tabular-nums">{formatNumber(stats?.orders_this_month || 0)}</p>
+              </div>
+            )}
           </div>
-          )}
 
-          {/* Recent Activity */}
-          <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          {/* Recent Activity - borderless, just a section */}
+          <div>
+            <div className="flex items-center justify-between mb-3 px-1">
               <h3 className="text-sm font-semibold text-gray-900">Recent Activity</h3>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                 <span className="text-[10px] text-gray-400">Live</span>
               </div>
             </div>
-            <div className="p-4 space-y-3.5 max-h-72 overflow-y-auto">
+            <div className="space-y-3.5 max-h-72 overflow-y-auto px-1">
               {recentActivity.length === 0 ? (
                 <div className="py-6 text-center text-[11px] text-gray-400">No recent activity</div>
               ) : recentActivity.map((event, idx) => {
@@ -802,52 +788,11 @@ function DashboardContent() {
               })}
             </div>
             {recentActivity.length > 0 && (
-              <div className="px-4 pb-3">
-                <Link href="/orders" className="block w-full py-2 text-xs text-gray-400 font-medium hover:text-gray-600 bg-gray-50 rounded-lg transition-colors text-center">
-                  View all activity
-                </Link>
-              </div>
+              <Link href="/orders" className="block text-xs text-gray-400 font-medium hover:text-gray-600 text-center mt-3 py-2">
+                View all activity →
+              </Link>
             )}
           </div>
-
-          {/* Order Status Breakdown */}
-          <div className="bg-white rounded-xl border border-gray-200/60 shadow-sm">
-            <div className="px-4 py-3.5 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900">Order Breakdown</h3>
-            </div>
-            <div className="p-4 space-y-2.5">
-              {[
-                { label: 'In Production', value: stats?.orders_in_production || 0, color: 'bg-amber-400', onClick: () => handleStatusClick('In Production') },
-                { label: 'Shipped', value: stats?.orders_shipped || 0, color: 'bg-blue-400', onClick: () => handleStatusClick('Shipped') },
-                { label: 'Delivered', value: stats?.orders_delivered || 0, color: 'bg-green-400', onClick: () => handleStatusClick('Delivered') },
-                { label: 'Pending', value: stats?.orders_pending_approval || 0, color: 'bg-orange-400', onClick: () => handleStatusClick('Pending') },
-                { label: 'Cancelled', value: stats?.orders_cancelled || 0, color: 'bg-gray-400', onClick: () => handleStatusClick('Cancelled') },
-              ].map((item) => {
-                const total = stats?.total_orders || 1;
-                const pct = Math.round((item.value / total) * 100);
-                return (
-                  <div key={item.label} onClick={item.onClick} className="cursor-pointer group">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors">{item.label}</span>
-                      <span className="text-[11px] font-semibold text-gray-700">{item.value}</span>
-                    </div>
-                    <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={cn('h-full rounded-full transition-all', item.color)} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Additional Stats */}
-          {isInternal && (
-            <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 text-white">
-              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">This Month</p>
-              <p className="text-2xl font-bold">{formatNumber(stats?.orders_this_month || 0)}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5">new orders</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -887,5 +832,238 @@ function DashboardContent() {
 
       <CommentSidebar />
     </AppShell>
+  );
+}
+
+const WARNING_SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  red: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+  amber: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
+  blue: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+};
+
+function InlineMetric({ label, value, color, onClick }: { label: string; value: string | number; color?: string; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={cn(
+        'text-left',
+        onClick && 'cursor-pointer hover:opacity-70 transition-opacity'
+      )}
+    >
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+      <p className={cn('text-xl font-bold tabular-nums mt-0.5', color || 'text-gray-900')}>{value}</p>
+    </button>
+  );
+}
+
+function WarningsCentre({ warnings }: { warnings: any[] }) {
+  const [selected, setSelected] = useState<string>(warnings[0]?.key || '');
+  const [search, setSearch] = useState('');
+
+  // Apply search filter — recompute filtered warnings + counts
+  const filteredWarnings = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return warnings;
+    return warnings.map(w => {
+      const items = w.items.filter((item: any) =>
+        (item.po_number || '').toLowerCase().includes(q) ||
+        (item.style_code || '').toLowerCase().includes(q) ||
+        (item.customer || '').toLowerCase().includes(q) ||
+        (item.factory || '').toLowerCase().includes(q) ||
+        (item.component || '').toLowerCase().includes(q)
+      );
+      return { ...w, items, count: items.length };
+    }).filter(w => w.count > 0);
+  }, [warnings, search]);
+
+  const selectedWarning = filteredWarnings.find(w => w.key === selected) || filteredWarnings[0];
+
+  // If current selection is filtered out by search, switch to first available
+  useEffect(() => {
+    if (filteredWarnings.length > 0 && !filteredWarnings.find(w => w.key === selected)) {
+      setSelected(filteredWarnings[0].key);
+    }
+  }, [filteredWarnings, selected]);
+  const totalCount = filteredWarnings.reduce((s, w) => s + w.count, 0);
+
+  const redWarnings = filteredWarnings.filter(w => w.severity === 'red');
+  const amberWarnings = filteredWarnings.filter(w => w.severity === 'amber');
+  const blueWarnings = filteredWarnings.filter(w => w.severity === 'blue');
+
+  const renderTab = (w: any) => {
+    const style = WARNING_SEVERITY_STYLES[w.severity] || WARNING_SEVERITY_STYLES.amber;
+    const isActive = selected === w.key;
+    return (
+      <button
+        key={w.key}
+        onClick={() => setSelected(w.key)}
+        className={cn(
+          'w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors rounded-lg',
+          isActive ? `${style.bg} ${style.text}` : 'text-gray-700 hover:bg-gray-100/80'
+        )}
+      >
+        <AlertTriangle className={cn('w-3.5 h-3.5 flex-shrink-0', isActive ? style.text : 'text-gray-400')} />
+        <span className="flex-1 text-xs font-medium truncate">{w.title}</span>
+        <span className={cn(
+          'text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center',
+          isActive ? 'bg-white/60' : `${style.bg} ${style.text}`
+        )}>
+          {w.count}
+        </span>
+      </button>
+    );
+  };
+
+  if (!selectedWarning) {
+    // No results with current search
+    if (search) {
+      return (
+        <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Warnings Centre</h3>
+                <p className="text-xs text-gray-500">No matches for &quot;{search}&quot;</p>
+              </div>
+            </div>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search PO, style, factory..."
+                className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-64"
+              />
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          <div className="py-16 text-center text-sm text-gray-400">
+            <Search className="w-8 h-8 mx-auto mb-3 text-gray-300" />
+            No warnings match your search
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
+  const selStyle = WARNING_SEVERITY_STYLES[selectedWarning.severity] || WARNING_SEVERITY_STYLES.amber;
+
+  return (
+    <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-gray-900">Warnings Centre</h3>
+            <p className="text-xs text-gray-500 truncate">
+              {search ? `${totalCount} match${totalCount !== 1 ? 'es' : ''} for "${search}"` : `${totalCount} items across ${filteredWarnings.length} categories need attention`}
+            </p>
+          </div>
+        </div>
+        <div className="relative flex-shrink-0">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search PO, style, factory..."
+            className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-64"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[320px_1fr] h-[440px]">
+        {/* Left: tabs grouped by severity */}
+        <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 overflow-y-auto">
+          {redWarnings.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Urgent
+              </p>
+              <div className="space-y-0.5">{redWarnings.map(renderTab)}</div>
+            </div>
+          )}
+          {amberWarnings.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Needs Attention
+              </p>
+              <div className="space-y-0.5">{amberWarnings.map(renderTab)}</div>
+            </div>
+          )}
+          {blueWarnings.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Reminder
+              </p>
+              <div className="space-y-0.5">{blueWarnings.map(renderTab)}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Right: detail */}
+        <div className="p-5 overflow-y-auto">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+            <div>
+              <h4 className="text-sm font-bold text-gray-900">{selectedWarning.title}</h4>
+              <p className="text-xs text-gray-500 mt-0.5">{selectedWarning.description}</p>
+            </div>
+            <span className={cn('text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ml-4', selStyle.bg, selStyle.text)}>
+              {selectedWarning.count} flagged
+            </span>
+          </div>
+          <div className="space-y-1">
+            {selectedWarning.items.map((item: any, i: number) => (
+              <Link
+                key={i}
+                href={
+                  item.order_id
+                    ? `/design?openStyle=${item.order_id}`
+                    : `/design?expandPO=${encodeURIComponent(item.po_number)}`
+                }
+                className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', selStyle.dot)} />
+                  <span className="text-sm font-bold text-gray-900 flex-shrink-0">{item.po_number}</span>
+                  {item.style_code && <span className="text-xs text-gray-500 flex-shrink-0">{item.style_code}</span>}
+                  {item.component && <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">{item.component}</span>}
+                  <span className="text-xs text-gray-400 truncate">{item.customer} · {item.factory}</span>
+                  {item.style_count > 1 && !item.style_code && <span className="text-[10px] text-gray-400 flex-shrink-0">{item.style_count} styles</span>}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {item.days_since != null && (
+                    <span className={cn(
+                      'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                      item.days_since >= 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    )}>
+                      {item.days_since}d
+                    </span>
+                  )}
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
