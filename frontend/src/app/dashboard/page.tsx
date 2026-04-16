@@ -256,7 +256,7 @@ function DashboardContent() {
       {/* Welcome header with inline metrics */}
       <div className="mb-8 flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Welcome back, {user?.username}</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Welcome back, {user?.full_name || user?.username}</h2>
           <p className="text-gray-500 text-sm mt-1">Here&apos;s what&apos;s happening with your orders today.</p>
         </div>
         <div className="flex items-center gap-5">

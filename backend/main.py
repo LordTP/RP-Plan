@@ -131,6 +131,17 @@ login_limiter = LoginRateLimiter(max_attempts=5, window_seconds=300)
 async def startup_event():
     """Initialize database on startup"""
     init_db()
+
+    # Migration: add full_name column to users if missing
+    from sqlalchemy import inspect, text
+    from database import engine
+    inspector = inspect(engine)
+    user_columns = [c['name'] for c in inspector.get_columns('users')]
+    if 'full_name' not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN full_name VARCHAR(100)"))
+        print("✓ Added full_name column to users table")
+
     print("✓ API server started successfully")
 
 
@@ -284,6 +295,7 @@ async def create_user(
     new_user = User(
         username=user_data.username,
         email=user_data.email,
+        full_name=user_data.full_name,
         hashed_password=hashed_password,
         role=user_data.role,
         factory_name=user_data.factory_name
@@ -328,6 +340,23 @@ async def update_user(
         user.is_active = user_data['is_active']
     if 'factory_name' in user_data:
         user.factory_name = user_data['factory_name']
+    if 'full_name' in user_data:
+        user.full_name = user_data['full_name'] or None
+    if 'username' in user_data and user_data['username']:
+        new_username = user_data['username'].strip()
+        if new_username != user.username:
+            # Ensure uniqueness
+            existing = db.query(User).filter(User.username == new_username, User.id != user_id).first()
+            if existing:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
+            user.username = new_username
+    if 'email' in user_data and user_data['email']:
+        new_email = user_data['email'].strip()
+        if new_email != user.email:
+            existing = db.query(User).filter(User.email == new_email, User.id != user_id).first()
+            if existing:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already taken")
+            user.email = new_email
     if 'password' in user_data and user_data['password']:
         user.hashed_password = get_password_hash(user_data['password'])
 

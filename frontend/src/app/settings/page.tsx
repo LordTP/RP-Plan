@@ -263,7 +263,10 @@ function AccountTab({ user, isDesigner, isInternal, isFullInternal }: { user: an
     ? 'bg-primary-100 text-primary-700'
     : 'bg-teal-100 text-teal-700';
 
-  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
+  const displayName = user?.full_name || user?.username || '';
+  const initials = displayName
+    ? displayName.split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()
+    : '??';
 
   return (
     <div className="space-y-6">
@@ -275,12 +278,15 @@ function AccountTab({ user, isDesigner, isInternal, isFullInternal }: { user: an
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-lg font-bold text-gray-900">{user?.username}</h2>
+              <h2 className="text-lg font-bold text-gray-900">{displayName}</h2>
               <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', roleColor)}>
                 <ShieldCheck className="w-3 h-3 inline mr-1" />
                 {roleLabel}
               </span>
             </div>
+            {user?.full_name && (
+              <p className="text-xs text-gray-400 font-mono mb-1">@{user.username}</p>
+            )}
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
               <Mail className="w-3.5 h-3.5" />
               {user?.email}
@@ -409,7 +415,8 @@ function UserRow({ user: u, isMe, onEdit, onResetPassword, onDelete }: any) {
     u.role === 'sourcelab_designer' ? 'bg-violet-100 text-violet-700' :
     'bg-teal-100 text-teal-700';
 
-  const initials = u.username.slice(0, 2).toUpperCase();
+  const displayName = u.full_name || u.username;
+  const initials = displayName.split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase() || u.username.slice(0, 2).toUpperCase();
   const roleLabel = u.role === 'sourcelab_designer' ? 'Designer' : u.role.charAt(0).toUpperCase() + u.role.slice(1);
 
   return (
@@ -420,7 +427,8 @@ function UserRow({ user: u, isMe, onEdit, onResetPassword, onDelete }: any) {
       <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_auto_auto] items-center gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900 truncate">{u.username}</span>
+            <span className="text-sm font-semibold text-gray-900 truncate">{displayName}</span>
+            {u.full_name && <span className="text-[10px] text-gray-400 font-mono">@{u.username}</span>}
             {isMe && <span className="text-[10px] bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded font-semibold">YOU</span>}
             {!u.is_active && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-semibold">INACTIVE</span>}
           </div>
@@ -632,6 +640,7 @@ function AddUserModal({ factories, onClose, onCreated }: { factories: string[]; 
   const [form, setForm] = useState({
     username: '',
     email: '',
+    full_name: '',
     password: '',
     role: 'supplier' as 'admin' | 'internal' | 'supplier' | 'sourcelab_designer',
     factory_name: '',
@@ -676,8 +685,11 @@ function AddUserModal({ factories, onClose, onCreated }: { factories: string[]; 
           </button>
         </div>
         <div className="p-5 space-y-4">
+          <Field label="Full Name">
+            <input type="text" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="input" placeholder="e.g. Thomas Paul" />
+          </Field>
           <Field label="Username" required>
-            <input type="text" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="input" placeholder="Enter username" />
+            <input type="text" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="input" placeholder="Used to log in" />
           </Field>
           <Field label="Email" required>
             <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" placeholder="user@example.com" />
@@ -719,6 +731,9 @@ function AddUserModal({ factories, onClose, onCreated }: { factories: string[]; 
 
 // ─── Edit User Modal ─────────────────────────────────────────────
 function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User; factories: string[]; onClose: () => void; onUpdated: () => void }) {
+  const [username, setUsername] = useState(u.username);
+  const [email, setEmail] = useState(u.email);
+  const [fullName, setFullName] = useState(u.full_name || '');
   const [role, setRole] = useState(u.role);
   const [factoryName, setFactoryName] = useState(u.factory_name || '');
   const [isActive, setIsActive] = useState(u.is_active);
@@ -731,9 +746,16 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
   }, [onClose]);
 
   const submit = async () => {
+    if (!username.trim() || !email.trim()) {
+      toast.error('Username and email are required');
+      return;
+    }
     setSubmitting(true);
     try {
       await usersApi.updateUser(u.id, {
+        username: username.trim(),
+        email: email.trim(),
+        full_name: fullName.trim() || null,
         role,
         factory_name: role === 'supplier' ? factoryName || undefined : undefined,
         is_active: isActive,
@@ -757,7 +779,7 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
             </div>
             <div>
               <h3 className="text-base font-bold text-gray-900">Edit User</h3>
-              <p className="text-xs text-gray-500">{u.username} · {u.email}</p>
+              <p className="text-xs text-gray-500">Editing user #{u.id}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
@@ -765,6 +787,31 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
           </button>
         </div>
         <div className="p-5 space-y-4">
+          <Field label="Full Name">
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="e.g. Thomas Paul"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </Field>
+          <Field label="Username" required>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </Field>
+          <Field label="Email" required>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </Field>
           <Field label="Role">
             <select value={role} onChange={(e) => setRole(e.target.value as any)} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
               <option value="supplier">Supplier</option>

@@ -489,6 +489,7 @@ export const usersApi = {
   createUser: async (userData: {
     username: string;
     email: string;
+    full_name?: string;
     password: string;
     role: 'admin' | 'internal' | 'supplier' | 'sourcelab_designer';
     factory_name?: string;
@@ -498,6 +499,9 @@ export const usersApi = {
   },
 
   updateUser: async (userId: number, userData: {
+    username?: string;
+    email?: string;
+    full_name?: string | null;
     role?: string;
     factory_name?: string;
     is_active?: boolean;

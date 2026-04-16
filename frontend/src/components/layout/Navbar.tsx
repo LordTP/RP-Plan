@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Truck,
   Ship,
+  ExternalLink,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -31,7 +32,6 @@ const navItems = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
-  { href: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },
 ];
 
 const factorySubItems = [
@@ -93,8 +93,9 @@ export function Navbar() {
     (item) => user?.role && item.roles.includes(user.role)
   );
 
-  const userInitials = user?.username
-    ? user.username.slice(0, 2).toUpperCase()
+  const displayName = user?.full_name || user?.username || '';
+  const userInitials = displayName
+    ? displayName.split(/\s+/).slice(0, 2).map((p: string) => p[0]).join('').toUpperCase()
     : '??';
 
   const roleLabel = user?.role === 'admin'
@@ -212,19 +213,62 @@ export function Navbar() {
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="flex items-center gap-2 rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
             >
-              <span className="text-xs font-medium text-gray-700">{user?.username}</span>
+              <span className="text-xs font-medium text-gray-700">{displayName}</span>
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-50 text-[10px] font-bold text-primary-700 ring-1 ring-primary-200">
                 {userInitials}
               </div>
             </button>
 
             {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100">
-                  <p className="text-sm font-semibold text-gray-900">{user?.username}</p>
+                  <p className="text-sm font-semibold text-gray-900">{displayName}</p>
+                  {user?.full_name && <p className="text-[10px] text-gray-400 font-mono">@{user.username}</p>}
                   <p className="text-[10px] text-gray-400 capitalize mt-0.5">{roleLabel}</p>
                 </div>
+
+                {/* Source Lab Apps — hidden for suppliers */}
+                {user?.role !== 'supplier' && (
+                  <>
+                    <div className="px-3 pt-2 pb-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">Source Lab Apps</span>
+                    </div>
+                    <div className="px-1 pb-1">
+                      <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary-500/10 text-[9px] font-bold text-primary-600 ring-1 ring-primary-500/20">
+                          CP
+                        </div>
+                        <span className="flex-1 text-xs text-primary-700 font-medium">Critical Path</span>
+                        <span className="text-[8px] text-primary-500/70 bg-primary-500/5 rounded px-1.5 py-0.5">Current</span>
+                      </div>
+                      <a
+                        href="https://slreports.truepathgroup.co.uk"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors group"
+                      >
+                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-[9px] font-bold text-amber-600 ring-1 ring-amber-500/20">
+                          RP
+                        </div>
+                        <span className="flex-1 text-xs">Reporting</span>
+                        <ExternalLink className="h-3 w-3 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                      </a>
+                    </div>
+                    <div className="border-t border-gray-100" />
+                  </>
+                )}
+
                 <div className="p-1">
+                  {user?.role === 'admin' && (
+                    <Link
+                      href="/settings"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Settings className="h-3.5 w-3.5 text-gray-400" />
+                      Settings
+                    </Link>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -316,7 +360,8 @@ export function Navbar() {
             </nav>
             <div className="border-t border-gray-200 p-3 mt-2">
               <div className="px-4 py-2">
-                <p className="text-sm font-semibold text-gray-900">{user?.username}</p>
+                <p className="text-sm font-semibold text-gray-900">{displayName}</p>
+                {user?.full_name && <p className="text-[10px] text-gray-400 font-mono">@{user.username}</p>}
                 <p className="text-[10px] text-gray-400 capitalize mt-0.5">{roleLabel}</p>
               </div>
               <button

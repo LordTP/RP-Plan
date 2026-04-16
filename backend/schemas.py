@@ -18,6 +18,7 @@ class UserRole(str, Enum):
 class UserBase(BaseModel):
     username: str
     email: EmailStr
+    full_name: Optional[str] = None
     role: UserRole
     factory_name: Optional[str] = None
 
