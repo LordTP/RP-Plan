@@ -17,6 +17,7 @@ import {
   Package,
   ShoppingBag,
   Truck,
+  Ship,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
   { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier'] },
   { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
+  { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
   { href: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },

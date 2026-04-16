@@ -694,6 +694,26 @@ export const analyticsApi = {
   },
 };
 
+export const trackingApi = {
+  listRefs: async (): Promise<{ refs: { ref: string; count: number }[] }> => {
+    const response = await api.get('/api/tracking/refs');
+    return response.data;
+  },
+
+  search: async (query: string): Promise<{ orders: any[] }> => {
+    const response = await api.get('/api/tracking/search', { params: { q: query } });
+    return response.data;
+  },
+
+  bulkUpdateRevisedVesselEta: async (orderIds: number[], newValue: string | null): Promise<{ success: boolean; updated_count: number }> => {
+    const response = await api.post('/api/tracking/bulk-update-revised-vessel-eta', {
+      order_ids: orderIds,
+      new_value: newValue,
+    });
+    return response.data;
+  },
+};
+
 // Pending date change approval types
 export interface PendingChange {
   id: number;
