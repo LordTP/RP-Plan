@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { COLUMNS } from '@/types';
 
-type Tab = 'account' | 'users' | 'columns';
+type Tab = 'account' | 'users' | 'columns' | 'fields';
 
 export default function SettingsPage() {
   return (
@@ -149,11 +149,12 @@ function SettingsContent() {
     { key: 'account', label: 'My Account', icon: UserIcon, show: true },
     { key: 'users', label: 'Users', icon: Users, show: isFullInternal },
     { key: 'columns', label: 'Supplier Columns', icon: SettingsIcon, show: isFullInternal },
+    { key: 'fields', label: 'Field Reference', icon: CheckCircle, show: true },
   ];
 
   return (
     <AppShell title="Settings">
-      <div className="max-w-[1200px] mx-auto">
+      <div>
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
@@ -215,6 +216,8 @@ function SettingsContent() {
                 setSearch={setColumnSearch}
               />
             )}
+
+            {activeTab === 'fields' && <FieldReferenceTab />}
           </main>
         </div>
       </div>
@@ -878,6 +881,272 @@ function Field({ label, required, children }: { label: string; required?: boolea
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
+    </div>
+  );
+}
+
+// ─── Field Reference Tab ─────────────────────────────────────────────
+
+type FieldSection = {
+  title: string;
+  description?: string;
+  fields: {
+    label: string;
+    key: string;
+    type: 'text' | 'date' | 'number' | 'currency' | 'dropdown';
+    description: string;
+    editable?: string; // who can edit
+    autoCalc?: string; // auto-calc formula
+    options?: string[];
+  }[];
+};
+
+const FIELD_SECTIONS: FieldSection[] = [
+  {
+    title: 'PO Identifiers',
+    description: 'Core identifying information for each order',
+    fields: [
+      { label: 'PO#', key: 'po_number', type: 'text', description: 'Purchase order number — unique identifier for the order group.', editable: 'Admin / Internal' },
+      { label: 'SL System PO#', key: 'system_po_number', type: 'text', description: 'Internal Source Lab system reference (hidden from suppliers).', editable: 'Admin / Internal' },
+      { label: 'Customer', key: 'customer', type: 'text', description: 'End customer for the order.', editable: 'Admin / Internal' },
+      { label: 'Order Reference', key: 'china_orderbook_ref', type: 'text', description: 'China orderbook reference.', editable: 'Admin / Internal' },
+      { label: 'Customer PO#', key: 'customer_po_number', type: 'text', description: "Customer's own PO reference.", editable: 'Admin / Internal' },
+      { label: 'Direct Repeat / New', key: 'direct_repeat_new', type: 'text', description: 'Marks whether an order is direct, a repeat, or new.' },
+      { label: 'Season', key: 'season', type: 'text', description: 'Season designation (e.g. SS26, FW26).' },
+      { label: 'Supplier', key: 'factory', type: 'text', description: 'Factory producing the order.' },
+      { label: 'Terms', key: 'terms', type: 'text', description: 'Shipping/trade terms (e.g. FOB, CIF).' },
+      { label: 'SL Sales Person', key: 'sales_person', type: 'text', description: 'Source Lab sales representative.' },
+    ],
+  },
+  {
+    title: 'Product Details',
+    fields: [
+      { label: 'Style Code', key: 'style_code', type: 'text', description: 'Internal style identifier. Combined with PO# to uniquely identify a row.' },
+      { label: 'Cust Style Code', key: 'customer_style_code', type: 'text', description: "Customer's style code." },
+      { label: 'Description', key: 'description', type: 'text', description: 'Product description.' },
+      { label: 'Colour', key: 'colour', type: 'text', description: 'Product colour.' },
+      { label: 'Gender', key: 'gender', type: 'text', description: 'Gender/size-range code (e.g. 001-MENS/ADULTS, 002-LADIES). Determines which size labels appear in the size breakdown.' },
+    ],
+  },
+  {
+    title: 'Financial',
+    fields: [
+      { label: 'Total Qty', key: 'total_quantity', type: 'number', description: 'Total units across all sizes.', autoCalc: 'Sum of all size columns' },
+      { label: 'Factory Cost Price', key: 'trade_price', type: 'currency', description: 'Unit cost from the factory. Hidden from suppliers and designers.' },
+      { label: 'Total Order Cost', key: 'total_order_value', type: 'currency', description: 'Total order value. Hidden from suppliers and designers.', autoCalc: 'Trade Price × Total Qty' },
+    ],
+  },
+  {
+    title: 'Order Flow Dates',
+    description: 'Key dates in the order-to-factory workflow',
+    fields: [
+      { label: 'Order Received', key: 'order_received_date', type: 'date', description: 'When the order was received from the customer. Hidden from suppliers.' },
+      { label: 'Sent to Factory', key: 'order_sent_to_factory_date', type: 'date', description: 'When the order was sent to the factory. Triggers tech pack / specs warnings.' },
+      { label: 'Tech Packs Sent', key: 'tech_packs_sent_to_factory', type: 'date', description: 'When tech packs were sent to the factory. Baseline for sample due-date warnings.' },
+      { label: 'Specs Sent', key: 'specs_sent_to_factory', type: 'date', description: 'When specs were sent to the factory.' },
+      { label: 'Barcodes Sent', key: 'barcodes_sent_to_factory', type: 'date', description: 'When barcodes were sent to the factory.' },
+      { label: 'Requested Ex-Fac', key: 'original_po_ex_factory', type: 'date', description: "Customer's originally requested ex-factory date." },
+      { label: 'Factory Confirmed Ex-Fac', key: 'factory_confirmed_ex_factory', type: 'date', description: 'Factory\'s confirmed ex-factory date. Editable by suppliers (goes through approval).' },
+      { label: 'Revised Ex-Fac', key: 'revised_po_ex_factory', type: 'date', description: 'Revised ex-factory date. Editable by suppliers (goes through approval). Defaults to Factory Confirmed if blank.', autoCalc: 'Falls back to Factory Confirmed Ex-Fac when empty' },
+    ],
+  },
+  {
+    title: 'Samples — Fit',
+    description: 'Fit sample tracking (per-style, or per-component if components exist)',
+    fields: [
+      { label: 'Fit Sample Req', key: 'fit_sample_required', type: 'text', description: 'Y/N whether a fit sample is required.' },
+      { label: 'Fit Sample Status', key: 'fit_sample_status', type: 'dropdown', description: 'Current fit sample status.', options: ['NOT REQUIRED', 'APPROVED', 'OUTSTANDING', 'P23 ADVISE UPDATE', 'LATE', 'RECEIVED'] },
+      { label: 'Fit Sample Rcvd', key: 'fit_sample_received', type: 'date', description: 'Date the fit sample was received.' },
+      { label: 'Fit Sample Appr', key: 'fit_sample_approved', type: 'date', description: 'Date the fit sample was approved.' },
+    ],
+  },
+  {
+    title: 'Samples — Strike Off',
+    fields: [
+      { label: 'Strike Off Status', key: 'strike_off_status', type: 'dropdown', description: 'Current strike off status.', options: ['NOT REQUIRED', 'OUTSTANDING', 'P23 ADVISE UPDATE', 'LATE', 'RECEIVED', 'APPROVED'] },
+      { label: 'Strike Off Rcvd', key: 'strike_off_received', type: 'date', description: 'Date strike off was received.' },
+      { label: 'Strike Off Appr', key: 'strike_off_approved', type: 'date', description: 'Date strike off was approved.' },
+    ],
+  },
+  {
+    title: 'Samples — Lab Dip',
+    fields: [
+      { label: 'Lab Dip Status', key: 'lab_dip_status', type: 'dropdown', description: 'Current lab dip status.', options: ['NOT REQUIRED', 'OUTSTANDING', 'P23 ADVISE UPDATE', 'LATE', 'RECEIVED', 'APPROVED'] },
+      { label: 'Lab Dip Rcvd', key: 'lab_dip_received', type: 'date', description: 'Date lab dip was received.' },
+      { label: 'Lab Dip Appr', key: 'lab_dip_approved', type: 'date', description: 'Date lab dip was approved.' },
+    ],
+  },
+  {
+    title: 'Samples — PPS',
+    fields: [
+      { label: 'PPS Status', key: 'pps_status', type: 'dropdown', description: 'Current PPS status.', options: ['NOT REQUIRED', 'OUTSTANDING', 'P23 ADVISE UPDATE', 'LATE', 'RECEIVED', 'APPROVED'] },
+      { label: 'PPS Received', key: 'pps_received', type: 'date', description: 'Date PPS was received.' },
+      { label: 'PPS Sent to Cust', key: 'pps_sent_to_customer', type: 'date', description: 'Date PPS was sent to the customer.' },
+      { label: 'PPS Approved', key: 'pps_approved', type: 'date', description: 'Date PPS was approved.' },
+    ],
+  },
+  {
+    title: 'Other Samples',
+    fields: [
+      { label: 'Photo Sample Rcvd', key: 'photo_sample_received', type: 'date', description: 'Date photo sample was received.' },
+      { label: 'Ex-Fac from PP Appr', key: 'ex_factory_from_pp_approval', type: 'date', description: 'Calculated ex-factory date based on PPS approval.', autoCalc: 'PPS Approved + 35 days' },
+      { label: 'Shipment Sample Rcvd', key: 'shipment_sample_received', type: 'date', description: 'Date shipment sample was received.' },
+    ],
+  },
+  {
+    title: 'Delivery Dates',
+    fields: [
+      { label: 'Cust Req Delivery', key: 'original_del_date_to_customer', type: 'date', description: 'Customer-requested delivery date.' },
+      { label: 'ETA UK', key: 'eta_to_uk', type: 'date', description: 'Estimated arrival to UK.', autoCalc: 'Revised Ex-Fac + 60 days' },
+      { label: 'ETA Customer', key: 'eta_to_customer', type: 'date', description: 'Estimated arrival to customer.', autoCalc: 'ETA UK + 5 days' },
+      { label: 'PO Open Month', key: 'customer_po_open_month', type: 'text', description: 'Month name from Customer Requested Delivery.', autoCalc: 'Month of Cust Req Delivery (e.g. "February")' },
+      { label: 'Exp Cust Del Month', key: 'expected_dispatch_arrive_uk_month', type: 'text', description: 'Expected customer delivery month.', autoCalc: 'Month of ETA Customer' },
+    ],
+  },
+  {
+    title: 'Shipping & Vessel',
+    fields: [
+      { label: 'FCL / LCL', key: 'fcl_lcl', type: 'dropdown', description: 'Shipping container type (FCL, LCL, or AIR). Affects Estimated Del calculation.', options: ['FCL', 'LCL', 'AIR'] },
+      { label: 'Vessel Name', key: 'vessel_name', type: 'text', description: 'Name of the shipping vessel.' },
+      { label: 'Vessel ETD', key: 'vessel_etd', type: 'date', description: 'Estimated departure date of the vessel. Editable by suppliers (goes through approval).' },
+      { label: 'Vessel ETA to Port', key: 'vessel_eta_to_port', type: 'date', description: 'Estimated arrival of the vessel at port. Editable by suppliers (goes through approval).' },
+      { label: 'Revised Vessel ETA', key: 'revised_vessel_eta_to_port', type: 'date', description: 'Revised vessel ETA to port. Bulk-updatable from the Tracking page.' },
+      { label: 'Est Del to Cust', key: 'estimated_del_to_customer', type: 'date', description: 'Estimated delivery to customer based on vessel ETA and shipping type.', autoCalc: 'Vessel ETA + 5d (FCL) / 7d (LCL) / 2d (AIR)' },
+      { label: 'Tracking Ref', key: 'tracking_reference', type: 'text', description: 'Shipment tracking reference (P number). Used by the Tracking page.' },
+    ],
+  },
+  {
+    title: 'Status',
+    fields: [
+      { label: 'Status', key: 'status', type: 'text', description: 'Order status (In Production, Shipped, Delivered, etc).' },
+    ],
+  },
+];
+
+const WARNING_RULES = [
+  { title: 'Tech Packs Need Sending', trigger: 'Order sent to factory 3+ business days ago, tech packs not sent (PO-level).' },
+  { title: 'Specs Need Sending', trigger: 'Order sent to factory 3+ business days ago, specs not sent (PO-level).' },
+  { title: 'Fit Sample Overdue', trigger: '3+ business weeks since tech packs sent, fit sample not received. Skips if status = NOT REQUIRED. Checks per-component if components exist.' },
+  { title: 'Lab Dip Overdue', trigger: '3+ business weeks since tech packs sent, lab dip not received. Skips if status = NOT REQUIRED. Checks per-component if components exist.' },
+  { title: 'Lab Dip Needs Approval', trigger: 'Lab dip received 5+ business days ago, not yet approved.' },
+  { title: 'Strike Off Overdue', trigger: '4+ business weeks since tech packs sent, strike off not received. 5 weeks for components named badges / woven labels / woven tapes.' },
+  { title: 'Strike Off Needs Approval', trigger: 'Strike off received 5+ business days ago, not yet approved.' },
+  { title: 'PPS Needs Approval', trigger: 'PPS sent to customer 7+ business days ago, not yet approved.' },
+];
+
+function FieldReferenceTab() {
+  const [search, setSearch] = useState('');
+
+  const filteredSections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return FIELD_SECTIONS;
+    return FIELD_SECTIONS.map(section => ({
+      ...section,
+      fields: section.fields.filter(f =>
+        f.label.toLowerCase().includes(q) ||
+        f.key.toLowerCase().includes(q) ||
+        f.description.toLowerCase().includes(q) ||
+        (f.autoCalc || '').toLowerCase().includes(q)
+      ),
+    })).filter(section => section.fields.length > 0);
+  }, [search]);
+
+  const totalFields = FIELD_SECTIONS.reduce((s, sec) => s + sec.fields.length, 0);
+  const autoCalcCount = FIELD_SECTIONS.reduce((s, sec) => s + sec.fields.filter(f => f.autoCalc).length, 0);
+
+  return (
+    <div className="space-y-5">
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Total Fields</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{totalFields}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Sections</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{FIELD_SECTIONS.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Auto-Calculated</p>
+          <p className="text-2xl font-bold text-primary-600 mt-1">{autoCalcCount}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          type="text"
+          placeholder="Search fields, descriptions, auto-calc formulas..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        />
+      </div>
+
+      {/* Sections */}
+      <div className="space-y-4">
+        {filteredSections.map(section => (
+          <div key={section.title} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/40">
+              <h3 className="text-sm font-bold text-gray-900">{section.title}</h3>
+              {section.description && <p className="text-xs text-gray-500 mt-0.5">{section.description}</p>}
+            </div>
+            <div className="divide-y divide-gray-100">
+              {section.fields.map(f => (
+                <div key={f.key} className="px-5 py-3 grid grid-cols-[260px_1fr] gap-4 items-start">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="text-sm font-semibold text-gray-900">{f.label}</p>
+                      {f.autoCalc && <span className="text-[9px] font-bold bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded uppercase tracking-wider">Auto</span>}
+                      {f.type === 'dropdown' && <span className="text-[9px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded uppercase tracking-wider">Dropdown</span>}
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-mono">{f.key}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-700 leading-relaxed">{f.description}</p>
+                    {f.autoCalc && (
+                      <p className="text-[11px] text-primary-700 mt-1 flex items-start gap-1.5">
+                        <span className="text-primary-500">ƒ</span>
+                        <span className="font-mono">{f.autoCalc}</span>
+                      </p>
+                    )}
+                    {f.options && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {f.options.map(opt => (
+                          <span key={opt} className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-medium">{opt}</span>
+                        ))}
+                      </div>
+                    )}
+                    {f.editable && (
+                      <p className="text-[10px] text-gray-400 mt-1">Editable by: {f.editable}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Warning Rules */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 bg-amber-50/40">
+          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            Warning Rules
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">Triggers for dashboard warnings (all use business days)</p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {WARNING_RULES.map(w => (
+            <div key={w.title} className="px-5 py-3">
+              <p className="text-sm font-semibold text-gray-900">{w.title}</p>
+              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{w.trigger}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

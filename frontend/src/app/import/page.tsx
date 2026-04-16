@@ -66,6 +66,7 @@ function ImportContent() {
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
+  const [newOrdersOnly, setNewOrdersOnly] = useState(false);
   const [importComplete, setImportComplete] = useState(false);
   const [importResult, setImportResult] = useState<{
     rows_created: number;
@@ -131,7 +132,7 @@ function ImportContent() {
 
     setIsPreviewing(true);
     try {
-      const result = await excelApi.previewImport(selectedFile);
+      const result = await excelApi.previewImport(selectedFile, newOrdersOnly);
       setPreview(result);
       if (!result.success && result.error) {
         toast.error(result.error);
@@ -157,7 +158,8 @@ function ImportContent() {
     try {
       const result = await excelApi.importExcel(
         selectedFile,
-        resolutions.length > 0 ? resolutions as Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }> : undefined
+        resolutions.length > 0 ? resolutions as Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }> : undefined,
+        newOrdersOnly
       );
       setImportComplete(true);
       setImportResult({
@@ -223,6 +225,7 @@ function ImportContent() {
     setImportComplete(false);
     setImportResult(null);
     setConflictResolutions({});
+    setNewOrdersOnly(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -297,6 +300,37 @@ function ImportContent() {
                   </div>
                 )}
               </div>
+
+              {/* Import Mode Toggle */}
+              {selectedFile && !preview && !importComplete && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Import Mode</p>
+                  <label className="flex items-start gap-3 cursor-pointer py-1.5">
+                    <input
+                      type="radio"
+                      checked={!newOrdersOnly}
+                      onChange={() => setNewOrdersOnly(false)}
+                      className="mt-0.5 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Full Import</p>
+                      <p className="text-xs text-gray-500">Create new orders AND update existing ones</p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer py-1.5">
+                    <input
+                      type="radio"
+                      checked={newOrdersOnly}
+                      onChange={() => setNewOrdersOnly(true)}
+                      className="mt-0.5 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">New Orders Only</p>
+                      <p className="text-xs text-gray-500">Only add rows that don&apos;t already exist. Skips any matching PO + Style combo.</p>
+                    </div>
+                  </label>
+                </div>
+              )}
 
               {/* Preview Button */}
               {selectedFile && !preview && !importComplete && (
@@ -469,7 +503,10 @@ function ImportContent() {
                 <div className="card p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="font-semibold text-gray-900">Import Preview</h3>
+                      <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                        Import Preview
+                        {newOrdersOnly && <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full uppercase tracking-wider">New Only</span>}
+                      </h3>
                       <p className="text-sm text-gray-500">
                         {preview.summary?.total_rows || 0} rows found in file
                       </p>

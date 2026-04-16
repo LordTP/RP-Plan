@@ -174,7 +174,7 @@ def format_date(value: Any) -> Optional[str]:
 # IMPORT FUNCTIONS
 # =============================================================================
 
-def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None, conflict_resolutions: List[Dict[str, Any]] = None) -> ExcelUploadResponse:
+def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None, conflict_resolutions: List[Dict[str, Any]] = None, new_only: bool = False) -> ExcelUploadResponse:
     """
     Import POs from Excel file into database.
 
@@ -300,6 +300,11 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                     PurchaseOrder.style_code == style_code
                 )
             ).first()
+
+            # In new_only mode, skip existing rows entirely
+            if new_only and existing_po:
+                rows_skipped += 1
+                continue
 
             # Build data dictionary from row
             po_data = _extract_row_data(sheet, row_idx, col_map)
@@ -463,7 +468,7 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
     )
 
 
-def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
+def preview_excel_import(file_bytes: bytes, db: Session, new_only: bool = False) -> Dict[str, Any]:
     """
     Preview what an Excel import will do WITHOUT committing changes.
     Returns detailed info about what rows will be created/updated.
@@ -575,6 +580,14 @@ def preview_excel_import(file_bytes: bytes, db: Session) -> Dict[str, Any]:
                     PurchaseOrder.style_code == style_code
                 )
             ).first()
+
+            # In new_only mode, treat existing rows as unchanged (skipped)
+            if new_only and existing_po:
+                unchanged_orders.append({
+                    "po_number": po_number,
+                    "style_code": style_code,
+                })
+                continue
 
             po_data = _extract_row_data(sheet, row_idx, col_map)
 

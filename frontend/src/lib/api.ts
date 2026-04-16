@@ -414,9 +414,10 @@ export const excelApi = {
     return response.data;
   },
 
-  previewImport: async (file: File): Promise<ImportPreviewResult> => {
+  previewImport: async (file: File, newOnly: boolean = false): Promise<ImportPreviewResult> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (newOnly) formData.append('new_only', 'true');
 
     const response = await api.post('/api/excel/preview', formData, {
       headers: {
@@ -428,7 +429,8 @@ export const excelApi = {
 
   importExcel: async (
     file: File,
-    conflictResolutions?: Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }>
+    conflictResolutions?: Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }>,
+    newOnly: boolean = false
   ): Promise<{
     success: boolean;
     rows_processed: number;
@@ -442,6 +444,7 @@ export const excelApi = {
     if (conflictResolutions && conflictResolutions.length > 0) {
       formData.append('conflict_resolutions', JSON.stringify(conflictResolutions));
     }
+    if (newOnly) formData.append('new_only', 'true');
 
     const response = await api.post('/api/excel/import', formData, {
       headers: {

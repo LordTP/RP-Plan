@@ -1832,6 +1832,7 @@ async def bulk_add_comment(
 @app.post("/api/excel/preview")
 async def preview_excel_import(
     file: UploadFile = File(...),
+    new_only: bool = Form(False),
     current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
@@ -1842,12 +1843,10 @@ async def preview_excel_import(
             detail="File must be .xlsx or .xlsm format"
         )
 
-    # Read file content
     content = await file.read()
 
-    # Import preview function
     from excel_utils import preview_excel_import as do_preview
-    result = do_preview(content, db)
+    result = do_preview(content, db, new_only=new_only)
 
     return result
 
@@ -1856,6 +1855,7 @@ async def preview_excel_import(
 async def import_excel(
     file: UploadFile = File(...),
     conflict_resolutions: Optional[str] = Form(None),
+    new_only: bool = Form(False),
     current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
@@ -1866,10 +1866,8 @@ async def import_excel(
             detail="File must be .xlsx or .xlsm format"
         )
 
-    # Read file content
     content = await file.read()
 
-    # Parse conflict resolutions if provided
     import json
     resolutions = []
     if conflict_resolutions:
@@ -1881,15 +1879,14 @@ async def import_excel(
                 detail="Invalid conflict resolutions format"
             )
 
-    # Generate batch ID for undo tracking
     import uuid
     batch_id = str(uuid.uuid4())
 
-    # Import to database
     result = import_excel_to_database(
         content, db, current_user,
         import_batch_id=batch_id,
-        conflict_resolutions=resolutions if resolutions else None
+        conflict_resolutions=resolutions if resolutions else None,
+        new_only=new_only,
     )
 
     # Create ImportBatch record if import was successful
