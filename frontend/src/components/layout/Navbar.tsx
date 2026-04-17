@@ -19,6 +19,7 @@ import {
   Truck,
   Ship,
   ExternalLink,
+  BookOpen,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -258,20 +259,31 @@ export function Navbar() {
                   </>
                 )}
 
-                <div className="p-1">
+                <div className="p-1.5 space-y-0.5">
+                  <Link
+                    href="/guide"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 text-gray-400" />
+                    Help Guide
+                  </Link>
                   {user?.role === 'admin' && (
                     <Link
                       href="/settings"
                       onClick={() => setUserMenuOpen(false)}
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <Settings className="h-3.5 w-3.5 text-gray-400" />
                       Settings
                     </Link>
                   )}
+                </div>
+                <div className="border-t border-gray-100 mx-1.5" />
+                <div className="p-1.5">
                   <button
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <LogOut className="h-3.5 w-3.5" />
                     Sign Out
