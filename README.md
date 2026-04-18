@@ -1,6 +1,6 @@
-# RP App - China Orderbook Portal
+# Critical Path — Source Lab Order Management
 
-A full-stack web application for managing purchase orders, tracking shipments, and collaborating with suppliers. Built for internal teams and factory partners.
+A full-stack order management system for TruePath Group / Source Lab. Manages purchase orders across internal teams, designers, and factory suppliers with per-component sampling tracking, approval workflows, and automated warnings.
 
 ## Tech Stack
 
@@ -9,254 +9,132 @@ A full-stack web application for managing purchase orders, tracking shipments, a
 - **Database:** PostgreSQL 15 (production), SQLite (local dev)
 - **Real-Time:** WebSockets
 - **Deployment:** Docker Compose, Nginx reverse proxy, Let's Encrypt SSL
+- **Hosting:** DigitalOcean (1GB droplet)
+
+## Features
+
+### Order Management
+- Full spreadsheet-style table view with inline editing
+- V2 card-based view with detail modal (2-column layout)
+- Excel import with preview, conflict resolution, undo, and "New Orders Only" mode
+- Excel export with filters
+- Per-user comment system with read receipts
+- Change history tracking for all fields
+- Bulk update capabilities (dates, statuses, FCL/LCL)
+
+### Components & Sampling
+- Per-component sampling tracking (Fit Sample, Strike Off, Lab Dip)
+- Components can be added to individual styles, all styles on PO, or selected styles
+- Status dropdowns: NOT REQUIRED, OUTSTANDING, P23 ADVISE UPDATE, LATE, RECEIVED, APPROVED
+- Bulk apply component field values across styles
+- PPS tracking at order level
+
+### Auto-Calculations
+- Total Qty (sum of sizes), Total Order Cost (price × qty)
+- ETA UK (revised ex-factory + 60 days), ETA Customer (ETA UK + 5 days)
+- Estimated Del to Customer (vessel ETA + 5d FCL / 7d LCL / 2d AIR)
+- Ex-Factory from PP Approval (PPS approved + 35 days)
+- PO Open Month, Expected Delivery Month
+- Revised Ex-Factory defaults to Factory Confirmed when blank
+
+### Warnings Centre
+Dashboard warnings with business-day calculations:
+- Tech Packs / Specs need sending (3+ days)
+- Fit Sample / Lab Dip overdue (15+ days from tech packs)
+- Lab Dip / Strike Off needs approval (5+ days)
+- Strike Off overdue (20+ days, 25 for badges/woven)
+- PPS needs approval (7+ days from sent to customer)
+- Searchable, click-through to Design view
+
+### Design Overview
+- PO Completion Tracker with progress bars
+- Season Overview with completion percentages
+- Customer Workload with expandable PO drilldown
+- Factory Sample Performance (avg business days to approve)
+- At Risk Samples and Awaiting Action (searchable)
+- Component Coverage analysis
+
+### Factory / Supplier Views
+- Factory Product and Factory Shipping pages with filtered columns
+- Green-highlighted editable cells
+- Supplier date changes require approval with reason
+- Editable fields configurable per-role via Settings
+- Orders must have Sent to Factory + Tech Packs + Specs dates before suppliers can edit
+
+### Tracking Page
+- Search by tracking reference (P number) with autocomplete
+- Bulk update Revised Vessel ETA with select all/individual checkboxes
+- Confirmation modal, auto-recalculates estimated delivery
+
+### Roles & Auth
+- **Admin:** full access + settings + user management
+- **Internal:** full access except settings
+- **Designer:** design-focused, no cost/value columns
+- **Supplier:** factory pages only, configurable editable fields, approval workflow
+
+### Other
+- Top navbar with Factory and Design dropdowns
+- Source Lab Apps switcher in user menu
+- Help Guide with searchable card-based articles
+- Field Reference documentation in Settings
+- Size Guide modal with gender-based labels
+- Per-user comment read/unread tracking with read receipts
+- Full name display with username fallback
 
 ## Project Structure
 
 ```
-.
-├── frontend/                 # Next.js frontend application
-│   ├── src/
-│   │   ├── app/             # Next.js app router pages
-│   │   │   ├── dashboard/   # Dashboard with stats, approvals, activity
-│   │   │   ├── orders/      # Order management table (v1)
-│   │   │   ├── orders-v2/   # Alternative orders view (v2)
-│   │   │   ├── analytics/   # Charts & performance metrics
-│   │   │   ├── import/      # Excel import with preview & undo
-│   │   │   ├── design/      # Design assets & artwork management
-│   │   │   └── settings/    # User management & column config
-│   │   ├── components/      # Reusable React components
-│   │   │   ├── layout/      # AppShell, Sidebar, Navbar, AuthProvider
-│   │   │   └── orders/      # OrderTable, EditableCell, CommentSidebar
-│   │   ├── lib/             # API client (Axios) & WebSocket client
-│   │   ├── store/           # Zustand state management
-│   │   └── types/           # TypeScript type definitions
-│   ├── Dockerfile
-│   └── package.json
-│
-├── backend/                  # FastAPI backend application
-│   ├── main.py              # All API routes (~59 endpoints)
-│   ├── models.py            # SQLAlchemy models (User, PurchaseOrder, Comment, etc.)
-│   ├── schemas.py           # Pydantic request/response schemas
-│   ├── auth.py              # JWT authentication & rate limiting
-│   ├── database.py          # Database connection config
-│   ├── excel_utils.py       # Excel import/export logic
-│   ├── init_db.py           # Database initialization & seed users
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── docker-compose.yml        # Container orchestration (5 services)
-├── nginx.conf               # Reverse proxy, SSL, security headers
-└── .env.production.example  # Environment variables template
+frontend/src/
+  app/
+    dashboard/          # Dashboard with warnings centre, metrics, activity feed
+    orders/             # Table view
+    orders-v2/          # V2 card view with detail modal
+    design/             # Design page (wraps orders-v2)
+    design-overview/    # Design analytics & sampling overview
+    factory-product/    # Factory product table view
+    factory-shipping/   # Factory shipping table view
+    factory-product-v2/ # Factory product V2
+    factory-shipping-v2/# Factory shipping V2
+    tracking/           # Bulk vessel ETA updates
+    analytics/          # Charts & performance metrics
+    import/             # Excel import with preview & undo
+    settings/           # User management, supplier columns, field reference
+    guide/              # Help guide with searchable articles
+  components/
+    layout/             # AppShell, Navbar, AuthProvider
+    orders/             # OrderTable, EditableCell, CommentSidebar, 
+                        # FactoryV2View, InlineComments, StatusDropdown,
+                        # ComponentsSection
+  lib/                  # API client, WebSocket client, utils
+  store/                # Zustand global state
+  types/                # TypeScript interfaces, column definitions
+
+backend/
+  main.py               # FastAPI app, all endpoints
+  models.py             # SQLAlchemy models
+  schemas.py            # Pydantic schemas
+  excel_utils.py        # Import/export logic
+  auth.py               # JWT auth
+  database.py           # DB connection
 ```
 
-## Features
+## Deployment
 
-- **Order Management:** View, create, edit, and track purchase orders with inline editing
-- **Role-Based Access Control:** 4 user roles with distinct permissions (see below)
-- **Supplier Approval Workflow:** Suppliers propose date changes → internal staff approve/reject
-- **Excel Import/Export:** Bulk import with preview, batch tracking, and undo support
-- **Analytics Dashboard:** Factory performance, customer analytics, delivery KPIs, pipeline visualization
-- **Comments System:** Per-order comments with separate read/unread tracking for internal vs supplier users
-- **Change History:** Full audit trail of all field modifications with approval tracking
-- **Dashboard:** Overview stats, recent activity, pending approvals, and "While You Were Away" summary
-- **Real-Time Updates:** WebSocket-based live data sync with auto-reconnect
-- **User Management:** Admin panel with role assignment, last login tracking, and password reset
-- **Column Configuration:** Per-role column visibility and editability settings
+```bash
+cd /root/app && git pull && docker compose up -d --build frontend backend && docker restart app_nginx_1
+```
 
-## User Roles
-
-| Feature | Admin | Internal | Designer | Supplier |
-|---------|:-----:|:--------:|:--------:|:--------:|
-| View all orders | ✓ | ✓ | ✗ | Own factory only |
-| Edit order fields | ✓ | ✓ | ✗ | ✗ |
-| Propose date changes | ✓ | ✓ | ✗ | ✓ (requires approval) |
-| View pricing | ✓ | ✓ | ✗ | ✗ |
-| Comments | ✓ | ✓ | ✗ | ✓ |
-| Approve/reject changes | ✓ | ✓ | ✗ | ✗ |
-| Analytics | ✓ | ✓ | ✗ | ✗ |
-| Design page | ✓ | ✓ | ✓ | ✗ |
-| Import/Export | ✓ | ✓ | ✗ | ✗ |
-| User management | ✓ | ✗ | ✗ | ✗ |
+Database migrations run automatically on backend startup via `Base.metadata.create_all()` and inline ALTER TABLE checks.
 
 ## Local Development
 
-### Backend
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python init_db.py
-python main.py
+# Backend (port 8004)
+cd backend && source venv/bin/activate
+CORS_ORIGINS="http://localhost:3000,http://localhost:3001" uvicorn main:app --port 8004
+
+# Frontend (port 3001)
+cd frontend && PORT=3001 npm run dev
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## Production Deployment
-
-### Prerequisites
-- Docker and Docker Compose installed
-- Server with ports 80/443 open
-
-### Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/LordTP/RP-Plan.git app
-cd app
-```
-
-2. Create environment file:
-```bash
-cp .env.production.example .env
-nano .env  # Edit with your values
-```
-
-3. Start the application:
-```bash
-docker-compose up -d --build
-```
-
-4. Initialize the database:
-```bash
-docker-compose exec backend python init_db.py
-```
-
-### Default Login Credentials
-
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | `admin` | `admin123` |
-| Internal | `thomas` | `admin123` |
-| Supplier | `factory1` | `factory123` |
-
-> **Note:** Change these passwords after first login.
-
-## Updating the Application
-
-```bash
-cd /root/app
-git pull
-docker-compose up -d --build
-```
-
-Database migrations run automatically on startup.
-
-### Troubleshooting Docker
-
-If you encounter `ContainerConfig` errors during rebuild:
-```bash
-docker stop $(docker ps -aq) && docker rm $(docker ps -aq)
-docker-compose up -d --build
-```
-
-## Backup & Restore
-
-### Manual Backup
-```bash
-docker-compose exec -T db pg_dump -U orderbook orderbook > backup.sql
-```
-
-### Restore
-```bash
-cat backup.sql | docker-compose exec -T db psql -U orderbook orderbook
-```
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `SECRET_KEY` | JWT signing key (generate with `openssl rand -hex 32`) |
-| `CORS_ORIGINS` | Allowed origins for CORS |
-| `POSTGRES_USER` | Database username |
-| `POSTGRES_PASSWORD` | Database password |
-| `POSTGRES_DB` | Database name |
-| `NEXT_PUBLIC_API_URL` | Backend API URL for frontend |
-| `NEXT_PUBLIC_WS_URL` | WebSocket URL for frontend |
-
-## API Endpoints
-
-### Authentication
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/auth/login` | POST | User login (rate limited: 5/5min) |
-| `/api/auth/register` | POST | Register user (admin only) |
-| `/api/auth/me` | GET | Get current user |
-
-### Orders
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/orders` | GET | List orders (paginated, role-filtered) |
-| `/api/orders` | POST | Create order (internal only) |
-| `/api/orders/{id}` | GET/PUT/DELETE | Get, update, or delete order |
-| `/api/orders/recent-changes` | GET | Recent field changes |
-| `/api/orders/bulk-update-status` | POST | Bulk status update |
-| `/api/orders/bulk-update-date` | POST | Bulk date update |
-| `/api/orders/styles-on-po/{po}` | GET | Distinct styles for a PO |
-| `/api/orders/batch-pending-changes` | POST | Pending changes for multiple orders |
-| `/api/orders/bulk-add-comment` | POST | Comment on multiple orders |
-
-### Comments
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/orders/{id}/comments` | GET/POST | Get or add comments |
-| `/api/orders/{id}/comments/mark-read` | POST | Mark comments as read |
-
-### Approvals
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/approvals/pending` | GET | Pending approvals |
-| `/api/approvals/rejected` | GET | Rejected changes |
-| `/api/approvals/my-pending` | GET | Current user's pending |
-| `/api/approvals/my-approved` | GET | Current user's approved |
-| `/api/approvals/{id}/approve` | POST | Approve a change |
-| `/api/approvals/{id}/reject` | POST | Reject a change |
-| `/api/approvals/bulk-approve` | POST | Approve multiple |
-| `/api/approvals/bulk-reject` | POST | Reject multiple |
-| `/api/approvals/{id}/cancel` | DELETE | Cancel pending approval |
-
-### Excel
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/excel/preview` | POST | Preview import |
-| `/api/excel/import` | POST | Import Excel data |
-| `/api/excel/export` | GET | Export to Excel |
-| `/api/excel/template` | GET | Download template |
-| `/api/excel/last-import` | GET | Last import info |
-| `/api/excel/undo` | POST | Undo last import |
-
-### Analytics (internal only)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/analytics/overview` | GET | Overview stats |
-| `/api/analytics/orders-over-time` | GET | Orders trend |
-| `/api/analytics/factory-performance` | GET | Factory metrics |
-| `/api/analytics/customer-analytics` | GET | Customer data |
-| `/api/analytics/delivery-performance` | GET | Delivery KPIs |
-| `/api/analytics/date-changes` | GET | Change analytics |
-| `/api/analytics/pipeline` | GET | Pipeline visualization |
-
-### Dashboard & Stats
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/stats/dashboard` | GET | Dashboard statistics |
-| `/api/stats/recent-activity` | GET | Activity stream |
-| `/api/stats/activity-summary` | GET | Activity summary |
-| `/api/stats/missed-activity` | GET | Changes since last login |
-| `/api/stats/po-summary` | GET | PO summary |
-
-### Other
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/users` | GET/POST | List or create users |
-| `/api/users/{id}` | PUT/DELETE | Update or delete user |
-| `/api/settings/role-columns/{role}` | GET/PUT | Column visibility per role |
-| `/api/statuses` | GET | Valid order statuses |
-| `/api/factories` | GET | All factories |
-| `/ws` | WebSocket | Real-time updates |
+Login: username-based (not email). Seeded accounts in `init_db.py`.

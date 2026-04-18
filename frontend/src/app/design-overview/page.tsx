@@ -9,6 +9,7 @@ import {
   RefreshCw,
   ChevronDown,
   AlertTriangle,
+  Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
@@ -239,61 +240,53 @@ function DesignOverviewContent() {
         {/* At Risk + Awaiting Action */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* At Risk */}
-          <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Late / At Risk Samples</h3>
-            <p className="text-[11px] text-gray-400 mb-4">Approaching ex-factory with unapproved samples</p>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {(data.at_risk_samples || []).length === 0 ? (
-                <div className="text-center py-8 text-xs text-gray-400">
-                  <CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />
-                  No at-risk samples
+          <SearchableAlertCard
+            title="Late / At Risk Samples"
+            description="Approaching ex-factory with unapproved samples"
+            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
+            emptyText="No at-risk samples"
+            items={data.at_risk_samples || []}
+            renderItem={(item: any) => (
+              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs hover:bg-red-50 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                  <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', item.days_until_ex_factory <= 14 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
+                    {item.days_until_ex_factory}d to ex-fac
+                  </span>
                 </div>
-              ) : (data.at_risk_samples || []).map((item: any) => (
-                <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs hover:bg-red-50 transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
-                    <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', item.days_until_ex_factory <= 14 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
-                      {item.days_until_ex_factory}d to ex-fac
-                    </span>
-                  </div>
-                  <p className="text-gray-500">{item.factory} · {item.customer}</p>
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {item.issues.map((issue: string, i: number) => (
-                      <span key={i} className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">{issue}</span>
-                    ))}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+                <p className="text-gray-500">{item.factory} · {item.customer}</p>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {item.issues.map((issue: string, i: number) => (
+                    <span key={i} className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">{issue}</span>
+                  ))}
+                </div>
+              </Link>
+            )}
+          />
 
           {/* Awaiting Action */}
-          <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Awaiting Action</h3>
-            <p className="text-[11px] text-gray-400 mb-4">Samples received but not yet approved</p>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {(data.awaiting_action || []).length === 0 ? (
-                <div className="text-center py-8 text-xs text-gray-400">
-                  <CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />
-                  All samples actioned
+          <SearchableAlertCard
+            title="Awaiting Action"
+            description="Samples received but not yet approved"
+            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
+            emptyText="All samples actioned"
+            items={data.awaiting_action || []}
+            renderItem={(item: any) => (
+              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-amber-50/60 rounded-xl border border-amber-100 text-xs hover:bg-amber-50 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                  <span className="text-[10px] text-gray-400">{item.factory}</span>
                 </div>
-              ) : (data.awaiting_action || []).map((item: any) => (
-                <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-amber-50/60 rounded-xl border border-amber-100 text-xs hover:bg-amber-50 transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
-                    <span className="text-[10px] text-gray-400">{item.factory}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {item.actions.map((a: any, i: number) => (
-                      <span key={i} className={cn('text-[9px] px-1.5 py-0.5 rounded font-medium', a.received_days_ago > 14 ? 'bg-red-100 text-red-600' : a.received_days_ago > 7 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600')}>
-                        {a.type} · {a.received_days_ago}d ago
-                      </span>
-                    ))}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {item.actions.map((a: any, i: number) => (
+                    <span key={i} className={cn('text-[9px] px-1.5 py-0.5 rounded font-medium', a.received_days_ago > 14 ? 'bg-red-100 text-red-600' : a.received_days_ago > 7 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600')}>
+                      {a.type} · {a.received_days_ago}d ago
+                    </span>
+                  ))}
+                </div>
+              </Link>
+            )}
+          />
         </div>
       </div>
     </AppShell>
@@ -339,6 +332,66 @@ function CustomerRow({ customer: c }: { customer: any }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SearchableAlertCard({ title, description, emptyIcon, emptyText, items, renderItem }: {
+  title: string;
+  description: string;
+  emptyIcon: React.ReactNode;
+  emptyText: string;
+  items: any[];
+  renderItem: (item: any) => React.ReactNode;
+}) {
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item: any) =>
+      (item.po_number || '').toLowerCase().includes(q) ||
+      (item.style_code || '').toLowerCase().includes(q) ||
+      (item.customer || '').toLowerCase().includes(q) ||
+      (item.factory || '').toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+        {items.length > 3 && (
+          <div className="relative">
+            <Search className="w-3 h-3 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="pl-6 pr-2 py-1 text-[10px] bg-gray-50 border border-gray-200 rounded-md w-32 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:w-44 transition-all"
+            />
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-gray-400 mb-3">{description}{search && ` · ${filtered.length} match${filtered.length !== 1 ? 'es' : ''}`}</p>
+      <div className="space-y-2 max-h-[350px] overflow-y-auto">
+        {filtered.length === 0 ? (
+          <div className="text-center py-8 text-xs text-gray-400">
+            {search ? (
+              <>
+                <Search className="w-5 h-5 mx-auto mb-2 text-gray-300" />
+                No matches
+              </>
+            ) : (
+              <>
+                {emptyIcon}
+                {emptyText}
+              </>
+            )}
+          </div>
+        ) : filtered.map(renderItem)}
+      </div>
     </div>
   );
 }

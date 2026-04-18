@@ -3874,25 +3874,7 @@ async def get_design_analytics(
         })
     po_completion_list.sort(key=lambda x: x["completion_pct"])
 
-    # Helper: check if a single sample is "done" (approved or not required)
-    def is_sample_done(status_val, approved_date):
-        """A sample is done if status=APPROVED or NOT REQUIRED, OR if an approved date exists"""
-        s = (status_val or '').strip().upper()
-        if s in ('APPROVED', 'NOT REQUIRED'):
-            return True
-        if approved_date:
-            return True
-        return False
-
-    # Helper: check if a sample needs work (has a status set but not done)
-    def sample_needs_work(status_val, approved_date):
-        """A sample needs work if it has a status set (not empty, not done)"""
-        s = (status_val or '').strip().upper()
-        if not s or s == '':
-            return False  # No status set, nothing to track
-        return not is_sample_done(status_val, approved_date)
-
-    # Helper: check if all samples on an order are complete
+    # Helper: check if all samples on an order are complete (uses module-level is_sample_done/sample_needs_work)
     def is_sampling_complete(o):
         components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
         if components:
@@ -4095,6 +4077,24 @@ async def bulk_update_revised_vessel_eta(
 # ============================================================================
 # DASHBOARD WARNINGS
 # ============================================================================
+
+def is_sample_done(status_val, approved_date):
+    """A sample is done if status=APPROVED or NOT REQUIRED, OR if an approved date exists"""
+    s = (status_val or '').strip().upper()
+    if s in ('APPROVED', 'NOT REQUIRED'):
+        return True
+    if approved_date:
+        return True
+    return False
+
+
+def sample_needs_work(status_val, approved_date):
+    """A sample needs work if it has a status set (not empty, not done)"""
+    s = (status_val or '').strip().upper()
+    if not s or s == '':
+        return False
+    return not is_sample_done(status_val, approved_date)
+
 
 def business_days_between(start, end):
     """Count business days (Mon-Fri) from start to end, excluding weekends."""
