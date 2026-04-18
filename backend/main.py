@@ -2834,6 +2834,7 @@ async def get_dashboard_stats(
 @app.get("/api/stats/recent-activity")
 async def get_recent_activity(
     limit: int = 15,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -2852,9 +2853,10 @@ async def get_recent_activity(
     )
     for f in base_filter:
         changes_query = changes_query.filter(f)
+    fetch_limit = offset + limit + 50  # Fetch enough for pagination
     recent_changes = changes_query.order_by(
         DateChangeHistory.created_at.desc()
-    ).limit(limit).all()
+    ).limit(fetch_limit).all()
 
     # Get recent comments
     comments_query = db.query(Comment, PurchaseOrder, User).join(
@@ -2868,7 +2870,7 @@ async def get_recent_activity(
         )
     recent_comments = comments_query.order_by(
         Comment.created_at.desc()
-    ).limit(limit).all()
+    ).limit(fetch_limit).all()
 
     # Merge into unified feed
     events = []
@@ -2899,11 +2901,12 @@ async def get_recent_activity(
             "created_at": comment.created_at.isoformat() if comment.created_at else None,
         })
 
-    # Sort by created_at descending and take top N
+    # Sort by created_at descending, apply offset and limit
     events.sort(key=lambda e: e.get("created_at") or "", reverse=True)
-    events = events[:limit]
+    total = len(events)
+    events = events[offset:offset + limit]
 
-    return {"events": events}
+    return {"events": events, "total": total, "has_more": (offset + limit) < total}
 
 
 @app.get("/api/stats/activity-summary")
@@ -3597,23 +3600,40 @@ async def get_design_analytics(
 
     now = datetime.utcnow()
 
-    # --- Sample Pipeline: status breakdown with order details per status ---
+    # --- Sample Pipeline: status breakdown including component-level data ---
     def build_pipeline(field):
         groups = {}
         for o in all_orders:
-            val = getattr(o, field, None) or ''
-            val = val.strip().upper() if val else 'NOT SET'
-            if val not in groups:
-                groups[val] = []
-            groups[val].append({
-                "id": o.id,
-                "po_number": o.po_number,
-                "style_code": o.style_code,
-                "customer": o.customer,
-                "factory": o.factory,
-                "colour": o.colour,
-            })
-        # Convert to sorted list
+            components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+            # For fit/strike off/lab dip: use component data if components exist
+            if components and field in ('fit_sample_status', 'strike_off_status', 'lab_dip_status'):
+                for comp in components:
+                    val = getattr(comp, field, None) or ''
+                    val = val.strip().upper() if val else 'NOT SET'
+                    if val not in groups:
+                        groups[val] = []
+                    groups[val].append({
+                        "id": o.id,
+                        "po_number": o.po_number,
+                        "style_code": o.style_code,
+                        "customer": o.customer,
+                        "factory": o.factory,
+                        "colour": o.colour,
+                        "component": comp.name,
+                    })
+            else:
+                val = getattr(o, field, None) or ''
+                val = val.strip().upper() if val else 'NOT SET'
+                if val not in groups:
+                    groups[val] = []
+                groups[val].append({
+                    "id": o.id,
+                    "po_number": o.po_number,
+                    "style_code": o.style_code,
+                    "customer": o.customer,
+                    "factory": o.factory,
+                    "colour": o.colour,
+                })
         result = [{"status": k, "count": len(v), "orders": v} for k, v in groups.items()]
         result.sort(key=lambda x: x["count"], reverse=True)
         return result
@@ -3662,23 +3682,38 @@ async def get_design_analytics(
     }
 
     # --- Late/At Risk Samples: approaching ex-factory but samples not approved ---
+    # Uses business days, checks components, respects NOT REQUIRED
     at_risk = []
     for o in all_orders:
         ex_fac = o.revised_po_ex_factory or o.original_po_ex_factory
         if not ex_fac:
             continue
-        days_until = (ex_fac - now).days
-        if days_until > 60:
+        biz_days_until = business_days_between(now, ex_fac)
+        if biz_days_until > 40:
             continue  # Not urgent
 
+        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
         issues = []
-        if o.fit_sample_required and o.fit_sample_required.upper() in ['Y', 'YES'] and not o.fit_sample_approved:
-            issues.append("Fit sample not approved")
-        if not o.strike_off_approved and o.strike_off_status and o.strike_off_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
-            issues.append("Strike off not approved")
-        if not o.lab_dip_approved and o.lab_dip_status and o.lab_dip_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
-            issues.append("Lab dip not approved")
-        if not o.pps_approved and o.pps_status and o.pps_status.upper() not in ['APPROVED', 'NOT REQUIRED', '']:
+
+        # Fit / Strike Off / Lab Dip: check components if they exist, otherwise order level
+        if components:
+            for comp in components:
+                if sample_needs_work(comp.fit_sample_status, comp.fit_sample_approved):
+                    issues.append(f"Fit sample not approved ({comp.name})")
+                if sample_needs_work(comp.strike_off_status, comp.strike_off_approved):
+                    issues.append(f"Strike off not approved ({comp.name})")
+                if sample_needs_work(comp.lab_dip_status, comp.lab_dip_approved):
+                    issues.append(f"Lab dip not approved ({comp.name})")
+        else:
+            if sample_needs_work(o.fit_sample_status, o.fit_sample_approved):
+                issues.append("Fit sample not approved")
+            if sample_needs_work(o.strike_off_status, o.strike_off_approved):
+                issues.append("Strike off not approved")
+            if sample_needs_work(o.lab_dip_status, o.lab_dip_approved):
+                issues.append("Lab dip not approved")
+
+        # PPS always order-level
+        if sample_needs_work(o.pps_status, o.pps_approved):
             issues.append("PPS not approved")
 
         if issues:
@@ -3688,14 +3723,15 @@ async def get_design_analytics(
                 "style_code": o.style_code,
                 "factory": o.factory,
                 "customer": o.customer,
-                "days_until_ex_factory": days_until,
+                "days_until_ex_factory": biz_days_until,
                 "ex_factory_date": ex_fac.isoformat(),
                 "issues": issues,
             })
 
     at_risk.sort(key=lambda x: x["days_until_ex_factory"])
 
-    # --- Factory Sample Performance: avg days received→approved per factory ---
+    # --- Factory Sample Performance: avg business days received→approved per factory ---
+    # Includes component-level data
     factory_perf = {}
     for o in all_orders:
         factory = o.factory or "Unknown"
@@ -3703,12 +3739,22 @@ async def get_design_analytics(
             factory_perf[factory] = {"fit_days": [], "strike_off_days": [], "lab_dip_days": [], "total_orders": 0}
         factory_perf[factory]["total_orders"] += 1
 
-        if o.fit_sample_received and o.fit_sample_approved:
-            factory_perf[factory]["fit_days"].append((o.fit_sample_approved - o.fit_sample_received).days)
-        if o.strike_off_received and o.strike_off_approved:
-            factory_perf[factory]["strike_off_days"].append((o.strike_off_approved - o.strike_off_received).days)
-        if o.lab_dip_received and o.lab_dip_approved:
-            factory_perf[factory]["lab_dip_days"].append((o.lab_dip_approved - o.lab_dip_received).days)
+        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        if components:
+            for comp in components:
+                if comp.fit_sample_received and comp.fit_sample_approved:
+                    factory_perf[factory]["fit_days"].append(business_days_between(comp.fit_sample_received, comp.fit_sample_approved))
+                if comp.strike_off_received and comp.strike_off_approved:
+                    factory_perf[factory]["strike_off_days"].append(business_days_between(comp.strike_off_received, comp.strike_off_approved))
+                if comp.lab_dip_received and comp.lab_dip_approved:
+                    factory_perf[factory]["lab_dip_days"].append(business_days_between(comp.lab_dip_received, comp.lab_dip_approved))
+        else:
+            if o.fit_sample_received and o.fit_sample_approved:
+                factory_perf[factory]["fit_days"].append(business_days_between(o.fit_sample_received, o.fit_sample_approved))
+            if o.strike_off_received and o.strike_off_approved:
+                factory_perf[factory]["strike_off_days"].append(business_days_between(o.strike_off_received, o.strike_off_approved))
+            if o.lab_dip_received and o.lab_dip_approved:
+                factory_perf[factory]["lab_dip_days"].append(business_days_between(o.lab_dip_received, o.lab_dip_approved))
 
     factory_sample_performance = []
     for factory, data in factory_perf.items():
@@ -3725,20 +3771,38 @@ async def get_design_analytics(
     factory_sample_performance.sort(key=lambda x: x["total_orders"], reverse=True)
 
     # --- Awaiting Action: samples received but not yet approved ---
+    # Uses business days, checks components, skips NOT REQUIRED
     awaiting_action = []
     for o in all_orders:
         actions = []
-        if o.fit_sample_received and not o.fit_sample_approved:
-            days = (now - o.fit_sample_received).days
-            actions.append({"type": "Fit Sample", "received_days_ago": days})
-        if o.strike_off_received and not o.strike_off_approved:
-            days = (now - o.strike_off_received).days
-            actions.append({"type": "Strike Off", "received_days_ago": days})
-        if o.lab_dip_received and not o.lab_dip_approved:
-            days = (now - o.lab_dip_received).days
-            actions.append({"type": "Lab Dip", "received_days_ago": days})
-        if o.pps_received and not o.pps_approved:
-            days = (now - o.pps_received).days
+        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+
+        # Fit / Strike Off / Lab Dip: check components if they exist
+        if components:
+            for comp in components:
+                if not is_sample_done(comp.fit_sample_status, comp.fit_sample_approved) and comp.fit_sample_received:
+                    days = business_days_between(comp.fit_sample_received, now)
+                    actions.append({"type": f"Fit Sample ({comp.name})", "received_days_ago": days})
+                if not is_sample_done(comp.strike_off_status, comp.strike_off_approved) and comp.strike_off_received:
+                    days = business_days_between(comp.strike_off_received, now)
+                    actions.append({"type": f"Strike Off ({comp.name})", "received_days_ago": days})
+                if not is_sample_done(comp.lab_dip_status, comp.lab_dip_approved) and comp.lab_dip_received:
+                    days = business_days_between(comp.lab_dip_received, now)
+                    actions.append({"type": f"Lab Dip ({comp.name})", "received_days_ago": days})
+        else:
+            if not is_sample_done(o.fit_sample_status, o.fit_sample_approved) and o.fit_sample_received:
+                days = business_days_between(o.fit_sample_received, now)
+                actions.append({"type": "Fit Sample", "received_days_ago": days})
+            if not is_sample_done(o.strike_off_status, o.strike_off_approved) and o.strike_off_received:
+                days = business_days_between(o.strike_off_received, now)
+                actions.append({"type": "Strike Off", "received_days_ago": days})
+            if not is_sample_done(o.lab_dip_status, o.lab_dip_approved) and o.lab_dip_received:
+                days = business_days_between(o.lab_dip_received, now)
+                actions.append({"type": "Lab Dip", "received_days_ago": days})
+
+        # PPS always order-level
+        if not is_sample_done(o.pps_status, o.pps_approved) and o.pps_received:
+            days = business_days_between(o.pps_received, now)
             actions.append({"type": "PPS", "received_days_ago": days})
 
         if actions:
@@ -3754,12 +3818,167 @@ async def get_design_analytics(
     # Sort by oldest unactioned
     awaiting_action.sort(key=lambda x: max(a["received_days_ago"] for a in x["actions"]), reverse=True)
 
+    # --- PO Completion Tracker: sampling progress per PO ---
+    po_completion = {}
+    for o in all_orders:
+        if o.po_number not in po_completion:
+            po_completion[o.po_number] = {
+                "customer": o.customer,
+                "factory": o.factory,
+                "total_samples": 0,
+                "approved_samples": 0,
+                "styles": 0,
+            }
+        po_completion[o.po_number]["styles"] += 1
+
+        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        if components:
+            for comp in components:
+                for field_s, field_a in [('fit_sample_status', 'fit_sample_approved'), ('strike_off_status', 'strike_off_approved'), ('lab_dip_status', 'lab_dip_approved')]:
+                    status_val = getattr(comp, field_s, None)
+                    approved_val = getattr(comp, field_a, None)
+                    s = (status_val or '').strip().upper()
+                    if not s or s == '':
+                        continue  # No status set, don't count
+                    po_completion[o.po_number]["total_samples"] += 1
+                    if is_sample_done(status_val, approved_val):
+                        po_completion[o.po_number]["approved_samples"] += 1
+        else:
+            for field_s, field_a in [('fit_sample_status', 'fit_sample_approved'), ('strike_off_status', 'strike_off_approved'), ('lab_dip_status', 'lab_dip_approved')]:
+                status_val = getattr(o, field_s, None)
+                approved_val = getattr(o, field_a, None)
+                s = (status_val or '').strip().upper()
+                if not s or s == '':
+                    continue
+                po_completion[o.po_number]["total_samples"] += 1
+                if is_sample_done(status_val, approved_val):
+                    po_completion[o.po_number]["approved_samples"] += 1
+        # PPS always order level
+        pps_s = (o.pps_status or '').strip().upper()
+        if pps_s and pps_s != '':
+            po_completion[o.po_number]["total_samples"] += 1
+            if is_sample_done(o.pps_status, o.pps_approved):
+                po_completion[o.po_number]["approved_samples"] += 1
+
+    po_completion_list = []
+    for po, data in po_completion.items():
+        pct = round((data["approved_samples"] / data["total_samples"] * 100) if data["total_samples"] > 0 else 0)
+        po_completion_list.append({
+            "po_number": po,
+            "customer": data["customer"],
+            "factory": data["factory"],
+            "styles": data["styles"],
+            "total_samples": data["total_samples"],
+            "approved_samples": data["approved_samples"],
+            "completion_pct": pct,
+        })
+    po_completion_list.sort(key=lambda x: x["completion_pct"])
+
+    # Helper: check if a single sample is "done" (approved or not required)
+    def is_sample_done(status_val, approved_date):
+        """A sample is done if status=APPROVED or NOT REQUIRED, OR if an approved date exists"""
+        s = (status_val or '').strip().upper()
+        if s in ('APPROVED', 'NOT REQUIRED'):
+            return True
+        if approved_date:
+            return True
+        return False
+
+    # Helper: check if a sample needs work (has a status set but not done)
+    def sample_needs_work(status_val, approved_date):
+        """A sample needs work if it has a status set (not empty, not done)"""
+        s = (status_val or '').strip().upper()
+        if not s or s == '':
+            return False  # No status set, nothing to track
+        return not is_sample_done(status_val, approved_date)
+
+    # Helper: check if all samples on an order are complete
+    def is_sampling_complete(o):
+        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        if components:
+            for comp in components:
+                if sample_needs_work(comp.fit_sample_status, comp.fit_sample_approved):
+                    return False
+                if sample_needs_work(comp.strike_off_status, comp.strike_off_approved):
+                    return False
+                if sample_needs_work(comp.lab_dip_status, comp.lab_dip_approved):
+                    return False
+        else:
+            if sample_needs_work(o.fit_sample_status, o.fit_sample_approved):
+                return False
+            if sample_needs_work(o.strike_off_status, o.strike_off_approved):
+                return False
+            if sample_needs_work(o.lab_dip_status, o.lab_dip_approved):
+                return False
+        # PPS always order level
+        if sample_needs_work(o.pps_status, o.pps_approved):
+            return False
+        return True
+
+    # --- Season Overview ---
+    season_data = {}
+    for o in all_orders:
+        season = o.season or 'Unknown'
+        if season not in season_data:
+            season_data[season] = {"total": 0, "complete": 0, "in_progress": 0}
+        season_data[season]["total"] += 1
+        if is_sampling_complete(o):
+            season_data[season]["complete"] += 1
+        else:
+            season_data[season]["in_progress"] += 1
+
+    season_overview = [
+        {"season": k, **v, "completion_pct": round(v["complete"] / v["total"] * 100) if v["total"] > 0 else 0}
+        for k, v in sorted(season_data.items())
+    ]
+
+    # --- Customer Workload ---
+    customer_data = {}
+    for o in all_orders:
+        cust = o.customer or 'Unknown'
+        if cust not in customer_data:
+            customer_data[cust] = {"total_styles": 0, "incomplete": 0, "complete": 0, "pos": {}}
+        customer_data[cust]["total_styles"] += 1
+        complete = is_sampling_complete(o)
+        if complete:
+            customer_data[cust]["complete"] += 1
+        else:
+            customer_data[cust]["incomplete"] += 1
+        # Track POs per customer
+        if o.po_number not in customer_data[cust]["pos"]:
+            customer_data[cust]["pos"][o.po_number] = {
+                "factory": o.factory,
+                "styles": 0,
+                "incomplete": 0,
+            }
+        customer_data[cust]["pos"][o.po_number]["styles"] += 1
+        if not complete:
+            customer_data[cust]["pos"][o.po_number]["incomplete"] += 1
+
+    customer_workload = []
+    for k, v in sorted(customer_data.items(), key=lambda x: x[1]["incomplete"], reverse=True):
+        pos = [
+            {"po_number": pn, **pd}
+            for pn, pd in sorted(v["pos"].items(), key=lambda x: x[1]["incomplete"], reverse=True)
+        ]
+        customer_workload.append({
+            "customer": k,
+            "total_styles": v["total_styles"],
+            "incomplete": v["incomplete"],
+            "complete": v["complete"],
+            "pos": pos,
+        })
+    customer_workload = customer_workload[:15]
+
     return {
         "sample_pipeline": sample_pipeline,
         "component_coverage": component_coverage,
         "at_risk_samples": at_risk[:20],
         "factory_sample_performance": factory_sample_performance[:15],
         "awaiting_action": awaiting_action[:20],
+        "po_completion": po_completion_list[:30],
+        "season_overview": season_overview,
+        "customer_workload": customer_workload,
     }
 
 
@@ -3980,8 +4199,7 @@ async def get_dashboard_warnings(
 
         if components:
             for comp in components:
-                status = (comp.fit_sample_status or '').strip().upper()
-                if status == 'NOT REQUIRED':
+                if is_sample_done(comp.fit_sample_status, comp.fit_sample_approved):
                     continue
                 if not comp.fit_sample_received:
                     fit_sample_overdue.append({
@@ -3994,8 +4212,7 @@ async def get_dashboard_warnings(
                         "days_since": days_since,
                     })
         else:
-            status = (o.fit_sample_status or '').strip().upper()
-            if status == 'NOT REQUIRED':
+            if is_sample_done(o.fit_sample_status, o.fit_sample_approved):
                 continue
             if not o.fit_sample_received:
                 fit_sample_overdue.append({
@@ -4031,8 +4248,7 @@ async def get_dashboard_warnings(
 
         if components:
             for comp in components:
-                status = (comp.lab_dip_status or '').strip().upper()
-                if status == 'NOT REQUIRED':
+                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
                     continue
                 if not comp.lab_dip_received:
                     lab_dip_overdue.append({
@@ -4045,8 +4261,7 @@ async def get_dashboard_warnings(
                         "days_since": days_since,
                     })
         else:
-            status = (o.lab_dip_status or '').strip().upper()
-            if status == 'NOT REQUIRED':
+            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
                 continue
             if not o.lab_dip_received:
                 lab_dip_overdue.append({
@@ -4078,8 +4293,7 @@ async def get_dashboard_warnings(
 
         if components:
             for comp in components:
-                status = (comp.lab_dip_status or '').strip().upper()
-                if status == 'NOT REQUIRED':
+                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
                     continue
                 if comp.lab_dip_received and not comp.lab_dip_approved:
                     days_since = business_days_between(comp.lab_dip_received, now)
@@ -4094,8 +4308,7 @@ async def get_dashboard_warnings(
                             "days_since": days_since,
                         })
         else:
-            status = (o.lab_dip_status or '').strip().upper()
-            if status == 'NOT REQUIRED':
+            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
                 continue
             if o.lab_dip_received and not o.lab_dip_approved:
                 days_since = business_days_between(o.lab_dip_received, now)
@@ -4144,8 +4357,7 @@ async def get_dashboard_warnings(
                 threshold = strike_off_threshold(comp.name)
                 if days_since < threshold:
                     continue
-                status = (comp.strike_off_status or '').strip().upper()
-                if status == 'NOT REQUIRED':
+                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
                     continue
                 if not comp.strike_off_received:
                     strike_off_overdue.append({
@@ -4160,8 +4372,7 @@ async def get_dashboard_warnings(
         else:
             if days_since < 20:
                 continue
-            status = (o.strike_off_status or '').strip().upper()
-            if status == 'NOT REQUIRED':
+            if is_sample_done(o.strike_off_status, o.strike_off_approved):
                 continue
             if not o.strike_off_received:
                 strike_off_overdue.append({
@@ -4192,8 +4403,7 @@ async def get_dashboard_warnings(
 
         if components:
             for comp in components:
-                status = (comp.strike_off_status or '').strip().upper()
-                if status == 'NOT REQUIRED':
+                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
                     continue
                 if comp.strike_off_received and not comp.strike_off_approved:
                     days_since = business_days_between(comp.strike_off_received, now)
@@ -4208,8 +4418,7 @@ async def get_dashboard_warnings(
                             "days_since": days_since,
                         })
         else:
-            status = (o.strike_off_status or '').strip().upper()
-            if status == 'NOT REQUIRED':
+            if is_sample_done(o.strike_off_status, o.strike_off_approved):
                 continue
             if o.strike_off_received and not o.strike_off_approved:
                 days_since = business_days_between(o.strike_off_received, now)
@@ -4254,8 +4463,7 @@ async def get_dashboard_warnings(
         if days_since < 40:
             continue
 
-        pps_status = (o.pps_status or '').strip().upper()
-        if pps_status == 'NOT REQUIRED':
+        if is_sample_done(o.pps_status, o.pps_approved):
             continue
         if not o.pps_received:
             pps_received_overdue.append({
@@ -4282,8 +4490,7 @@ async def get_dashboard_warnings(
     # PPS sent to customer 7+ business days ago, not yet approved
     pps_approval = []
     for o in all_orders:
-        pps_status = (o.pps_status or '').strip().upper()
-        if pps_status == 'NOT REQUIRED':
+        if is_sample_done(o.pps_status, o.pps_approved):
             continue
         if o.pps_sent_to_customer and not o.pps_approved:
             days_since = business_days_between(o.pps_sent_to_customer, now)

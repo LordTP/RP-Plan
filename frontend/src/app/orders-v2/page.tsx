@@ -286,10 +286,17 @@ function OrdersV2Content() {
 
   // Status counts for chips
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: orders.length };
+    // Count unique POs per status, not individual lines
+    const posByStatus: Record<string, Set<string>> = { all: new Set() };
     for (const o of orders) {
+      posByStatus.all.add(o.po_number);
       const s = o.status || 'Unknown';
-      counts[s] = (counts[s] || 0) + 1;
+      if (!posByStatus[s]) posByStatus[s] = new Set();
+      posByStatus[s].add(o.po_number);
+    }
+    const counts: Record<string, number> = {};
+    for (const [k, v] of Object.entries(posByStatus)) {
+      counts[k] = v.size;
     }
     return counts;
   }, [orders]);

@@ -26,10 +26,12 @@ import { cn } from '@/lib/utils';
 
 import { ChevronDown, Check } from 'lucide-react';
 
-const navItems = [
+// Note: Design dropdown is rendered separately after this map. It appears between Orders/Factory and Tracking.
+const navItemsBefore = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
   { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier'] },
-  { href: '/design', label: 'Design', icon: Palette, roles: ['admin', 'internal', 'sourcelab_designer'] },
+];
+const navItemsAfter = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
   { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
@@ -40,6 +42,13 @@ const factorySubItems = [
   { href: '/factory-shipping', label: 'Shipping', icon: Truck },
 ];
 
+const designSubItems = [
+  { href: '/design-overview', label: 'Overview', icon: BarChart3 },
+  { href: '/design', label: 'Orders', icon: Palette },
+];
+
+const designRoles = ['admin', 'internal', 'sourcelab_designer'];
+
 const factoryRoles = ['admin', 'supplier'];
 
 export function Navbar() {
@@ -48,9 +57,11 @@ export function Navbar() {
   const { user, logout } = useStore();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [factoryMenuOpen, setFactoryMenuOpen] = useState(false);
+  const [designMenuOpen, setDesignMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const factoryRef = useRef<HTMLDivElement>(null);
+  const designRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
@@ -79,10 +90,22 @@ export function Navbar() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [factoryMenuOpen]);
 
+  // Close design menu on click outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (designRef.current && !designRef.current.contains(e.target as Node)) {
+        setDesignMenuOpen(false);
+      }
+    }
+    if (designMenuOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [designMenuOpen]);
+
   // Close mobile menu on route change
   useEffect(() => {
     setMobileMenuOpen(false);
     setFactoryMenuOpen(false);
+    setDesignMenuOpen(false);
   }, [pathname]);
 
   const isActive = (path: string) => {
@@ -90,7 +113,8 @@ export function Navbar() {
     return pathname.startsWith(path);
   };
 
-  const visibleItems = navItems.filter(
+  const allNavItems = [...navItemsBefore, ...navItemsAfter];
+  const visibleItems = allNavItems.filter(
     (item) => user?.role && item.roles.includes(user.role)
   );
 
@@ -123,7 +147,8 @@ export function Navbar() {
 
         {/* Desktop nav links */}
         <nav className="hidden md:flex items-center gap-1">
-          {visibleItems.map((item) => {
+          {/* Before-design items */}
+          {navItemsBefore.filter(i => user?.role && i.roles.includes(user.role)).map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
 
@@ -198,6 +223,68 @@ export function Navbar() {
                   active
                     ? 'bg-primary-50 text-primary-700'
                     : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {item.label}
+              </Link>
+            );
+          })}
+
+          {/* Design dropdown */}
+          {user?.role && designRoles.includes(user.role) && (
+            <div className="relative" ref={designRef}>
+              <button
+                onClick={() => setDesignMenuOpen(!designMenuOpen)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  pathname.startsWith('/design')
+                    ? 'bg-primary-50 text-primary-700'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                )}
+              >
+                <Palette className="h-3.5 w-3.5" />
+                Design
+                <ChevronDown className={cn('h-3 w-3 transition-transform', designMenuOpen && 'rotate-180')} />
+              </button>
+              {designMenuOpen && (
+                <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden w-44 z-50">
+                  {designSubItems.map(sub => {
+                    const SubIcon = sub.icon;
+                    const subActive = pathname === sub.href;
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={cn(
+                          'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                          subActive
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        )}
+                      >
+                        <SubIcon className="h-3.5 w-3.5" />
+                        {sub.label}
+                        {subActive && <Check className="h-3.5 w-3.5 ml-auto text-primary-600" />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* After-design items */}
+          {navItemsAfter.filter(i => user?.role && i.roles.includes(user.role)).map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  active ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -369,6 +456,22 @@ export function Navbar() {
                   </Link>
                 );
               })}
+              {/* Design sub-items in mobile */}
+              {user?.role && designRoles.includes(user.role) && (
+                <>
+                  <div className="px-4 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Design</div>
+                  {designSubItems.map(sub => {
+                    const SubIcon = sub.icon;
+                    const subActive = pathname === sub.href;
+                    return (
+                      <Link key={sub.href} href={sub.href} className={cn('flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ml-2', subActive ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}>
+                        <SubIcon className="h-4 w-4" />
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
             </nav>
             <div className="border-t border-gray-200 p-3 mt-2">
               <div className="px-4 py-2">

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   BarChart3,
   TrendingUp,
@@ -518,37 +519,6 @@ function AnalyticsContent() {
               <p className="text-sm text-gray-500 mt-1">Sample pipeline, component tracking, and factory performance</p>
             </div>
 
-            {/* Sample Pipeline — expandable status groups */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {['fit_sample', 'strike_off', 'lab_dip', 'pps'].map(type => {
-                const groups: any[] = designData.sample_pipeline?.[type] || [];
-                const total = groups.reduce((s: number, g: any) => s + g.count, 0);
-                const label = type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-                const STATUS_COLORS: Record<string, string> = {
-                  'OUTSTANDING': 'bg-amber-100 text-amber-700',
-                  'RECEIVED': 'bg-blue-100 text-blue-700',
-                  'APPROVED': 'bg-green-100 text-green-700',
-                  'LATE': 'bg-red-100 text-red-700',
-                  'NOT REQUIRED': 'bg-gray-100 text-gray-600',
-                  'P23 ADVISE UPDATE': 'bg-purple-100 text-purple-700',
-                  'NOT SET': 'bg-gray-50 text-gray-400',
-                };
-                return (
-                  <div key={type} className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900">{label} Pipeline</h3>
-                      <span className="text-xs text-gray-400">{total} total</span>
-                    </div>
-                    <div className="divide-y divide-gray-50">
-                      {groups.map((g: any) => (
-                        <SamplePipelineGroup key={g.status} group={g} colorClass={STATUS_COLORS[g.status] || 'bg-gray-100 text-gray-600'} total={total} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
             {/* Component Coverage + Factory Sample Performance */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
               {/* Component Coverage */}
@@ -689,6 +659,81 @@ function AnalyticsContent() {
                         ))}
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* PO Completion Tracker */}
+            <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5 mb-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-1">PO Completion Tracker</h3>
+              <p className="text-[11px] text-gray-400 mb-4">Sampling progress per purchase order (least complete first)</p>
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {(designData.po_completion || []).length === 0 ? (
+                  <div className="text-center py-6 text-xs text-gray-400">No data</div>
+                ) : (designData.po_completion || []).map((po: any) => (
+                  <div key={po.po_number} className="flex items-center gap-4 group">
+                    <div className="min-w-[80px]">
+                      <span className="text-sm font-bold text-gray-900">{po.po_number}</span>
+                    </div>
+                    <div className="min-w-[120px] text-xs text-gray-500 truncate">{po.customer}</div>
+                    <div className="min-w-[100px] text-xs text-gray-400 truncate">{po.factory}</div>
+                    <div className="flex-1">
+                      <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={cn('h-full rounded-full transition-all', po.completion_pct === 100 ? 'bg-green-500' : po.completion_pct >= 50 ? 'bg-primary-500' : 'bg-amber-500')}
+                          style={{ width: `${Math.max(po.completion_pct, 2)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="min-w-[80px] text-right">
+                      <span className={cn('text-xs font-bold', po.completion_pct === 100 ? 'text-green-600' : 'text-gray-700')}>
+                        {po.approved_samples}/{po.total_samples}
+                      </span>
+                      <span className="text-[10px] text-gray-400 ml-1">({po.completion_pct}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Season Overview + Customer Workload */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {/* Season Overview */}
+              <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Season Overview</h3>
+                <p className="text-[11px] text-gray-400 mb-4">Completion by season</p>
+                <div className="space-y-3">
+                  {(designData.season_overview || []).length === 0 ? (
+                    <div className="text-center py-6 text-xs text-gray-400">No data</div>
+                  ) : (designData.season_overview || []).map((s: any) => (
+                    <div key={s.season}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-bold text-gray-900">{s.season}</span>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-green-600 font-semibold">{s.complete} done</span>
+                          <span className="text-amber-600 font-semibold">{s.in_progress} in progress</span>
+                          <span className="text-gray-400">{s.total} total</span>
+                        </div>
+                      </div>
+                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
+                        <div className="h-full bg-green-500 transition-all" style={{ width: `${s.completion_pct}%` }} />
+                        <div className="h-full bg-amber-400 transition-all" style={{ width: `${100 - s.completion_pct}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Customer Workload */}
+              <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Customer Workload</h3>
+                <p className="text-[11px] text-gray-400 mb-4">Open styles by customer (most incomplete first)</p>
+                <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                  {(designData.customer_workload || []).length === 0 ? (
+                    <div className="text-center py-6 text-xs text-gray-400">No data</div>
+                  ) : (designData.customer_workload || []).map((c: any) => (
+                    <CustomerWorkloadRow key={c.customer} customer={c} />
                   ))}
                 </div>
               </div>
@@ -856,6 +901,56 @@ function MissingComponentsList({ orders }: { orders: any[] }) {
               <span className="font-medium text-gray-700">{o.po_number} · {o.style_code}</span>
               <span className="text-gray-400">{o.factory}</span>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomerWorkloadRow({ customer: c }: { customer: any }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between py-2 px-1 hover:bg-gray-50 rounded-lg transition-colors text-left"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <ChevronDown className={cn('w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0', expanded && 'rotate-180')} />
+          <span className="text-sm font-medium text-gray-900 truncate">{c.customer}</span>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {c.incomplete > 0 && (
+            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{c.incomplete} open</span>
+          )}
+          {c.complete > 0 && (
+            <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{c.complete} done</span>
+          )}
+          <span className="text-xs text-gray-400">{c.total_styles}</span>
+        </div>
+      </button>
+      {expanded && c.pos && (
+        <div className="ml-6 mb-2 space-y-0.5">
+          {c.pos.map((po: any) => (
+            <Link
+              key={po.po_number}
+              href={`/design?expandPO=${encodeURIComponent(po.po_number)}`}
+              className="flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors group"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-900 group-hover:text-primary-700">{po.po_number}</span>
+                <span className="text-[10px] text-gray-400">{po.factory}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {po.incomplete > 0 && (
+                  <span className="text-[9px] font-bold text-amber-600">{po.incomplete} open</span>
+                )}
+                <span className="text-[10px] text-gray-400">{po.styles} style{po.styles !== 1 ? 's' : ''}</span>
+                <ChevronDown className="w-3 h-3 text-gray-300 -rotate-90 group-hover:text-primary-500" />
+              </div>
+            </Link>
           ))}
         </div>
       )}

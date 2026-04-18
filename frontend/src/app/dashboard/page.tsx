@@ -75,6 +75,8 @@ function DashboardContent() {
   const [myApprovedChanges, setMyApprovedChanges] = useState<MyApprovedChange[]>([]);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivityEvent[]>([]);
+  const [hasMoreActivity, setHasMoreActivity] = useState(false);
+  const [loadingMoreActivity, setLoadingMoreActivity] = useState(false);
   const [warnings, setWarnings] = useState<any[]>([]);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
@@ -102,6 +104,7 @@ function DashboardContent() {
       setActivitySummary(activity);
       setMissedActivity(missed);
       setRecentActivity(recentActivityResult?.events || []);
+      setHasMoreActivity(recentActivityResult?.has_more || false);
 
       // Load dashboard warnings
       try {
@@ -636,57 +639,6 @@ function DashboardContent() {
           {/* Warnings Centre */}
           {warnings.length > 0 && <WarningsCentre warnings={warnings} />}
 
-          {/* Active Purchase Orders */}
-          <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900">Active Purchase Orders</h3>
-              <Link href="/orders" className="text-sm text-primary-500 font-medium hover:text-primary-700 flex items-center gap-1">
-                View all <ChevronRight className="w-3 h-3" />
-              </Link>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {poSummaries.length === 0 ? (
-                <div className="px-5 py-8 text-center text-gray-400 text-[11px]">No purchase orders found</div>
-              ) : poSummaries.map((po) => (
-                <div
-                  key={po.po_number}
-                  onClick={() => handlePOClick(po.po_number)}
-                  className="px-5 py-2.5 hover:bg-gray-50/80 transition-colors cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">{po.po_number}</span>
-                      {po.status && (
-                        <span className={cn('inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full', getStatusColor(po.status))}>
-                          <span className="w-1 h-1 rounded-full bg-current opacity-60" />
-                          {po.status}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      {isInternal && (
-                        <span className="text-[12px] font-semibold text-gray-900 font-mono">{formatCurrency(po.total_value)}</span>
-                      )}
-                      <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-400 transition-colors" />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-[11px] text-gray-400">
-                    <span>{po.customer}</span>
-                    <span className="text-gray-200">|</span>
-                    <span>{po.factory}</span>
-                    <span className="text-gray-200">|</span>
-                    <span>{formatNumber(po.total_qty)} units</span>
-                    {po.earliest_ex_factory && (
-                      <>
-                        <span className="text-gray-200">|</span>
-                        <span>Ex-fty {formatDate(po.earliest_ex_factory)}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Right Column - 1/3 */}
@@ -730,7 +682,7 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* Recent Activity - borderless, just a section */}
+          {/* Recent Activity */}
           <div>
             <div className="flex items-center justify-between mb-3 px-1">
               <h3 className="text-sm font-semibold text-gray-900">Recent Activity</h3>
@@ -739,59 +691,71 @@ function DashboardContent() {
                 <span className="text-[10px] text-gray-400">Live</span>
               </div>
             </div>
-            <div className="space-y-3.5 max-h-72 overflow-y-auto px-1">
+            <div className="space-y-1 max-h-80 overflow-y-auto px-1">
               {recentActivity.length === 0 ? (
                 <div className="py-6 text-center text-[11px] text-gray-400">No recent activity</div>
               ) : recentActivity.map((event, idx) => {
                 const isComment = event.type === 'comment';
-                const isSupplier = event.source === 'Supplier';
+                const isSupplierSource = event.source === 'Supplier';
                 const bgColor = isComment
-                  ? (isSupplier ? 'bg-orange-50' : 'bg-purple-50')
-                  : (isSupplier ? 'bg-orange-50' : 'bg-blue-50');
-                const textColor = isComment
-                  ? (isSupplier ? 'text-orange-500' : 'text-purple-500')
-                  : (isSupplier ? 'text-orange-500' : 'text-blue-500');
+                  ? (isSupplierSource ? 'bg-orange-50' : 'bg-purple-50')
+                  : (isSupplierSource ? 'bg-orange-50' : 'bg-blue-50');
                 const initialsColor = isComment
-                  ? (isSupplier ? 'text-orange-500' : 'text-purple-500')
-                  : (isSupplier ? 'text-orange-500' : 'text-blue-500');
+                  ? (isSupplierSource ? 'text-orange-500' : 'text-purple-500')
+                  : (isSupplierSource ? 'text-orange-500' : 'text-blue-500');
 
                 return (
-                  <div key={`${event.type}-${idx}`} className="flex gap-3 cursor-pointer" onClick={() => handlePOClick(event.po_number)}>
-                    <div className="relative">
-                      <div className={cn('w-7 h-7 rounded-full flex items-center justify-center', bgColor)}>
-                        <span className={cn('text-[9px] font-bold', initialsColor)}>{event.user_initials}</span>
-                      </div>
-                      {idx < recentActivity.length - 1 && (
-                        <div className="absolute left-1/2 top-7 -translate-x-1/2 w-px h-3 bg-gray-100" />
-                      )}
+                  <div
+                    key={`${event.type}-${idx}`}
+                    onClick={() => handlePOClick(event.po_number)}
+                    className="flex gap-2.5 cursor-pointer rounded-lg px-2 py-2 hover:bg-gray-50 transition-colors -mx-1"
+                  >
+                    <div className={cn('w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0', bgColor)}>
+                      <span className={cn('text-[9px] font-bold', initialsColor)}>{event.user_initials}</span>
                     </div>
                     <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-gray-900">{event.username}</span>
+                        <span className="text-[10px] text-gray-300">·</span>
+                        <span className="text-[10px] text-gray-400">{event.po_number}</span>
+                        {event.style_code && <span className="text-[10px] text-gray-300">{event.style_code}</span>}
+                        <span className="text-[10px] text-gray-300 ml-auto">{event.created_at ? timeAgo(event.created_at) : ''}</span>
+                      </div>
                       {isComment ? (
-                        <p className="text-xs text-gray-600">
-                          <span className="font-semibold text-gray-800">{event.username}</span>
-                          {' added a comment'}
+                        <p className="text-[11px] text-gray-600 truncate mt-0.5">
+                          <span className="text-purple-500 font-medium">Commented: </span>
+                          {event.comment_text || 'Added a comment'}
                         </p>
                       ) : (
-                        <p className="text-xs text-gray-600">
-                          <span className="font-semibold text-gray-800">{event.username}</span>
-                          {' updated '}
-                          <span className={cn('font-medium', textColor)}>{formatFieldName(event.field_name || '')}</span>
+                        <p className="text-[11px] text-gray-600 mt-0.5">
+                          <span className="text-blue-500 font-medium">{formatFieldName(event.field_name || '')}: </span>
+                          {event.old_value && <span className="text-gray-400 line-through">{event.old_value}</span>}
+                          {event.old_value && event.new_value && <span className="text-gray-300"> → </span>}
+                          {event.new_value && <span className="font-medium text-gray-700">{event.new_value}</span>}
                         </p>
                       )}
-                      <p className="text-[10px] text-gray-300 mt-0.5">
-                        PO# {event.po_number}
-                        {event.created_at && <span> · {timeAgo(event.created_at)}</span>}
-                      </p>
                     </div>
                   </div>
                 );
               })}
+              {hasMoreActivity && (
+                <button
+                  onClick={async () => {
+                    setLoadingMoreActivity(true);
+                    try {
+                      const result = await statsApi.getRecentActivity(15, recentActivity.length);
+                      setRecentActivity(prev => [...prev, ...result.events]);
+                      setHasMoreActivity(result.has_more);
+                    } catch { /* ignore */ }
+                    finally { setLoadingMoreActivity(false); }
+                  }}
+                  disabled={loadingMoreActivity}
+                  className="w-full py-2 text-xs text-gray-400 font-medium hover:text-gray-600 transition-colors text-center mt-1"
+                >
+                  {loadingMoreActivity ? 'Loading...' : 'Load more'}
+                </button>
+              )}
             </div>
-            {recentActivity.length > 0 && (
-              <Link href="/orders" className="block text-xs text-gray-400 font-medium hover:text-gray-600 text-center mt-3 py-2">
-                View all activity →
-              </Link>
-            )}
           </div>
         </div>
       </div>

@@ -640,9 +640,9 @@ export const statsApi = {
     return response.data;
   },
 
-  getRecentActivity: async (limit: number = 15): Promise<{ events: RecentActivityEvent[] }> => {
-    const response = await api.get<{ events: RecentActivityEvent[] }>('/api/stats/recent-activity', {
-      params: { limit },
+  getRecentActivity: async (limit: number = 15, offset: number = 0): Promise<{ events: RecentActivityEvent[]; has_more: boolean }> => {
+    const response = await api.get('/api/stats/recent-activity', {
+      params: { limit, offset },
     });
     return response.data;
   },

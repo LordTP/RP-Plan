@@ -1569,9 +1569,21 @@ export function ComponentsSection({
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Quick status summary */}
-                  {comp.fit_sample_status && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">Fit</span>}
-                  {comp.strike_off_status && <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded">SO</span>}
-                  {comp.lab_dip_status && <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded">LD</span>}
+                  {(comp.fit_sample_status || comp.fit_sample_approved) && (() => {
+                    const s = (comp.fit_sample_status || '').toUpperCase();
+                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.fit_sample_approved;
+                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} Fit</span>;
+                  })()}
+                  {(comp.strike_off_status || comp.strike_off_approved) && (() => {
+                    const s = (comp.strike_off_status || '').toUpperCase();
+                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.strike_off_approved;
+                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700')}>{done ? '✓' : ''} SO</span>;
+                  })()}
+                  {(comp.lab_dip_status || comp.lab_dip_approved) && (() => {
+                    const s = (comp.lab_dip_status || '').toUpperCase();
+                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.lab_dip_approved;
+                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} LD</span>;
+                  })()}
                 </div>
               </button>
 
