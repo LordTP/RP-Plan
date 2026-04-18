@@ -1,0 +1,31 @@
+# Dependencies
+frontend/node_modules/
+backend/venv/
+
+# Build artifacts
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+
+# Database files (large binaries, not useful for code context)
+backend/*.db
+backend/*.db.backup*
+backend/orderbook.db.backup-pre-headers-2026-03-24
+
+# Excel templates and data files
+*.xlsx
+*.xls
+
+# Screenshots and images at project root
+*.png
+*.jpg
+*.jpeg
+
+# Standalone HTML mockups
+layout-option-*.html
+
+# Docker/infra (rarely needs editing)
+init-ssl.sh
+
+# Lock files (large, low signal)
+frontend/package-lock.json
