@@ -32,6 +32,9 @@ from auth import (
     get_current_user, get_current_internal_user, get_current_full_internal_user, get_current_admin_user
 )
 from excel_utils import import_excel_to_database, export_database_to_excel
+from sample_helpers import is_sample_done, sample_needs_work, business_days_between
+from dashboard_warnings import router as dashboard_warnings_router
+from supplier_access import apply_supplier_filter, supplier_filter_clause, assert_supplier_can_access
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -39,6 +42,8 @@ app = FastAPI(
     description="Backend API for managing purchase orders, comments, and supplier collaboration",
     version="1.0.0"
 )
+
+app.include_router(dashboard_warnings_router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -419,10 +424,7 @@ async def get_orders(
     - tab=orders (default for internal): filter where tracking_reference IS NULL
     """
     query = db.query(PurchaseOrder)
-
-    # Filter by factory for supplier users
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        query = query.filter(PurchaseOrder.factory == current_user.factory_name)
+    query = apply_supplier_filter(query, current_user)
 
     # Tab filtering for internal/admin users only
     if current_user.role != UserRole.SUPPLIER and tab:
@@ -531,11 +533,7 @@ async def get_recent_changes(
     if po_number:
         # Get order IDs for this PO number
         order_ids_query = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == str(po_number))
-
-        # Filter by factory for supplier users
-        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-            order_ids_query = order_ids_query.filter(PurchaseOrder.factory == current_user.factory_name)
-
+        order_ids_query = apply_supplier_filter(order_ids_query, current_user)
         order_ids = [o[0] for o in order_ids_query.all()]
 
         # If no orders found, return empty result
@@ -549,8 +547,8 @@ async def get_recent_changes(
     else:
         # Filter by factory for supplier users
         if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-            order_ids = db.query(PurchaseOrder.id).filter(
-                PurchaseOrder.factory == current_user.factory_name
+            order_ids = apply_supplier_filter(
+                db.query(PurchaseOrder.id), current_user
             ).all()
             order_ids = [o[0] for o in order_ids]
 
@@ -595,14 +593,11 @@ async def get_order(
             detail=f"Order with ID {order_id} was not found. It may have been deleted."
         )
 
-    # Check permissions for supplier users
-    if current_user.role == UserRole.SUPPLIER:
-        if order.factory != current_user.factory_name:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You can only view orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
-            )
-    
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only view orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
+    )
+
     # Add comment count
     order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
     
@@ -668,13 +663,11 @@ async def update_order(
         )
 
     # Check permissions
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
+    )
     if current_user.role == UserRole.SUPPLIER:
-        if order.factory != current_user.factory_name:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
-            )
-
         # Suppliers can only edit if the order has been sent to factory
         if not order.order_sent_to_factory_date or not order.tech_packs_sent_to_factory or not order.specs_sent_to_factory:
             raise HTTPException(
@@ -1019,13 +1012,10 @@ async def get_order_comments(
             detail=f"Order with ID {order_id} was not found. Please refresh the page."
         )
 
-    # Check permissions for supplier users
-    if current_user.role == UserRole.SUPPLIER:
-        if order.factory != current_user.factory_name:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You can only view comments for your factory's orders ({current_user.factory_name})."
-            )
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only view comments for your factory's orders ({current_user.factory_name})."
+    )
 
     # Get comments with user information
     comments = db.query(Comment).filter(Comment.po_id == order_id).order_by(Comment.created_at.desc()).all()
@@ -1092,13 +1082,10 @@ async def add_comment(
             detail=f"Cannot add comment - Order with ID {order_id} was not found. The order may have been deleted."
         )
 
-    # Check permissions for supplier users
-    if current_user.role == UserRole.SUPPLIER:
-        if order.factory != current_user.factory_name:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You can only add comments to your factory's orders ({current_user.factory_name})."
-            )
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only add comments to your factory's orders ({current_user.factory_name})."
+    )
 
     # Create comment - mark as read by the user type who created it
     # Get role as string for comparison (handles both enum and string)
@@ -1156,17 +1143,10 @@ async def add_comment(
 @app.get("/api/orders/{order_id}/history", response_model=List[DateChangeResponse])
 async def get_order_history(
     order_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db)
 ):
     """Get date change history for an order (internal/admin only)"""
-    # Suppliers cannot view history
-    if current_user.role == UserRole.SUPPLIER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="History is not available for supplier accounts"
-        )
-
     # Verify order exists
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
 
@@ -1215,10 +1195,7 @@ async def mark_comments_read(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Check permissions for supplier users
-    if current_user.role == UserRole.SUPPLIER:
-        if order.factory != current_user.factory_name:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    assert_supplier_can_access(order, current_user, detail="Not authorized")
 
     # Get all comment IDs for this order
     comment_ids = [c.id for c in db.query(Comment.id).filter(Comment.po_id == order_id).all()]
@@ -1685,8 +1662,7 @@ async def bulk_update_date(
 
         # Verify all orders belong to supplier's factory
         for order in orders:
-            if order.factory != current_user.factory_name:
-                raise HTTPException(status_code=403, detail="Not authorized to update these orders")
+            assert_supplier_can_access(order, current_user, detail="Not authorized to update these orders")
 
     # Determine source tag based on role
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
@@ -1784,9 +1760,7 @@ async def get_styles_on_po(
     """Get all orders/styles on a specific PO number"""
     query = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number)
 
-    # Filter by factory for supplier users
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        query = query.filter(PurchaseOrder.factory == current_user.factory_name)
+    query = apply_supplier_filter(query, current_user)
 
     orders = query.order_by(PurchaseOrder.style_code).all()
 
@@ -1826,12 +1800,9 @@ async def bulk_add_comment(
     if not orders:
         raise HTTPException(status_code=404, detail="No orders found with this PO number")
 
-    # Check permissions for supplier users
-    if current_user.role == UserRole.SUPPLIER:
-        # Verify all orders belong to supplier's factory
-        for order in orders:
-            if order.factory != current_user.factory_name:
-                raise HTTPException(status_code=403, detail="Not authorized to comment on these orders")
+    # Verify all orders belong to supplier's factory (no-op for non-suppliers)
+    for order in orders:
+        assert_supplier_can_access(order, current_user, detail="Not authorized to comment on these orders")
 
     # Get role as string for comparison
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
@@ -2725,10 +2696,7 @@ async def get_dashboard_stats(
     db: Session = Depends(get_db)
 ):
     """Get dashboard statistics"""
-    # Build base filter for supplier users
-    base_filter = []
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+    base_filter = supplier_filter_clause(current_user)
 
     def count_by_status(statuses: list) -> int:
         """Count unique PO numbers with given status(es)"""
@@ -2839,9 +2807,7 @@ async def get_recent_activity(
     db: Session = Depends(get_db)
 ):
     """Get a unified recent activity feed combining field changes and comments"""
-    base_filter = []
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+    base_filter = supplier_filter_clause(current_user)
 
     # Get recent field changes (excluding import batches for cleaner feed)
     changes_query = db.query(DateChangeHistory, PurchaseOrder, User).join(
@@ -2864,10 +2830,7 @@ async def get_recent_activity(
     ).join(
         User, Comment.user_id == User.id
     )
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        comments_query = comments_query.filter(
-            PurchaseOrder.factory == current_user.factory_name
-        )
+    comments_query = apply_supplier_filter(comments_query, current_user)
     recent_comments = comments_query.order_by(
         Comment.created_at.desc()
     ).limit(fetch_limit).all()
@@ -2918,10 +2881,7 @@ async def get_activity_summary(
     # Use last_login as the cutoff, or 24 hours ago if never logged in before
     since = current_user.last_login or (datetime.utcnow() - timedelta(hours=24))
 
-    # Build base filter for supplier users
-    base_filter = []
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+    base_filter = supplier_filter_clause(current_user)
 
     # New orders created since last login
     new_orders_query = db.query(PurchaseOrder).filter(PurchaseOrder.created_at > since)
@@ -3027,10 +2987,7 @@ async def get_missed_activity(
     since = current_user.previous_login
     until = current_user.last_login
 
-    # Build base filter for supplier users
-    base_filter = []
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        base_filter.append(PurchaseOrder.factory == current_user.factory_name)
+    base_filter = supplier_filter_clause(current_user)
 
     # New orders created in the window
     new_orders_query = db.query(PurchaseOrder).filter(
@@ -3148,9 +3105,7 @@ async def get_po_summary(
     # Base query - group by PO number
     query = db.query(PurchaseOrder)
 
-    # Filter by factory for supplier users
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        query = query.filter(PurchaseOrder.factory == current_user.factory_name)
+    query = apply_supplier_filter(query, current_user)
 
     # Get unique PO numbers with aggregated data
     po_summary = db.query(
@@ -3165,9 +3120,7 @@ async def get_po_summary(
         func.max(PurchaseOrder.status).label('status'),
     )
 
-    # Apply factory filter for suppliers
-    if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
-        po_summary = po_summary.filter(PurchaseOrder.factory == current_user.factory_name)
+    po_summary = apply_supplier_filter(po_summary, current_user)
 
     po_summary = po_summary.group_by(
         PurchaseOrder.po_number,
@@ -4072,450 +4025,6 @@ async def bulk_update_revised_vessel_eta(
 
     db.commit()
     return {"success": True, "updated_count": updated_count}
-
-
-# ============================================================================
-# DASHBOARD WARNINGS
-# ============================================================================
-
-def is_sample_done(status_val, approved_date):
-    """A sample is done if status=APPROVED or NOT REQUIRED, OR if an approved date exists"""
-    s = (status_val or '').strip().upper()
-    if s in ('APPROVED', 'NOT REQUIRED'):
-        return True
-    if approved_date:
-        return True
-    return False
-
-
-def sample_needs_work(status_val, approved_date):
-    """A sample needs work if it has a status set (not empty, not done)"""
-    s = (status_val or '').strip().upper()
-    if not s or s == '':
-        return False
-    return not is_sample_done(status_val, approved_date)
-
-
-def business_days_between(start, end):
-    """Count business days (Mon-Fri) from start to end, excluding weekends."""
-    if not start or not end or end < start:
-        return 0
-    days = 0
-    current = start.date() if hasattr(start, 'date') else start
-    end_date = end.date() if hasattr(end, 'date') else end
-    while current < end_date:
-        if current.weekday() < 5:  # 0=Mon, 4=Fri
-            days += 1
-        current += timedelta(days=1)
-    return days
-
-
-@app.get("/api/warnings/dashboard")
-async def get_dashboard_warnings(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Warnings/flags for orders needing attention — grouped by PO"""
-    now = datetime.utcnow()
-
-    all_orders = db.query(PurchaseOrder).filter(
-        ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"])
-    ).all()
-
-    # Group orders by PO number — warnings are per-PO
-    po_groups = {}
-    for o in all_orders:
-        if o.po_number not in po_groups:
-            po_groups[o.po_number] = []
-        po_groups[o.po_number].append(o)
-
-    warnings = []
-
-    # --- Warning 1: Tech Packs need sending ---
-    # Order sent to factory populated, 3+ business days ago, but tech packs not sent
-    tech_packs_needed = []
-    for po_num, orders in po_groups.items():
-        rep = orders[0]  # Representative row (same across PO)
-        if rep.order_sent_to_factory_date and not rep.tech_packs_sent_to_factory:
-            days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= 3:
-                tech_packs_needed.append({
-                    "po_number": po_num,
-                    "customer": rep.customer,
-                    "factory": rep.factory,
-                    "days_since": days_since,
-                    "trigger_date": rep.order_sent_to_factory_date.isoformat(),
-                    "style_count": len(orders),
-                })
-    tech_packs_needed.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if tech_packs_needed:
-        warnings.append({
-            "key": "tech_packs_needed",
-            "title": "Tech Packs Need Sending",
-            "description": "Orders sent to factory 3+ business days ago without tech packs",
-            "severity": "amber",
-            "count": len(tech_packs_needed),
-            "items": tech_packs_needed,
-        })
-
-    # --- Warning 2: Specs need sending ---
-    specs_needed = []
-    for po_num, orders in po_groups.items():
-        rep = orders[0]
-        if rep.order_sent_to_factory_date and not rep.specs_sent_to_factory:
-            days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= 3:
-                specs_needed.append({
-                    "po_number": po_num,
-                    "customer": rep.customer,
-                    "factory": rep.factory,
-                    "days_since": days_since,
-                    "trigger_date": rep.order_sent_to_factory_date.isoformat(),
-                    "style_count": len(orders),
-                })
-    specs_needed.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if specs_needed:
-        warnings.append({
-            "key": "specs_needed",
-            "title": "Specs Need Sending",
-            "description": "Orders sent to factory 3+ business days ago without specs",
-            "severity": "amber",
-            "count": len(specs_needed),
-            "items": specs_needed,
-        })
-
-    # --- Warning 3: Fit Sample Overdue ---
-    fit_sample_overdue = []
-    for o in all_orders:
-        if not o.tech_packs_sent_to_factory:
-            continue
-        days_since = business_days_between(o.tech_packs_sent_to_factory, now)
-        if days_since < 15:
-            continue
-
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                if is_sample_done(comp.fit_sample_status, comp.fit_sample_approved):
-                    continue
-                if not comp.fit_sample_received:
-                    fit_sample_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if is_sample_done(o.fit_sample_status, o.fit_sample_approved):
-                continue
-            if not o.fit_sample_received:
-                fit_sample_overdue.append({
-                    "order_id": o.id,
-                    "po_number": o.po_number,
-                    "style_code": o.style_code,
-                    "customer": o.customer,
-                    "factory": o.factory,
-                    "days_since": days_since,
-                })
-    fit_sample_overdue.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if fit_sample_overdue:
-        warnings.append({
-            "key": "fit_sample_overdue",
-            "title": "Fit Sample Overdue",
-            "description": "3+ business weeks since tech packs sent, no fit sample received",
-            "severity": "amber",
-            "count": len(fit_sample_overdue),
-            "items": fit_sample_overdue,
-        })
-
-    # --- Warning 4: Lab Dip Overdue ---
-    lab_dip_overdue = []
-    for o in all_orders:
-        if not o.tech_packs_sent_to_factory:
-            continue
-        days_since = business_days_between(o.tech_packs_sent_to_factory, now)
-        if days_since < 15:
-            continue
-
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
-                    continue
-                if not comp.lab_dip_received:
-                    lab_dip_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
-                continue
-            if not o.lab_dip_received:
-                lab_dip_overdue.append({
-                    "order_id": o.id,
-                    "po_number": o.po_number,
-                    "style_code": o.style_code,
-                    "customer": o.customer,
-                    "factory": o.factory,
-                    "days_since": days_since,
-                })
-    lab_dip_overdue.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if lab_dip_overdue:
-        warnings.append({
-            "key": "lab_dip_overdue",
-            "title": "Lab Dip Overdue",
-            "description": "3+ business weeks since tech packs sent, no lab dip received",
-            "severity": "amber",
-            "count": len(lab_dip_overdue),
-            "items": lab_dip_overdue,
-        })
-
-    # --- Warning 5: Lab Dip Needs Approval ---
-    # Lab dip received 5+ business days ago, not yet approved
-    # Skip if status = NOT REQUIRED
-    lab_dip_approval = []
-    for o in all_orders:
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
-                    continue
-                if comp.lab_dip_received and not comp.lab_dip_approved:
-                    days_since = business_days_between(comp.lab_dip_received, now)
-                    if days_since >= 5:
-                        lab_dip_approval.append({
-                            "order_id": o.id,
-                            "po_number": o.po_number,
-                            "style_code": o.style_code,
-                            "customer": o.customer,
-                            "factory": o.factory,
-                            "component": comp.name,
-                            "days_since": days_since,
-                        })
-        else:
-            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
-                continue
-            if o.lab_dip_received and not o.lab_dip_approved:
-                days_since = business_days_between(o.lab_dip_received, now)
-                if days_since >= 5:
-                    lab_dip_approval.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "days_since": days_since,
-                    })
-    lab_dip_approval.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if lab_dip_approval:
-        warnings.append({
-            "key": "lab_dip_approval",
-            "title": "Lab Dip Needs Approval",
-            "description": "Received 5+ business days ago, not yet approved",
-            "severity": "amber",
-            "count": len(lab_dip_approval),
-            "items": lab_dip_approval,
-        })
-
-    # --- Warning 6: Strike Off Overdue ---
-    # 4 weeks (20 business days) since tech packs sent, no strike off received
-    # If component name contains 'badge' / 'woven label' / 'woven tape', use 5 weeks (25 business days)
-    def strike_off_threshold(name) -> int:
-        if not name:
-            return 20
-        n = name.lower()
-        if 'badge' in n or 'woven label' in n or 'woven tape' in n:
-            return 25
-        return 20
-
-    strike_off_overdue = []
-    for o in all_orders:
-        if not o.tech_packs_sent_to_factory:
-            continue
-        days_since = business_days_between(o.tech_packs_sent_to_factory, now)
-
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                threshold = strike_off_threshold(comp.name)
-                if days_since < threshold:
-                    continue
-                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
-                    continue
-                if not comp.strike_off_received:
-                    strike_off_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if days_since < 20:
-                continue
-            if is_sample_done(o.strike_off_status, o.strike_off_approved):
-                continue
-            if not o.strike_off_received:
-                strike_off_overdue.append({
-                    "order_id": o.id,
-                    "po_number": o.po_number,
-                    "style_code": o.style_code,
-                    "customer": o.customer,
-                    "factory": o.factory,
-                    "days_since": days_since,
-                })
-    strike_off_overdue.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if strike_off_overdue:
-        warnings.append({
-            "key": "strike_off_overdue",
-            "title": "Strike Off Overdue",
-            "description": "4+ business weeks since tech packs sent (5 for badges/woven), no strike off received",
-            "severity": "amber",
-            "count": len(strike_off_overdue),
-            "items": strike_off_overdue,
-        })
-
-    # --- Warning 7: Strike Off Needs Approval ---
-    # Strike off received 5+ business days ago, not yet approved
-    strike_off_approval = []
-    for o in all_orders:
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
-                    continue
-                if comp.strike_off_received and not comp.strike_off_approved:
-                    days_since = business_days_between(comp.strike_off_received, now)
-                    if days_since >= 5:
-                        strike_off_approval.append({
-                            "order_id": o.id,
-                            "po_number": o.po_number,
-                            "style_code": o.style_code,
-                            "customer": o.customer,
-                            "factory": o.factory,
-                            "component": comp.name,
-                            "days_since": days_since,
-                        })
-        else:
-            if is_sample_done(o.strike_off_status, o.strike_off_approved):
-                continue
-            if o.strike_off_received and not o.strike_off_approved:
-                days_since = business_days_between(o.strike_off_received, now)
-                if days_since >= 5:
-                    strike_off_approval.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "days_since": days_since,
-                    })
-    strike_off_approval.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if strike_off_approval:
-        warnings.append({
-            "key": "strike_off_approval",
-            "title": "Strike Off Needs Approval",
-            "description": "Received 5+ business days ago, not yet approved",
-            "severity": "amber",
-            "count": len(strike_off_approval),
-            "items": strike_off_approval,
-        })
-
-    # --- Warning 8: PPS Received Overdue ---
-    # 8 business weeks (40 business days) after lab dip approved, no PPS received
-    pps_received_overdue = []
-    for o in all_orders:
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        # PPS is order-level, but we check lab_dip_approved per component if components exist
-        # Use latest lab_dip_approved from components, or order-level
-        if components:
-            lab_dip_dates = [c.lab_dip_approved for c in components if c.lab_dip_approved]
-            latest_lab_dip = max(lab_dip_dates) if lab_dip_dates else None
-        else:
-            latest_lab_dip = o.lab_dip_approved
-
-        if not latest_lab_dip:
-            continue
-        days_since = business_days_between(latest_lab_dip, now)
-        if days_since < 40:
-            continue
-
-        if is_sample_done(o.pps_status, o.pps_approved):
-            continue
-        if not o.pps_received:
-            pps_received_overdue.append({
-                "order_id": o.id,
-                "po_number": o.po_number,
-                "style_code": o.style_code,
-                "customer": o.customer,
-                "factory": o.factory,
-                "days_since": days_since,
-            })
-    pps_received_overdue.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if pps_received_overdue:
-        warnings.append({
-            "key": "pps_received_overdue",
-            "title": "PPS Overdue",
-            "description": "8+ business weeks since lab dip approved, no PPS received",
-            "severity": "amber",
-            "count": len(pps_received_overdue),
-            "items": pps_received_overdue,
-        })
-
-    # --- Warning 9: PPS Needs Approval ---
-    # PPS sent to customer 7+ business days ago, not yet approved
-    pps_approval = []
-    for o in all_orders:
-        if is_sample_done(o.pps_status, o.pps_approved):
-            continue
-        if o.pps_sent_to_customer and not o.pps_approved:
-            days_since = business_days_between(o.pps_sent_to_customer, now)
-            if days_since >= 7:
-                pps_approval.append({
-                    "order_id": o.id,
-                    "po_number": o.po_number,
-                    "style_code": o.style_code,
-                    "customer": o.customer,
-                    "factory": o.factory,
-                    "days_since": days_since,
-                })
-    pps_approval.sort(key=lambda x: x["days_since"], reverse=True)
-
-    if pps_approval:
-        warnings.append({
-            "key": "pps_approval",
-            "title": "PPS Needs Approval",
-            "description": "Sent to customer 7+ business days ago, not yet approved",
-            "severity": "amber",
-            "count": len(pps_approval),
-            "items": pps_approval,
-        })
-
-    return {"warnings": warnings}
 
 
 if __name__ == "__main__":
