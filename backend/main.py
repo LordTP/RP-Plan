@@ -21,7 +21,7 @@ from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
     PurchaseOrderSupplierResponse, PurchaseOrderSupplierUpdate,
-    CommentCreate, CommentResponse,
+    CommentCreate, CommentResponse, CommentReadBy,
     ComponentCreate, ComponentUpdate, ComponentResponse,
     DateChangeResponse,
     ExcelUploadResponse,
@@ -1038,6 +1038,22 @@ async def get_order_comments(
         ).all()
     )
 
+    # Get all read receipts for these comments in one query
+    all_reads = db.query(CommentRead, User).join(User, CommentRead.user_id == User.id).filter(
+        CommentRead.comment_id.in_([c.id for c in comments])
+    ).all() if comments else []
+
+    # Group reads by comment_id
+    reads_by_comment: dict = {}
+    for cr, u in all_reads:
+        if cr.comment_id not in reads_by_comment:
+            reads_by_comment[cr.comment_id] = []
+        reads_by_comment[cr.comment_id].append({
+            "username": u.username,
+            "full_name": u.full_name,
+            "read_at": cr.read_at,
+        })
+
     # Build response with username
     result = []
     for comment in comments:
@@ -1052,6 +1068,7 @@ async def get_order_comments(
             read=comment.id in read_ids,
             read_by_internal=comment.read_by_internal or False,
             read_by_supplier=comment.read_by_supplier or False,
+            read_by_users=reads_by_comment.get(comment.id, []),
             created_at=comment.created_at
         ))
 

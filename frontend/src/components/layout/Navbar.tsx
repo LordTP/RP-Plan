@@ -128,10 +128,23 @@ export function Navbar() {
             const active = isActive(item.href);
 
             // Insert Factory dropdown after Orders
-            if (item.href === '/design' && user?.role && factoryRoles.includes(user.role)) {
+            if (item.href === '/orders' && user?.role && factoryRoles.includes(user.role)) {
               const factoryActive = pathname.startsWith('/factory-');
               return (
                 <div key="factory-group" className="flex items-center gap-1">
+                  {/* Current item (Orders) */}
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                      active
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {item.label}
+                  </Link>
                   {/* Factory dropdown */}
                   <div className="relative" ref={factoryRef}>
                     <button
@@ -172,19 +185,6 @@ export function Navbar() {
                       </div>
                     )}
                   </div>
-                  {/* Then render the current item (Design) */}
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                      active
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {item.label}
-                  </Link>
                 </div>
               );
             }
@@ -313,10 +313,22 @@ export function Navbar() {
                 const Icon = item.icon;
                 const active = isActive(item.href);
 
-                // Insert factory sub-items before Design
-                if (item.href === '/design' && user?.role && factoryRoles.includes(user.role)) {
+                // Insert factory sub-items after Orders
+                if (item.href === '/orders' && user?.role && factoryRoles.includes(user.role)) {
                   return (
                     <div key="mobile-factory-group">
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
+                          active
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
                       <div className="px-4 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Factory</div>
                       {factorySubItems.map(sub => {
                         const SubIcon = sub.icon;
@@ -337,18 +349,6 @@ export function Navbar() {
                           </Link>
                         );
                       })}
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary-50 text-primary-700'
-                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {item.label}
-                      </Link>
                     </div>
                   );
                 }

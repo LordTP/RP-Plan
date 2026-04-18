@@ -109,6 +109,12 @@ export interface Order {
   updated_at: string;
 }
 
+export interface CommentReadBy {
+  username: string;
+  full_name?: string | null;
+  read_at: string;
+}
+
 export interface Comment {
   id: number;
   order_id: number;
@@ -119,6 +125,7 @@ export interface Comment {
   read: boolean;
   read_by_internal: boolean;
   read_by_supplier: boolean;
+  read_by_users: CommentReadBy[];
   created_at: string;
 }
 

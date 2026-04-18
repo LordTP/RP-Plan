@@ -292,6 +292,11 @@ class CommentCreate(BaseModel):
     source: Optional[str] = None
 
 
+class CommentReadBy(BaseModel):
+    username: str
+    full_name: Optional[str] = None
+    read_at: datetime
+
 class CommentResponse(CommentBase):
     id: int
     po_id: int
@@ -300,6 +305,7 @@ class CommentResponse(CommentBase):
     read: bool = False  # Whether the current user has read this comment
     read_by_internal: bool = False  # Legacy, kept for compat
     read_by_supplier: bool = False  # Legacy, kept for compat
+    read_by_users: List[CommentReadBy] = []  # Who has read this comment
     created_at: datetime
 
     class Config:

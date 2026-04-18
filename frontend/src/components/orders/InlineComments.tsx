@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, MessageSquare, Clock, ArrowRight } from 'lucide-react';
+import { Send, MessageSquare, Clock, ArrowRight, Eye } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
@@ -11,9 +11,10 @@ import type { Order, Comment, DateHistory } from '@/types';
 
 interface InlineCommentsProps {
   order: Order;
+  onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
 }
 
-export function InlineComments({ order }: InlineCommentsProps) {
+export function InlineComments({ order, onCommentCountChange }: InlineCommentsProps) {
   const { user } = useStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [history, setHistory] = useState<DateHistory[]>([]);
@@ -41,6 +42,9 @@ export function InlineComments({ order }: InlineCommentsProps) {
     try {
       const data = await ordersApi.getOrderComments(order.id);
       setComments(data);
+      // Notify parent — all comments are now read since we just opened the panel
+      const unreadCount = data.filter((c: Comment) => !c.read).length;
+      onCommentCountChange?.(order.id, data.length, 0); // 0 unread since we mark as read on open
     } catch (error) {
       console.error('Failed to load comments:', error);
     }
@@ -85,51 +89,15 @@ export function InlineComments({ order }: InlineCommentsProps) {
 
   return (
     <div>
-      {/* Tabs */}
-      <div className="flex gap-1 px-1 pb-3">
-        <button
-          onClick={() => setActiveTab('comments')}
-          className={cn(
-            'flex items-center gap-2 py-2 px-4 text-xs font-medium transition-all rounded-lg',
-            activeTab === 'comments'
-              ? 'text-primary-700 bg-primary-50'
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-          )}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          Comments
-          <span className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-            activeTab === 'comments' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
-          )}>
-            {comments.length}
-          </span>
-        </button>
-        {canViewHistory && (
-          <button
-            onClick={() => setActiveTab('history')}
-            className={cn(
-              'flex items-center gap-2 py-2 px-4 text-xs font-medium transition-all rounded-lg',
-              activeTab === 'history'
-                ? 'text-primary-700 bg-primary-50'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-            )}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            History
-            <span className={cn(
-              'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-              activeTab === 'history' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
-            )}>
-              {history.length}
-            </span>
-          </button>
-        )}
-      </div>
-
-      {/* Content */}
-      <div>
-        {activeTab === 'comments' ? (
+      {/* Side-by-side layout: Comments left, History right */}
+      <div className={cn('grid gap-6', canViewHistory ? 'grid-cols-[1fr_340px]' : 'grid-cols-1')}>
+        {/* LEFT: Comments */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <MessageSquare className="w-3.5 h-3.5" />
+            Comments
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-primary-100 text-primary-700">{comments.length}</span>
+          </h4>
           <div className="space-y-2.5 pb-2">
             {comments.length === 0 ? (
               <div className="text-center py-10 text-gray-400">
@@ -143,45 +111,117 @@ export function InlineComments({ order }: InlineCommentsProps) {
                 const isSourcelab = comment.source === 'Sourcelab' || comment.source === 'SOURCELAB' || comment.source === 'internal';
                 const isUnread = !comment.read;
                 let timeAgo = '';
+                let fullDate = '';
                 try { timeAgo = formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true }); } catch {}
+                try { fullDate = format(parseISO(comment.created_at), 'dd/MM/yyyy HH:mm'); } catch {}
+                const initials = comment.username.slice(0, 2).toUpperCase();
 
                 return (
-                  <div
-                    key={comment.id}
-                    className={cn(
-                      'rounded-lg px-3 py-2.5 border transition-colors',
-                      isSourcelab ? 'bg-white border-gray-100' : 'bg-white border-orange-100',
-                      isUnread && 'ring-1 ring-primary-200/60'
-                    )}
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div className={cn(
-                        'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold',
-                        isSourcelab ? 'bg-primary-500 text-white' : 'bg-orange-500 text-white'
-                      )}>
-                        {comment.username.slice(0, 1).toUpperCase()}
-                      </div>
-                      <span className="text-[11px] font-semibold text-gray-900">{comment.username}</span>
-                      <span className={cn(
-                        'text-[9px] px-1.5 py-0.5 rounded-full font-semibold',
-                        isSourcelab ? 'bg-primary-50 text-primary-600' : 'bg-orange-50 text-orange-600'
-                      )}>
-                        {isSourcelab ? 'SL' : 'Supplier'}
-                      </span>
-                      <span className="text-[10px] text-gray-400 ml-auto">{timeAgo}</span>
+                  <div key={comment.id} className={cn('flex gap-3', !isSourcelab && 'flex-row-reverse')}>
+                    {/* Avatar */}
+                    <div className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md flex-shrink-0 mt-0.5',
+                      isSourcelab
+                        ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white ring-2 ring-primary-200/40'
+                        : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white ring-2 ring-orange-200/40'
+                    )}>
+                      {initials}
                     </div>
-                    <p className="text-xs text-gray-700 ml-8 leading-relaxed">{comment.comment_text}</p>
+
+                    <div className={cn('flex-1 min-w-0 max-w-[80%]', !isSourcelab && 'flex flex-col items-end')}>
+                      {/* Name + time */}
+                      <div className={cn('flex items-center gap-2 mb-1', !isSourcelab && 'flex-row-reverse')}>
+                        <span className="text-[11px] font-semibold text-gray-900">{comment.username}</span>
+                        <span className={cn(
+                          'text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider',
+                          isSourcelab ? 'bg-primary-100 text-primary-600' : 'bg-orange-100 text-orange-600'
+                        )}>
+                          {isSourcelab ? 'SL' : 'Supplier'}
+                        </span>
+                        <span className="text-[10px] text-gray-400" title={fullDate}>{timeAgo}</span>
+                      </div>
+
+                      {/* Message bubble */}
+                      <div className={cn(
+                        'relative px-4 py-3 rounded-2xl shadow-sm',
+                        isSourcelab
+                          ? 'bg-white border border-gray-200/80 rounded-tl-md'
+                          : 'bg-orange-50 border border-orange-200/60 rounded-tr-md',
+                        isUnread && 'ring-2 ring-primary-300/50'
+                      )}>
+                        {isUnread && (
+                          <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full ring-2 ring-white animate-pulse" />
+                        )}
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.comment_text}</p>
+                      </div>
+
+                      {/* Read receipts */}
+                      {comment.read_by_users && comment.read_by_users.length > 0 && (
+                        <ReadReceipts readers={comment.read_by_users} />
+                      )}
+                    </div>
                   </div>
                 );
               })
             )}
             <div ref={commentsEndRef} />
           </div>
-        ) : (
-          <div className="space-y-2 pb-2">
-            {history.length === 0 ? (
-              <div className="text-center py-10 text-gray-400">
-                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-2">
+
+          {/* Comment Input */}
+          <form onSubmit={handleSubmit} className="pt-4 border-t border-gray-100 mt-2">
+            <div className="relative">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Write a message..."
+                rows={3}
+                className="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 resize-none"
+                disabled={isSubmitting}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (newComment.trim() && !isSubmitting) {
+                      (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                    }
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!newComment.trim() || isSubmitting}
+                className="absolute right-2 bottom-2 p-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all disabled:opacity-30 shadow-sm"
+              >
+                {isSubmitting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <label className="flex items-center gap-2 mt-2 px-1 text-[10px] text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={addToAllOnPO}
+                onChange={(e) => setAddToAllOnPO(e.target.checked)}
+                className="rounded text-primary-600 w-3 h-3 border-gray-300"
+              />
+              Add to all styles on this PO
+            </label>
+          </form>
+        </div>
+
+        {/* RIGHT: History */}
+        {canViewHistory && (
+          <div className="border-l border-gray-100 pl-6">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5" />
+              History
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-gray-200/80 text-gray-500">{history.length}</span>
+            </h4>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+              {history.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-2">
                   <Clock className="w-5 h-5 text-gray-300" />
                 </div>
                 <p className="text-xs font-medium text-gray-500">No history</p>
@@ -244,52 +284,40 @@ export function InlineComments({ order }: InlineCommentsProps) {
                 );
               })
             )}
+            </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Comment Input */}
-      {activeTab === 'comments' && (
-        <form onSubmit={handleSubmit} className="pt-3 border-t border-gray-100 mt-2">
-          <label className="flex items-center gap-2 mb-2 text-[10px] text-gray-500 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={addToAllOnPO}
-              onChange={(e) => setAddToAllOnPO(e.target.checked)}
-              className="rounded text-primary-600 w-3 h-3 border-gray-300"
-            />
-            Add to all styles on this PO
-          </label>
-          <div className="flex gap-2 items-end">
-            <textarea
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add a comment..."
-              rows={2}
-              className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-300 bg-white resize-none"
-              disabled={isSubmitting}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (newComment.trim() && !isSubmitting) {
-                    (e.target as HTMLTextAreaElement).form?.requestSubmit();
-                  }
-                }
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!newComment.trim() || isSubmitting}
-              className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-all disabled:opacity-40"
-            >
-              {isSubmitting ? (
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Send className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
-        </form>
+function ReadReceipts({ readers }: { readers: { username: string; full_name?: string | null; read_at: string }[] }) {
+  const [showPopup, setShowPopup] = useState(false);
+
+  return (
+    <div className="relative ml-8 mt-1.5">
+      <button
+        onMouseEnter={() => setShowPopup(true)}
+        onMouseLeave={() => setShowPopup(false)}
+        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        <Eye className="w-3 h-3" />
+        <span>Seen by {readers.length}</span>
+      </button>
+      {showPopup && (
+        <div className="absolute left-0 bottom-full mb-1 bg-gray-900 text-white rounded-lg px-3 py-2 shadow-lg z-50 min-w-[140px]">
+          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Read by</p>
+          {readers.map((r, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 py-0.5">
+              <span className="text-[11px] font-medium">{r.full_name || r.username}</span>
+              <span className="text-[9px] text-gray-500">
+                {(() => { try { return formatDistanceToNow(parseISO(r.read_at), { addSuffix: true }); } catch { return ''; } })()}
+              </span>
+            </div>
+          ))}
+          <div className="absolute left-4 top-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-gray-900" />
+        </div>
       )}
     </div>
   );

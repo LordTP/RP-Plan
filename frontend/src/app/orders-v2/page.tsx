@@ -501,6 +501,14 @@ function OrdersV2Content() {
             view={viewParam}
             onSave={handleDetailSave}
             initialTab={openOnComments ? 'comments' : 'details'}
+            onCommentCountChange={(orderId, commentCount, unreadCount) => {
+              const updateOrder = (o: Order) => o.id === orderId ? { ...o, comment_count: commentCount, unread_comment_count: unreadCount } : o;
+              if (isFactoryView) {
+                setLocalOrders(prev => prev.map(updateOrder));
+              } else {
+                setStoreOrders(orders.map(updateOrder), totalOrders);
+              }
+            }}
           />
         )}
       </div>
@@ -536,143 +544,142 @@ function POCard({
 
   return (
     <div id={`po-card-${group.po_number}`} className={cn(
-      'bg-white rounded-xl border transition-all',
-      isExpanded ? 'border-primary-200 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+      'bg-white rounded-xl transition-all overflow-hidden',
+      isExpanded ? 'ring-1 ring-primary-200 shadow-md' : 'ring-1 ring-gray-200/80 hover:ring-gray-300 hover:shadow-md'
     )}>
       {/* PO Header */}
       <button
         onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center gap-4 text-left"
+        className="w-full px-5 py-4 flex items-center gap-5 text-left"
       >
-        <ChevronRight className={cn(
-          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
-          isExpanded && 'rotate-90'
+        {/* Left accent */}
+        <div className={cn(
+          'w-1.5 h-12 rounded-full flex-shrink-0 transition-colors',
+          isExpanded ? 'bg-primary-500' : 'bg-gray-200'
         )} />
 
         {/* PO Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-gray-900">{group.po_number}</span>
-            <span className="text-xs text-gray-400">·</span>
-            <span className="text-xs text-gray-500 truncate">{group.customer}</span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-base font-bold text-gray-900">{group.po_number}</span>
+            <span className={cn(
+              'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
+              statusStyle.bg, statusStyle.text
+            )}>
+              <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
+              {group.statusSummary || 'Unknown'}
+            </span>
+            {hasMultipleStatuses && (
+              <span className="text-[10px] text-gray-400 italic">mixed</span>
+            )}
+            {group.unreadComments > 0 && (
+              <span className="inline-flex items-center gap-1 text-primary-500">
+                <MessageSquare className="w-3.5 h-3.5 fill-current" />
+                <span className="text-[10px] font-bold">{group.unreadComments}</span>
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs font-medium text-gray-600">{group.customer}</span>
+            <span className="text-[10px] text-gray-300">|</span>
             <span className="text-xs text-gray-400">{group.factory}</span>
-            <span className="text-xs text-gray-300">·</span>
+            <span className="text-[10px] text-gray-300">|</span>
             <span className="text-xs text-gray-400">{group.styles.length} style{group.styles.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
 
-        {/* Qty */}
-        <div className="text-right flex-shrink-0 w-20">
-          <p className="text-sm font-semibold text-gray-900">{formatQty(group.totalQty)}</p>
-          <p className="text-[11px] text-gray-400">units</p>
-        </div>
-
-        {/* Value */}
-        {!isSupplier && !isDesigner && (
-          <div className="text-right flex-shrink-0 w-24">
-            <p className="text-sm font-semibold text-gray-900">{formatCurrency(group.totalValue)}</p>
-            <p className="text-[11px] text-gray-400">value</p>
+        {/* Stats pills */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[70px]">
+            <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(group.totalQty)}</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
           </div>
-        )}
 
-        {/* Ex-Factory Date */}
-        <div className="text-right flex-shrink-0 w-24">
-          <p className="text-xs font-medium text-gray-700">{formatDate(group.latestDate)}</p>
-          <p className="text-[11px] text-gray-400">ex-factory</p>
-        </div>
-
-        {/* Status */}
-        <div className="flex-shrink-0 w-32 text-right">
-          <span className={cn(
-            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
-            statusStyle.bg, statusStyle.text
-          )}>
-            <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
-            {group.statusSummary || 'Unknown'}
-          </span>
-          {hasMultipleStatuses && (
-            <p className="text-[10px] text-gray-400 mt-0.5">mixed</p>
-          )}
-        </div>
-
-        {/* Unread comments */}
-        {group.unreadComments > 0 && (
-          <div className="flex-shrink-0 w-8 flex items-center justify-center">
-            <div className="relative">
-              <MessageSquare className="w-4 h-4 text-primary-400" />
-              <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                {group.unreadComments > 9 ? '9+' : group.unreadComments}
-              </span>
+          {!isSupplier && !isDesigner && (
+            <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
+              <p className="text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(group.totalValue)}</p>
+              <p className="text-[9px] text-gray-400 uppercase tracking-wider">value</p>
             </div>
+          )}
+
+          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
+            <p className="text-xs font-semibold text-gray-700">{formatDate(group.latestDate)}</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">ex-factory</p>
           </div>
-        )}
+        </div>
+
+        <ChevronRight className={cn(
+          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
+          isExpanded && 'rotate-90'
+        )} />
       </button>
 
-      {/* Expanded: Style List */}
+      {/* Expanded: Style Cards */}
       {isExpanded && (
-        <div className="border-t border-gray-100">
-          {/* Style Header */}
-          <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60">
-            <div className="col-span-2">Style</div>
-            <div className="col-span-2">Description</div>
-            <div className="col-span-1">Colour</div>
-            <div className="col-span-1 text-right">Qty</div>
-            {!isSupplier && !isDesigner && <div className="col-span-1 text-right">Value</div>}
-            <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-1')}>Ex-Factory</div>
-            <div className="col-span-2">Status</div>
-            <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-2')} />
-          </div>
-
-          {/* Style Rows */}
+        <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50/40">
           {group.styles.map((style) => {
             const ss = getStatusStyle(style.status);
             const isSelected = style.id === selectedStyleId;
+            const exFacDate = style.revised_po_ex_factory || style.original_po_ex_factory;
             return (
               <div
                 key={style.id}
                 onClick={() => onStyleClick(style)}
                 className={cn(
-                  'grid grid-cols-12 gap-2 px-5 py-3 items-center cursor-pointer transition-colors border-t border-gray-50',
-                  isSelected ? 'bg-primary-50/60' : 'hover:bg-gray-50/60'
+                  'flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all',
+                  isSelected
+                    ? 'bg-primary-50 ring-1 ring-primary-200 shadow-sm'
+                    : 'bg-white hover:shadow-md hover:ring-1 hover:ring-gray-200'
                 )}
               >
-                <div className="col-span-2">
-                  <p className="text-sm font-medium text-gray-900 truncate">{style.style_code || '—'}</p>
-                  {style.customer_style_code && (
-                    <p className="text-[11px] text-gray-400 truncate">{style.customer_style_code}</p>
-                  )}
+                {/* Colour dot + Style info */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div
+                    className="w-3 h-8 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: style.colour ? `var(--color-gray-300)` : '#e5e7eb' }}
+                    title={style.colour || 'No colour'}
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-900 truncate">{style.style_code || '—'}</p>
+                      {style.colour && <span className="text-[10px] text-gray-400 font-medium">{style.colour}</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">{style.description || '—'}</p>
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-600 truncate">{style.description || '—'}</p>
+
+                {/* Qty */}
+                <div className="flex-shrink-0 text-center min-w-[60px]">
+                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(style.total_quantity)}</p>
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
                 </div>
-                <div className="col-span-1">
-                  <p className="text-sm text-gray-600 truncate">{style.colour || '—'}</p>
-                </div>
-                <div className="col-span-1 text-right">
-                  <p className="text-sm font-medium text-gray-900">{formatQty(style.total_quantity)}</p>
-                </div>
+
+                {/* Value (admin/internal only) */}
                 {!isSupplier && !isDesigner && (
-                  <div className="col-span-1 text-right">
-                    <p className="text-xs text-gray-500">{formatCurrency(style.total_order_value)}</p>
+                  <div className="flex-shrink-0 text-center min-w-[80px]">
+                    <p className="text-xs font-semibold text-gray-700 tabular-nums">{formatCurrency(style.total_order_value)}</p>
                   </div>
                 )}
-                <div className={cn('text-right', (isSupplier || isDesigner) ? 'col-span-2' : 'col-span-1')}>
-                  <p className="text-xs text-gray-600">
-                    {formatDate(style.revised_po_ex_factory || style.original_po_ex_factory)}
-                  </p>
+
+                {/* Ex-Factory */}
+                <div className="flex-shrink-0 text-center min-w-[90px]">
+                  <p className="text-xs font-medium text-gray-700">{formatDate(exFacDate)}</p>
+                  <p className="text-[9px] text-gray-400">ex-factory</p>
                 </div>
-                <div className="col-span-2">
+
+                {/* Status */}
+                <div className="flex-shrink-0">
                   <span className={cn(
-                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold',
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold',
                     ss.bg, ss.text
                   )}>
-                    <span className={cn('w-1 h-1 rounded-full', ss.dot)} />
+                    <span className={cn('w-1.5 h-1.5 rounded-full', ss.dot)} />
                     {style.status || 'Unknown'}
                   </span>
                 </div>
-                <div className={cn('flex items-center justify-end gap-2', isSupplier ? 'col-span-2' : 'col-span-2')}>
+
+                {/* Comment + Arrow */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {(style.comment_count || 0) > 0 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onCommentClick(style); }}
@@ -681,7 +688,7 @@ function POCard({
                       {(style.unread_comment_count || 0) > 0 ? (
                         <MessageSquare className="w-3.5 h-3.5 text-primary-500 fill-current" />
                       ) : (
-                        <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                        <MessageSquare className="w-3.5 h-3.5 text-gray-300" />
                       )}
                       {(style.unread_comment_count || 0) > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 bg-primary-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
@@ -717,6 +724,7 @@ function DetailPanel({
   view,
   onSave,
   initialTab = 'details',
+  onCommentCountChange,
 }: {
   order: Order;
   onClose: () => void;
@@ -726,6 +734,7 @@ function DetailPanel({
   view: string | null;
   onSave?: (orderId: number, field: string, value: any) => void;
   initialTab?: 'details' | 'comments';
+  onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
 }) {
   const isProductView = view === 'factory-product';
   const isShippingView = view === 'factory-shipping';
@@ -918,7 +927,7 @@ function DetailPanel({
         <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
 
         {modalTab === 'comments' ? (
-          <InlineComments order={order} />
+          <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
         ) : (
         <>
         {/* Timeline / Key Dates */}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Send, MessageSquare, Clock, User, ArrowRight } from 'lucide-react';
+import { X, Send, MessageSquare, Clock, User, ArrowRight, Eye } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
@@ -15,6 +15,7 @@ export function CommentSidebar() {
     comments,
     setComments,
     addComment,
+    updateOrderInList,
     isSidebarOpen,
     setSidebarOpen,
     user,
@@ -91,6 +92,13 @@ export function CommentSidebar() {
       }
       setNewComment('');
       loadComments();
+      // Update the comment count on the order in the table
+      if (selectedOrder) {
+        updateOrderInList({
+          ...selectedOrder,
+          comment_count: (selectedOrder.comment_count || 0) + 1,
+        });
+      }
     } catch (error) {
       toast.error('Failed to add comment. Please try again.');
     } finally {
@@ -132,20 +140,20 @@ export function CommentSidebar() {
         )}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-200/60 bg-gradient-to-r from-primary-600 to-primary-700">
+        <div className="px-5 py-4 border-b border-gray-200/60 bg-gradient-to-r from-gray-900 to-gray-800">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white truncate">
                 {selectedOrder.po_number}
-                {selectedOrder.style_code && <span className="text-primary-200 font-normal"> · {selectedOrder.style_code}</span>}
+                {selectedOrder.style_code && <span className="text-gray-400 font-normal"> · {selectedOrder.style_code}</span>}
               </h2>
-              <p className="text-xs text-primary-200 truncate mt-0.5">{selectedOrder.customer} — {selectedOrder.description || selectedOrder.colour || ''}</p>
+              <p className="text-xs text-gray-400 truncate mt-0.5">{selectedOrder.customer} — {selectedOrder.description || selectedOrder.colour || ''}</p>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1.5 hover:bg-white/15 rounded-lg transition-colors flex-shrink-0 ml-2"
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0 ml-2"
             >
-              <X className="w-4 h-4 text-primary-200" />
+              <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
         </div>
@@ -312,24 +320,15 @@ export function CommentSidebar() {
         {activeTab === 'comments' && (
           <form
             onSubmit={handleSubmit}
-            className="p-4 border-t border-gray-200/60 bg-gray-50/50"
+            className="p-4 border-t border-gray-200/60 bg-white"
           >
-            <label className="flex items-center gap-2 mb-3 text-[11px] text-gray-500 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={addToAllOnPO}
-                onChange={(e) => setAddToAllOnPO(e.target.checked)}
-                className="rounded text-primary-600 w-3.5 h-3.5 border-gray-300"
-              />
-              Add to all styles on this PO
-            </label>
-            <div className="flex gap-2 items-end">
+            <div className="relative">
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment..."
-                rows={2}
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-300 bg-white transition-all resize-none"
+                placeholder="Write a message..."
+                rows={3}
+                className="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 transition-all resize-none"
                 disabled={isSubmitting}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -343,7 +342,7 @@ export function CommentSidebar() {
               <button
                 type="submit"
                 disabled={!newComment.trim() || isSubmitting}
-                className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-all disabled:opacity-40 shadow-sm hover:shadow"
+                className="absolute right-2 bottom-2 p-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all disabled:opacity-30 shadow-sm"
               >
                 {isSubmitting ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -352,6 +351,15 @@ export function CommentSidebar() {
                 )}
               </button>
             </div>
+            <label className="flex items-center gap-2 mt-2 px-1 text-[11px] text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={addToAllOnPO}
+                onChange={(e) => setAddToAllOnPO(e.target.checked)}
+                className="rounded text-primary-600 w-3 h-3 border-gray-300"
+              />
+              Add to all styles on this PO
+            </label>
           </form>
         )}
       </div>
@@ -365,52 +373,96 @@ function CommentBubble({ comment, unread }: { comment: Comment; unread: boolean 
                       comment.source === 'internal';
 
   let timeAgo = '';
+  let fullDate = '';
   try {
     timeAgo = formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true });
+    fullDate = format(parseISO(comment.created_at), 'dd/MM/yyyy HH:mm');
   } catch { /* */ }
 
+  const initials = comment.username.slice(0, 2).toUpperCase();
+
   return (
-    <div
-      className={cn(
-        'rounded-xl px-4 py-3 relative border transition-colors',
-        isSourcelab ? 'bg-white border-primary-100 hover:border-primary-200' : 'bg-white border-orange-100 hover:border-orange-200',
-        unread && 'ring-2 ring-primary-200/60 border-primary-200'
-      )}
-    >
-      {unread && (
-        <div className="absolute top-3 right-3 w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
-      )}
-      <div className="flex items-center gap-2 mb-2">
+    <div className={cn('flex gap-2.5', !isSourcelab && 'flex-row-reverse')}>
+      {/* Avatar */}
+      <div
+        className={cn(
+          'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md flex-shrink-0 mt-0.5',
+          isSourcelab
+            ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white ring-2 ring-primary-200/40'
+            : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white ring-2 ring-orange-200/40'
+        )}
+      >
+        {initials}
+      </div>
+
+      {/* Bubble */}
+      <div className={cn('flex-1 min-w-0 max-w-[85%]', !isSourcelab && 'flex flex-col items-end')}>
+        {/* Name + time */}
+        <div className={cn('flex items-center gap-2 mb-1', !isSourcelab && 'flex-row-reverse')}>
+          <span className="text-[11px] font-semibold text-gray-900">{comment.username}</span>
+          <span className={cn(
+            'text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider',
+            isSourcelab ? 'bg-primary-100 text-primary-600' : 'bg-orange-100 text-orange-600'
+          )}>
+            {isSourcelab ? 'SL' : 'Supplier'}
+          </span>
+          <span className="text-[10px] text-gray-400" title={fullDate}>{timeAgo}</span>
+        </div>
+
+        {/* Message */}
         <div
           className={cn(
-            'w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shadow-sm',
-            isSourcelab ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white' : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white'
+            'relative px-3.5 py-2.5 rounded-2xl shadow-sm transition-all',
+            isSourcelab
+              ? 'bg-white border border-gray-200/80 rounded-tl-md'
+              : 'bg-orange-50 border border-orange-200/60 rounded-tr-md',
+            unread && 'ring-2 ring-primary-300/50'
           )}
         >
-          {comment.username.slice(0, 1).toUpperCase()}
+          {unread && (
+            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full ring-2 ring-white animate-pulse" />
+          )}
+          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.comment_text}</p>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-900">
-              {comment.username}
-            </span>
-            <span
-              className={cn(
-                'text-[10px] px-2 py-0.5 rounded-full font-semibold',
-                isSourcelab
-                  ? 'bg-primary-50 text-primary-600'
-                  : 'bg-orange-50 text-orange-600'
-              )}
-            >
-              {isSourcelab ? 'Sourcelab' : 'Supplier'}
-            </span>
+
+        {/* Read receipts */}
+        {comment.read_by_users && comment.read_by_users.length > 0 && (
+          <div className={cn('mt-1', !isSourcelab && 'self-end')}>
+            <ReadReceipts readers={comment.read_by_users} align={isSourcelab ? 'left' : 'right'} />
           </div>
-        </div>
-        <span className="text-[11px] text-gray-400 flex-shrink-0" title={format(parseISO(comment.created_at), 'dd/MM/yyyy HH:mm')}>
-          {timeAgo}
-        </span>
+        )}
       </div>
-      <p className="text-[13px] text-gray-700 ml-9 leading-relaxed">{comment.comment_text}</p>
+    </div>
+  );
+}
+
+function ReadReceipts({ readers, align = 'left' }: { readers: { username: string; full_name?: string | null; read_at: string }[]; align?: 'left' | 'right' }) {
+  const [showPopup, setShowPopup] = useState(false);
+
+  return (
+    <div className={cn('relative mt-1', align === 'right' ? 'text-right' : '')}>
+      <button
+        onMouseEnter={() => setShowPopup(true)}
+        onMouseLeave={() => setShowPopup(false)}
+        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        <Eye className="w-3 h-3" />
+        <span>Seen by {readers.length}</span>
+      </button>
+      {showPopup && (
+        <div className={cn('absolute bottom-full mb-1 bg-gray-900 text-white rounded-lg px-3 py-2 shadow-lg z-50 min-w-[160px]', align === 'right' ? 'right-0' : 'left-0')}>
+          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Read by</p>
+          {readers.map((r, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 py-0.5">
+              <span className="text-[11px] font-medium">{r.full_name || r.username}</span>
+              <span className="text-[9px] text-gray-500">
+                {(() => { try { return formatDistanceToNow(parseISO(r.read_at), { addSuffix: true }); } catch { return ''; } })()}
+              </span>
+            </div>
+          ))}
+          <div className={cn('absolute top-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-gray-900', align === 'right' ? 'right-4' : 'left-4')} />
+        </div>
+      )}
     </div>
   );
 }

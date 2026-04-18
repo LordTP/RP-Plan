@@ -668,6 +668,9 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
             viewType={viewType}
             onSave={handleDetailSave}
             supplierColumnSettings={supplierColumnSettings}
+            onCommentCountChange={(orderId, commentCount, unreadCount) => {
+              setOrders(prev => prev.map(o => o.id === orderId ? { ...o, comment_count: commentCount, unread_comment_count: unreadCount } : o));
+            }}
           />
         )}
       </div>
@@ -991,6 +994,7 @@ function DetailPanel({
   viewType,
   onSave,
   supplierColumnSettings,
+  onCommentCountChange,
 }: {
   order: Order;
   onClose: () => void;
@@ -999,6 +1003,7 @@ function DetailPanel({
   viewType: FactoryViewType;
   onSave?: (orderId: number, field: string, value: any) => void;
   supplierColumnSettings: { column_key: string; is_visible: boolean; is_editable: boolean }[];
+  onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
 }) {
   const allowedCols = viewType === 'factory-product'
     ? new Set(FACTORY_PRODUCT_COLUMNS)
@@ -1175,7 +1180,7 @@ function DetailPanel({
         <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
 
         {modalTab === 'comments' ? (
-          <InlineComments order={order} />
+          <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
         ) : (
         <>
         {/* Timeline / Key Dates */}
