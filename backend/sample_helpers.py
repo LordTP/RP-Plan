@@ -2,6 +2,32 @@
 from datetime import timedelta
 
 
+SAMPLE_PREFIXES_ORDER = ('fit_sample', 'strike_off', 'lab_dip', 'pps')
+SAMPLE_PREFIXES_COMPONENT = ('fit_sample', 'strike_off', 'lab_dip')
+
+
+def reconcile_sample_status(obj, prefixes, skip_prefixes=None):
+    """Ensure invariant: if *_approved date is set, *_status must be APPROVED
+    (unless status is NOT REQUIRED, which wins).
+
+    If the caller just explicitly updated a status field, pass that prefix in
+    skip_prefixes so the user's choice is respected (otherwise we'd clobber it).
+
+    Mutates the object in place. Call before commit on any order/component save.
+    """
+    skip = set(skip_prefixes or ())
+    for prefix in prefixes:
+        if prefix in skip:
+            continue
+        approved = getattr(obj, f'{prefix}_approved', None)
+        if not approved:
+            continue
+        status = (getattr(obj, f'{prefix}_status', '') or '').strip().upper()
+        if status in ('APPROVED', 'NOT REQUIRED'):
+            continue
+        setattr(obj, f'{prefix}_status', 'APPROVED')
+
+
 def is_sample_done(status_val, approved_date):
     """A sample is done if status=APPROVED or NOT REQUIRED, OR if an approved date exists"""
     s = (status_val or '').strip().upper()

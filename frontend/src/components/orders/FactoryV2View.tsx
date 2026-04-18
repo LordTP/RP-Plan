@@ -1557,29 +1557,32 @@ export function ComponentsSection({
       ) : (
         <div className="space-y-2">
           {components.map(comp => (
-            <div key={comp.id} className="border border-gray-200 rounded-xl overflow-hidden">
+            <div key={comp.id} className="border border-gray-200 rounded-xl">
               {/* Component Header */}
               <button
                 onClick={() => setExpandedId(expandedId === comp.id ? null : comp.id)}
-                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                className={cn(
+                  'w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left rounded-t-xl',
+                  expandedId !== comp.id && 'rounded-b-xl'
+                )}
               >
                 <div className="flex items-center gap-2">
                   <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', expandedId === comp.id && 'rotate-90')} />
                   <span className="text-xs font-semibold text-gray-700">{comp.name}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* Quick status summary */}
-                  {(comp.fit_sample_status || comp.fit_sample_approved) && (() => {
+                  {/* Quick status summary — always shown so incomplete samples are visible at a glance */}
+                  {(() => {
                     const s = (comp.fit_sample_status || '').toUpperCase();
                     const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.fit_sample_approved;
                     return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} Fit</span>;
                   })()}
-                  {(comp.strike_off_status || comp.strike_off_approved) && (() => {
+                  {(() => {
                     const s = (comp.strike_off_status || '').toUpperCase();
                     const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.strike_off_approved;
-                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700')}>{done ? '✓' : ''} SO</span>;
+                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} SO</span>;
                   })()}
-                  {(comp.lab_dip_status || comp.lab_dip_approved) && (() => {
+                  {(() => {
                     const s = (comp.lab_dip_status || '').toUpperCase();
                     const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.lab_dip_approved;
                     return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} LD</span>;
@@ -1664,6 +1667,7 @@ function ComponentFieldRow({
   const [stylesWithComp, setStylesWithComp] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loadingStyles, setLoadingStyles] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const displayValue = type === 'date' && value
     ? formatDate(value)
@@ -1694,7 +1698,7 @@ function ComponentFieldRow({
     <div className="flex items-center justify-between py-1 border-b border-gray-50 last:border-0">
       <span className="text-[11px] text-gray-400">{label}</span>
       {editing ? (
-        <div className="flex items-center gap-1">
+        <div ref={editorRef} className="flex items-center gap-1">
           {options ? (
             <StatusDropdown
               value={editValue}
@@ -1702,6 +1706,7 @@ function ComponentFieldRow({
               onSave={(v) => { setEditValue(v); setShowApplyMenu(true); }}
               onCancel={() => setEditing(false)}
               size="sm"
+              containerRef={editorRef}
             />
           ) : (
           <input
@@ -1714,12 +1719,14 @@ function ComponentFieldRow({
           />
           )}
           <div className="relative">
-            <button
-              onClick={() => { setShowApplyMenu(!showApplyMenu); setShowStylePicker(false); }}
-              className="text-[10px] px-2 py-0.5 bg-primary-600 text-white rounded hover:bg-primary-700"
-            >
-              Save
-            </button>
+            {!options && (
+              <button
+                onClick={() => { setShowApplyMenu(!showApplyMenu); setShowStylePicker(false); }}
+                className="text-[10px] px-2 py-0.5 bg-primary-600 text-white rounded hover:bg-primary-700"
+              >
+                Save
+              </button>
+            )}
             {showApplyMenu && !showStylePicker && (
               <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 w-56">
                 <button

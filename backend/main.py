@@ -32,7 +32,14 @@ from auth import (
     get_current_user, get_current_internal_user, get_current_full_internal_user, get_current_admin_user
 )
 from excel_utils import import_excel_to_database, export_database_to_excel
-from sample_helpers import is_sample_done, sample_needs_work, business_days_between
+from sample_helpers import (
+    is_sample_done,
+    sample_needs_work,
+    business_days_between,
+    reconcile_sample_status,
+    SAMPLE_PREFIXES_ORDER,
+    SAMPLE_PREFIXES_COMPONENT,
+)
 from dashboard_warnings import router as dashboard_warnings_router
 from supplier_access import apply_supplier_filter, supplier_filter_clause, assert_supplier_can_access
 
@@ -946,6 +953,11 @@ async def update_order(
     if order.pps_approved:
         order.ex_factory_from_pp_approval = order.pps_approved + timedelta(days=35)
 
+    user_touched_order_status = [p for p in SAMPLE_PREFIXES_ORDER if f'{p}_status' in order_data]
+    reconcile_sample_status(order, SAMPLE_PREFIXES_ORDER, skip_prefixes=user_touched_order_status)
+    for comp in order.components:
+        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT)
+
     db.commit()
     db.refresh(order)
 
@@ -1251,7 +1263,10 @@ async def create_component(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    component = OrderComponent(order_id=order_id, **data.model_dump(exclude_unset=True))
+    create_data = data.model_dump(exclude_unset=True)
+    component = OrderComponent(order_id=order_id, **create_data)
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in create_data]
+    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.add(component)
     db.commit()
     db.refresh(component)
@@ -1273,6 +1288,8 @@ async def update_component(
     for key, value in update_data.items():
         setattr(component, key, value)
     component.updated_at = datetime.utcnow()
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
+    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.commit()
     db.refresh(component)
     return component

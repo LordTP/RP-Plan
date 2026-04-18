@@ -1035,6 +1035,9 @@ def _calculate_order_totals(order) -> None:
     if order.pps_approved:
         order.ex_factory_from_pp_approval = order.pps_approved + timedelta(days=35)
 
+    from sample_helpers import reconcile_sample_status, SAMPLE_PREFIXES_ORDER
+    reconcile_sample_status(order, SAMPLE_PREFIXES_ORDER)
+
 
 def _values_different(old_value: Any, new_value: Any) -> bool:
     """Check if two values are meaningfully different"""

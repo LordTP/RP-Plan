@@ -167,12 +167,33 @@ class PurchaseOrderSupplierUpdate(BaseModel):
     # Note: Comments are handled separately via the comments endpoint
 
 
+class ComponentResponse(BaseModel):
+    id: int
+    order_id: int
+    name: str
+    fit_sample_status: Optional[str] = None
+    fit_sample_received: Optional[datetime] = None
+    fit_sample_approved: Optional[datetime] = None
+    strike_off_status: Optional[str] = None
+    strike_off_received: Optional[datetime] = None
+    strike_off_approved: Optional[datetime] = None
+    lab_dip_status: Optional[str] = None
+    lab_dip_received: Optional[datetime] = None
+    lab_dip_approved: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class PurchaseOrderResponse(PurchaseOrderBase):
     id: int
     created_at: datetime
     updated_at: datetime
     comment_count: Optional[int] = 0
     unread_comment_count: Optional[int] = 0
+    components: List[ComponentResponse] = []
 
     class Config:
         from_attributes = True
@@ -265,6 +286,7 @@ class PurchaseOrderSupplierResponse(BaseModel):
     is_late: bool = False
     comment_count: Optional[int] = 0
     unread_comment_count: Optional[int] = 0
+    components: List[ComponentResponse] = []
 
     created_at: datetime
     updated_at: datetime
@@ -337,26 +359,6 @@ class ComponentUpdate(BaseModel):
     lab_dip_status: Optional[str] = None
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
-
-
-class ComponentResponse(BaseModel):
-    id: int
-    order_id: int
-    name: str
-    fit_sample_status: Optional[str] = None
-    fit_sample_received: Optional[datetime] = None
-    fit_sample_approved: Optional[datetime] = None
-    strike_off_status: Optional[str] = None
-    strike_off_received: Optional[datetime] = None
-    strike_off_approved: Optional[datetime] = None
-    lab_dip_status: Optional[str] = None
-    lab_dip_received: Optional[datetime] = None
-    lab_dip_approved: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # Field Change History Schemas (tracks all field changes, not just dates)

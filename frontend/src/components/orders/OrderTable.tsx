@@ -7,8 +7,23 @@ import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
+import { ComponentSampleHover } from './ComponentSampleHover';
+import type { SampleKind } from '@/lib/sampleStatus';
 import type { ColumnDef, Order } from '@/types';
 import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN } from '@/types';
+
+// Map per-component column keys to (kind, field) for the hover summary renderer.
+const COMPONENT_COLUMN_MAP: Record<string, { kind: SampleKind; field: 'status' | 'received' | 'approved' }> = {
+  fit_sample_status: { kind: 'fit_sample', field: 'status' },
+  fit_sample_received: { kind: 'fit_sample', field: 'received' },
+  fit_sample_approved: { kind: 'fit_sample', field: 'approved' },
+  strike_off_status: { kind: 'strike_off', field: 'status' },
+  strike_off_received: { kind: 'strike_off', field: 'received' },
+  strike_off_approved: { kind: 'strike_off', field: 'approved' },
+  lab_dip_status: { kind: 'lab_dip', field: 'status' },
+  lab_dip_received: { kind: 'lab_dip', field: 'received' },
+  lab_dip_approved: { kind: 'lab_dip', field: 'approved' },
+};
 
 // Size reference mapping - matches Excel rows 2-14
 const SIZE_REFERENCE = [
@@ -610,6 +625,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       ) : isDashboard ? (
                         <div className="px-1 py-1 truncate text-[10px]">
                           {formatCellValue(order[column.key as keyof Order], column)}
+                        </div>
+                      ) : COMPONENT_COLUMN_MAP[column.key] && order.components && order.components.length > 0 ? (
+                        <div className="px-1 py-1">
+                          <ComponentSampleHover
+                            components={order.components}
+                            kind={COMPONENT_COLUMN_MAP[column.key].kind}
+                            field={COMPONENT_COLUMN_MAP[column.key].field}
+                          />
                         </div>
                       ) : (
                         <EditableCell

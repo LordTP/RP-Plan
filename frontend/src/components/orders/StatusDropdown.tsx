@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type RefObject } from 'react';
 import { Check, X, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -10,9 +10,13 @@ interface StatusDropdownProps {
   onSave: (value: string) => void;
   onCancel: () => void;
   size?: 'sm' | 'md';
+  // Optional: parent container ref to use for click-outside detection.
+  // Pass this when the dropdown lives alongside related UI (like an apply-to-PO menu)
+  // so clicks on that UI don't trigger cancel.
+  containerRef?: RefObject<HTMLElement>;
 }
 
-export function StatusDropdown({ value, options, onSave, onCancel, size = 'md' }: StatusDropdownProps) {
+export function StatusDropdown({ value, options, onSave, onCancel, size = 'md', containerRef }: StatusDropdownProps) {
   const [selected, setSelected] = useState(value || '');
   const [open, setOpen] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
@@ -20,13 +24,14 @@ export function StatusDropdown({ value, options, onSave, onCancel, size = 'md' }
   // Close on click outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const boundary = containerRef?.current || ref.current;
+      if (boundary && !boundary.contains(e.target as Node)) {
         onCancel();
       }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [onCancel]);
+  }, [onCancel, containerRef]);
 
   // Close on Escape
   useEffect(() => {

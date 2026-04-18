@@ -104,6 +104,8 @@ export interface Order {
   // Comments
   comment_count?: number;
   unread_comment_count?: number;
+  // Components (per-style sample tracking)
+  components?: OrderComponent[];
   // Metadata
   created_at: string;
   updated_at: string;
