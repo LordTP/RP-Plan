@@ -691,7 +691,7 @@ function DashboardContent() {
                 <span className="text-[10px] text-gray-400">Live</span>
               </div>
             </div>
-            <div className="space-y-1 max-h-[500px] overflow-y-auto px-1">
+            <div className="space-y-1 max-h-[340px] overflow-y-auto px-1">
               {recentActivity.length === 0 ? (
                 <div className="py-6 text-center text-[11px] text-gray-400">No recent activity</div>
               ) : recentActivity.map((event, idx) => {
