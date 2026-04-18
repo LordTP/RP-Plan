@@ -34,7 +34,6 @@ const navItemsBefore = [
 const navItemsAfter = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
-  { href: '/import', label: 'Import', icon: FileSpreadsheet, roles: ['admin', 'internal'] },
 ];
 
 const factorySubItems = [
@@ -347,6 +346,16 @@ export function Navbar() {
                 )}
 
                 <div className="p-1.5 space-y-0.5">
+                  {(user?.role === 'admin' || user?.role === 'internal') && (
+                    <Link
+                      href="/import"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-gray-400" />
+                      Import
+                    </Link>
+                  )}
                   <Link
                     href="/guide"
                     onClick={() => setUserMenuOpen(false)}
