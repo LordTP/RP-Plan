@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X } from 'lucide-react';
+import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTriangle, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
@@ -22,6 +22,18 @@ export default function DesignComponentsPage() {
 
 type Instance = { order: Order; component: OrderComponent };
 type SortMode = 'count' | 'pending' | 'alpha';
+
+// Statuses that mean "order has left the factory" — hidden by default so the
+// page focuses on work still in progress.
+const SHIPPED_STATUSES = new Set([
+  'Shipped', 'In Transit',
+  'Delivered', 'Delivered to UK', 'Delivered to Customer',
+  'Complete', 'Completed',
+]);
+
+function normalizeComponentName(name: string): string {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 function orderMatchesQuery(order: Order, q: string): boolean {
   const fields = [
@@ -55,6 +67,7 @@ function DesignComponentsContent() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('count');
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [hideShipped, setHideShipped] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,11 +96,12 @@ function DesignComponentsContent() {
     );
   }
 
-  // Raw groups (unfiltered)
+  // Raw groups (unfiltered by search/sort, but respects the hide-shipped toggle)
   const rawGroups = useMemo(() => {
     const byName = new Map<string, Instance[]>();
     for (const order of orders) {
       if (!order.components || order.components.length === 0) continue;
+      if (hideShipped && SHIPPED_STATUSES.has((order.status || '').trim())) continue;
       for (const component of order.components) {
         const key = component.name || '(unnamed)';
         if (!byName.has(key)) byName.set(key, []);
@@ -95,7 +109,7 @@ function DesignComponentsContent() {
       }
     }
     return Array.from(byName.entries()).map(([name, instances]) => ({ name, instances }));
-  }, [orders]);
+  }, [orders, hideShipped]);
 
   // Search + sort + compute stats (stats are on the visible instances after search so counts match what's shown)
   const groups: Group[] = useMemo(() => {
@@ -160,6 +174,25 @@ function DesignComponentsContent() {
 
   const selectedGroup = groups.find((g) => g.name === selectedName) || null;
   const totalInstancesVisible = groups.reduce((s, g) => s + g.total, 0);
+
+  // Data quality: find component names that differ only by casing/whitespace.
+  const dupeClusters = useMemo(() => {
+    const byNorm = new Map<string, string[]>();
+    for (const g of rawGroups) {
+      const norm = normalizeComponentName(g.name);
+      if (!norm) continue;
+      if (!byNorm.has(norm)) byNorm.set(norm, []);
+      byNorm.get(norm)!.push(g.name);
+    }
+    const clusters: { normalized: string; variants: string[] }[] = [];
+    for (const [norm, variants] of Array.from(byNorm.entries())) {
+      const uniqueVariants = Array.from(new Set(variants));
+      if (uniqueVariants.length > 1) {
+        clusters.push({ normalized: norm, variants: uniqueVariants });
+      }
+    }
+    return clusters;
+  }, [rawGroups]);
 
   // Summary stats for the selected component (computed on the visible instances so search-aware)
   const summary = useMemo(() => {
@@ -241,23 +274,34 @@ function DesignComponentsContent() {
                 </p>
               </div>
             </div>
-            <div className="relative flex-shrink-0">
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search PO, style, customer, factory..."
-                className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-72"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+            <div className="flex items-center gap-4 flex-shrink-0">
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={hideShipped}
+                  onChange={(e) => setHideShipped(e.target.checked)}
+                  className="w-3 h-3 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+                />
+                Hide shipped
+              </label>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search PO, style, customer, factory..."
+                  className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-72"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -308,6 +352,10 @@ function DesignComponentsContent() {
                   })
                 )}
               </div>
+              {/* Data quality callout */}
+              {dupeClusters.length > 0 && (
+                <DataQualityCallout clusters={dupeClusters} />
+              )}
             </div>
 
             {/* Main content */}
@@ -438,6 +486,42 @@ function DesignComponentsContent() {
     </AppShell>
   );
 }
+
+function DataQualityCallout({ clusters }: { clusters: { normalized: string; variants: string[] }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-t border-gray-100 bg-amber-50/40">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-amber-50 transition-colors"
+      >
+        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+        <span className="flex-1 text-[11px] font-medium text-amber-800 truncate">
+          {clusters.length} potential duplicate{clusters.length !== 1 ? 's' : ''}
+        </span>
+        <ChevronDown className={cn('w-3 h-3 text-amber-600 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 max-h-60 overflow-y-auto">
+          {clusters.map((c) => (
+            <div key={c.normalized} className="bg-white border border-amber-200 rounded-md px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-0.5">Same name, different casing/spacing</p>
+              <div className="space-y-0.5">
+                {c.variants.map((v) => (
+                  <div key={v} className="text-[11px] text-gray-700 font-mono truncate">"{v}"</div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="text-[10px] text-amber-700 leading-relaxed pt-1">
+            Tip: edit the component names on their styles so they match exactly.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function SortTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (

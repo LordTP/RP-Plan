@@ -743,6 +743,7 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
   const [role, setRole] = useState(u.role);
   const [factoryName, setFactoryName] = useState(u.factory_name || '');
   const [isActive, setIsActive] = useState(u.is_active);
+  const [mentionable, setMentionable] = useState(u.mentionable !== false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -765,6 +766,7 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
         role,
         factory_name: role === 'supplier' ? factoryName || undefined : undefined,
         is_active: isActive,
+        mentionable,
       });
       toast.success('User updated');
       onUpdated();
@@ -840,6 +842,13 @@ function EditUserModal({ user: u, factories, onClose, onUpdated }: { user: User;
               <p className="text-xs text-gray-400">Inactive users cannot log in</p>
             </div>
             <Toggle checked={isActive} onChange={setIsActive} />
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Available for @mentions</p>
+              <p className="text-xs text-gray-400">When off, this user is hidden from the @mention autocomplete and won't receive mention emails</p>
+            </div>
+            <Toggle checked={mentionable} onChange={setMentionable} />
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50/60">

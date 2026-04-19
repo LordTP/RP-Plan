@@ -6,6 +6,7 @@ export interface User {
   role: 'admin' | 'internal' | 'supplier' | 'sourcelab_designer';
   factory_name?: string;
   is_active: boolean;
+  mentionable?: boolean;
   last_login?: string;
 }
 

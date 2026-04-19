@@ -156,6 +156,14 @@ async def startup_event():
             conn.execute(text("ALTER TABLE users ADD COLUMN full_name VARCHAR(100)"))
         print("✓ Added full_name column to users table")
 
+    # Migration: add mentionable flag to users (default true so existing users stay visible)
+    if 'mentionable' not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN mentionable BOOLEAN DEFAULT TRUE"))
+            # Backfill NULL -> TRUE in case the default wasn't applied to existing rows
+            conn.execute(text("UPDATE users SET mentionable = TRUE WHERE mentionable IS NULL"))
+        print("✓ Added mentionable column to users table")
+
     # Seed default app_settings rows
     seed_db = SessionLocal()
     try:
@@ -296,8 +304,13 @@ async def get_mentionable_users(
 ):
     """Lightweight user search for @mention autocomplete in comments.
     Available to any authenticated user. Returns active users matching the
-    query against username or full_name. Excludes the current user."""
-    query = db.query(User).filter(User.is_active == True, User.id != current_user.id)
+    query against username or full_name. Excludes the current user and any
+    users an admin has flagged as non-mentionable."""
+    query = db.query(User).filter(
+        User.is_active == True,
+        User.id != current_user.id,
+        User.mentionable != False,
+    )
     if q:
         pattern = f"%{q.strip()}%"
         query = query.filter(or_(User.username.ilike(pattern), User.full_name.ilike(pattern)))
@@ -377,6 +390,8 @@ async def update_user(
                 detail="Only administrators can activate or deactivate users."
             )
         user.is_active = user_data['is_active']
+    if 'mentionable' in user_data:
+        user.mentionable = bool(user_data['mentionable'])
     if 'factory_name' in user_data:
         user.factory_name = user_data['factory_name']
     if 'full_name' in user_data:
@@ -1159,7 +1174,9 @@ async def add_comment(
     import re
     for match in re.finditer(r'@([A-Za-z0-9_.-]{2,50})', comment_data.comment_text):
         uname = match.group(1)
-        u = db.query(User).filter(User.username == uname, User.is_active == True).first()
+        u = db.query(User).filter(
+            User.username == uname, User.is_active == True, User.mentionable != False
+        ).first()
         if u:
             mentioned_ids.add(u.id)
     mentioned_ids.discard(current_user.id)  # No self-mentions
@@ -1167,7 +1184,11 @@ async def add_comment(
     mentioned_users = []
     if mentioned_ids:
         # Validate each ID points to a real active user before inserting
-        mentioned_users = db.query(User).filter(User.id.in_(mentioned_ids), User.is_active == True).all()
+        mentioned_users = db.query(User).filter(
+            User.id.in_(mentioned_ids),
+            User.is_active == True,
+            User.mentionable != False,
+        ).all()
         for mu in mentioned_users:
             db.add(CommentMention(comment_id=new_comment.id, user_id=mu.id))
 
@@ -2015,13 +2036,19 @@ async def bulk_add_comment(
     import re
     mentioned_ids = set(int(i) for i in mentioned_user_ids)
     for match in re.finditer(r'@([A-Za-z0-9_.-]{2,50})', comment_text):
-        u = db.query(User).filter(User.username == match.group(1), User.is_active == True).first()
+        u = db.query(User).filter(
+            User.username == match.group(1), User.is_active == True, User.mentionable != False
+        ).first()
         if u:
             mentioned_ids.add(u.id)
     mentioned_ids.discard(current_user.id)
     mentioned_users = []
     if mentioned_ids:
-        mentioned_users = db.query(User).filter(User.id.in_(mentioned_ids), User.is_active == True).all()
+        mentioned_users = db.query(User).filter(
+            User.id.in_(mentioned_ids),
+            User.is_active == True,
+            User.mentionable != False,
+        ).all()
 
     # Add comment to each order
     new_comments = []

@@ -539,6 +539,7 @@ export const usersApi = {
     role?: string;
     factory_name?: string;
     is_active?: boolean;
+    mentionable?: boolean;
     password?: string;
   }): Promise<User> => {
     const response = await api.put<User>(`/api/users/${userId}`, userData);

@@ -28,6 +28,7 @@ class User(Base):
     role = Column(Enum(UserRole), nullable=False, default=UserRole.SUPPLIER)
     factory_name = Column(String(100), nullable=True)  # For supplier users
     is_active = Column(Boolean, default=True)
+    mentionable = Column(Boolean, default=True)  # Admin can hide a user from the @mention autocomplete
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     previous_login = Column(DateTime, nullable=True)
