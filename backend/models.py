@@ -230,6 +230,22 @@ class CommentRead(Base):
     user = relationship("User")
 
 
+class CommentMention(Base):
+    """A user @mentioned in a comment. One row per (comment, user) pair.
+    Independent from CommentRead — mentioning doesn't auto-mark as read."""
+    __tablename__ = "comment_mentions"
+    __table_args__ = (UniqueConstraint('comment_id', 'user_id', name='uq_comment_mention'),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    comment = relationship("Comment", backref="mentions")
+    user = relationship("User")
+
+
 # Valid order statuses
 ORDER_STATUSES = [
     "Pending",

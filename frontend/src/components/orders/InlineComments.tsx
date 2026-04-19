@@ -8,6 +8,8 @@ import { useStore } from '@/store/useStore';
 import { ordersApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Order, Comment, DateHistory } from '@/types';
+import { MentionTextarea } from './MentionTextarea';
+import { CommentText } from './CommentText';
 
 interface InlineCommentsProps {
   order: Order;
@@ -20,6 +22,7 @@ export function InlineComments({ order, onCommentCountChange }: InlineCommentsPr
   const [history, setHistory] = useState<DateHistory[]>([]);
   const [activeTab, setActiveTab] = useState<'comments' | 'history'>('comments');
   const [newComment, setNewComment] = useState('');
+  const [mentionedIds, setMentionedIds] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [addToAllOnPO, setAddToAllOnPO] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
@@ -66,15 +69,16 @@ export function InlineComments({ order, onCommentCountChange }: InlineCommentsPr
     setIsSubmitting(true);
     try {
       if (addToAllOnPO && order.po_number) {
-        const result = await ordersApi.bulkAddComment(order.po_number, newComment.trim());
+        const result = await ordersApi.bulkAddComment(order.po_number, newComment.trim(), mentionedIds);
         toast.success(`Comment added to ${result.comments_added} orders`);
         setAddToAllOnPO(false);
       } else {
         const source = user.role === 'supplier' ? 'supplier' : 'internal';
-        await ordersApi.addOrderComment(order.id, newComment.trim(), source);
+        await ordersApi.addOrderComment(order.id, newComment.trim(), source, mentionedIds);
         toast.success('Comment added');
       }
       setNewComment('');
+      setMentionedIds([]);
       loadComments();
     } catch (error) {
       toast.error('Failed to add comment');
@@ -152,7 +156,9 @@ export function InlineComments({ order, onCommentCountChange }: InlineCommentsPr
                         {isUnread && (
                           <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full ring-2 ring-white animate-pulse" />
                         )}
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.comment_text}</p>
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          <CommentText text={comment.comment_text} />
+                        </p>
                       </div>
 
                       {/* Read receipts */}
@@ -170,21 +176,20 @@ export function InlineComments({ order, onCommentCountChange }: InlineCommentsPr
           {/* Comment Input */}
           <form onSubmit={handleSubmit} className="pt-4 border-t border-gray-100 mt-2">
             <div className="relative">
-              <textarea
+              <MentionTextarea
                 value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Write a message..."
-                rows={3}
-                className="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 resize-none"
-                disabled={isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (newComment.trim() && !isSubmitting) {
-                      (e.target as HTMLTextAreaElement).form?.requestSubmit();
-                    }
+                onChange={setNewComment}
+                onMentionsChange={setMentionedIds}
+                onSubmit={() => {
+                  if (newComment.trim() && !isSubmitting) {
+                    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
                   }
                 }}
+                onEnterSubmit
+                placeholder="Write a message... type @ to mention someone"
+                disabled={isSubmitting}
+                rows={3}
+                textareaClassName="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 resize-none"
               />
               <button
                 type="submit"

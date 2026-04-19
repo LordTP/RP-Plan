@@ -327,6 +327,19 @@ class CommentCreate(BaseModel):
     """Comment creation - po_id comes from URL path, not body"""
     comment_text: str = Field(..., min_length=1, max_length=5000)
     source: Optional[str] = None
+    # User IDs resolved by the client from the @mention autocomplete. The server
+    # will also parse @username tokens from comment_text as a fallback.
+    mentioned_user_ids: Optional[List[int]] = None
+
+
+class MentionableUser(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    role: str
+
+    class Config:
+        from_attributes = True
 
 
 class CommentReadBy(BaseModel):

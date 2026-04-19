@@ -1205,24 +1205,59 @@ function FieldReferenceTab() {
 }
 
 
+type EmailAutomation = {
+  key: string;
+  label: string;
+  description: string;
+  setting_key: string;
+  enabled: boolean;
+};
+
 function NotificationsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [emailsEnabled, setEmailsEnabled] = useState(false);
+  const [apiKeySet, setApiKeySet] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+  const [automations, setAutomations] = useState<EmailAutomation[]>([]);
+  const [savingAutomation, setSavingAutomation] = useState<string | null>(null);
+
+  const reload = async () => {
+    try {
+      const [settingsRes, automationsRes] = await Promise.all([
+        settingsApi.getAppSettings(),
+        settingsApi.getEmailAutomations(),
+      ]);
+      const v = String(settingsRes.settings.emails_enabled || 'false').toLowerCase();
+      setEmailsEnabled(v === 'true');
+      setApiKeySet(!!settingsRes.settings.resend_api_key_set);
+      setAutomations(automationsRes.automations);
+    } catch {
+      toast.error('Failed to load notification settings');
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    settingsApi
-      .getAppSettings()
-      .then((res) => {
-        if (cancelled) return;
-        const v = (res.settings.emails_enabled || 'false').toLowerCase();
-        setEmailsEnabled(v === 'true');
-      })
-      .catch(() => toast.error('Failed to load notification settings'))
-      .finally(() => { if (!cancelled) setIsLoading(false); });
-    return () => { cancelled = true; };
+    (async () => {
+      await reload();
+      setIsLoading(false);
+    })();
   }, []);
+
+  const toggleAutomation = async (a: EmailAutomation) => {
+    const next = !a.enabled;
+    setAutomations((prev) => prev.map((x) => (x.key === a.key ? { ...x, enabled: next } : x)));
+    setSavingAutomation(a.key);
+    try {
+      await settingsApi.updateAppSettings({ [a.setting_key]: next });
+    } catch {
+      setAutomations((prev) => prev.map((x) => (x.key === a.key ? { ...x, enabled: !next } : x)));
+      toast.error('Failed to update automation');
+    } finally {
+      setSavingAutomation(null);
+    }
+  };
 
   const toggleEmails = async () => {
     const next = !emailsEnabled;
@@ -1239,6 +1274,21 @@ function NotificationsTab() {
     }
   };
 
+  const saveApiKey = async () => {
+    if (!apiKeyInput.trim()) return;
+    setSavingKey(true);
+    try {
+      await settingsApi.updateAppSettings({ resend_api_key: apiKeyInput.trim() });
+      setApiKeyInput('');
+      toast.success('Resend API key saved');
+      await reload();
+    } catch {
+      toast.error('Failed to save API key');
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -1249,48 +1299,139 @@ function NotificationsTab() {
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">Global kill switch for all automatic emails sent by Critical Path.</p>
         </div>
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 divide-y divide-gray-100">
           {isLoading ? (
-            <div className="flex items-center gap-2 text-xs text-gray-400">
+            <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               Loading...
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Automatic emails</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {emailsEnabled
-                    ? 'Automations may send emails (comment notifications, approvals, digests, etc.)'
-                    : 'No automatic emails will be sent — this is a hard stop across the whole app.'}
+            <>
+              <div className="flex items-center justify-between gap-4 pb-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Automatic emails</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {emailsEnabled
+                      ? 'Automations may send emails (comment mentions, approvals, digests, etc.)'
+                      : 'No automatic emails will be sent — this is a hard stop across the whole app.'}
+                  </p>
+                </div>
+                <button
+                  onClick={toggleEmails}
+                  disabled={saving}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50',
+                    emailsEnabled ? 'bg-primary-600' : 'bg-gray-300'
+                  )}
+                  aria-pressed={emailsEnabled}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                      emailsEnabled ? 'translate-x-6' : 'translate-x-1'
+                    )}
+                  />
+                </button>
+              </div>
+
+              <div className="pt-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Resend API key</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Used to send emails via Resend. Without a key, emails are logged only.
+                    </p>
+                  </div>
+                  <span className={cn(
+                    'text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                    apiKeySet ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  )}>
+                    {apiKeySet ? 'Configured' : 'Not set'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder={apiKeySet ? 'Enter a new key to replace' : 'Paste your Resend API key'}
+                    className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 font-mono"
+                    autoComplete="off"
+                  />
+                  <button
+                    onClick={saveApiKey}
+                    disabled={!apiKeyInput.trim() || savingKey}
+                    className="px-4 py-1.5 text-xs font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-40 transition-colors"
+                  >
+                    {savingKey ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  Stored in the database (admin-only). For safety, existing keys are never shown back — paste a new one to replace.
                 </p>
               </div>
-              <button
-                onClick={toggleEmails}
-                disabled={saving}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50',
-                  emailsEnabled ? 'bg-primary-600' : 'bg-gray-300'
-                )}
-                aria-pressed={emailsEnabled}
-              >
-                <span
-                  className={cn(
-                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                    emailsEnabled ? 'translate-x-6' : 'translate-x-1'
-                  )}
-                />
-              </button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
+      {/* Per-automation toggles */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-gray-500" />
+            Automations
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Turn each email type on or off individually. All automations require the master switch to be on.
+          </p>
+        </div>
+        <div className={cn('divide-y divide-gray-100', !emailsEnabled && 'opacity-60 pointer-events-none select-none')}>
+          {isLoading ? (
+            <div className="px-5 py-6 flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading...
+            </div>
+          ) : automations.length === 0 ? (
+            <div className="px-5 py-6 text-xs text-gray-400">No automations registered yet.</div>
+          ) : (
+            automations.map((a) => (
+              <div key={a.key} className="px-5 py-3 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{a.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{a.description}</p>
+                </div>
+                <button
+                  onClick={() => toggleAutomation(a)}
+                  disabled={savingAutomation === a.key}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50',
+                    a.enabled ? 'bg-primary-600' : 'bg-gray-300'
+                  )}
+                  aria-pressed={a.enabled}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                      a.enabled ? 'translate-x-6' : 'translate-x-1'
+                    )}
+                  />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+        {!emailsEnabled && !isLoading && (
+          <div className="px-5 py-2 text-[11px] text-gray-400 border-t border-gray-100 bg-gray-50/60">
+            Individual automations are disabled while the master switch is off.
+          </div>
+        )}
+      </div>
+
       <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4">
         <p className="text-xs text-amber-800 leading-relaxed">
-          <strong>Heads up:</strong> This is the master switch. Per-user email preferences (which
-          automations they want to receive) will live on individual user profiles when those
-          automations are built.
+          <strong>Heads up:</strong> The master switch is a hard stop. Per-user email preferences
+          will live on individual user profiles later.
         </p>
       </div>
     </div>

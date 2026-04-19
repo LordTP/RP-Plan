@@ -237,6 +237,51 @@ function DashboardContent() {
     return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Strip the time portion from stored datetime strings like "2026-04-13 00:00:00"
+  // so date fields render as just "2026-04-13" in the recent activity feed.
+  const stripTimeFromDate = (v: string): string => {
+    if (!v) return v;
+    const m = v.match(/^(\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2})?/);
+    return m ? m[1] : v;
+  };
+
+  // Collapse bulk writes (same user hitting "Add to all styles on PO") into one
+  // activity row. Events within ~60 seconds of each other that share user +
+  // PO + action are merged; the group tracks every affected style.
+  type ActivityGroup = RecentActivityEvent & { styles: string[]; count: number };
+  const groupBulkActivity = (events: RecentActivityEvent[]): ActivityGroup[] => {
+    const groups: ActivityGroup[] = [];
+    const WINDOW_MS = 60_000;
+    for (const e of events) {
+      const eTime = e.created_at ? new Date(e.created_at).getTime() : 0;
+      const key = e.type === 'comment'
+        ? `comment|${e.username}|${e.po_number}|${e.comment_text || ''}`
+        : `change|${e.username}|${e.po_number}|${e.field_name || ''}|${e.old_value || ''}|${e.new_value || ''}`;
+      // Find a matching group from the most recent entries (events come newest-first)
+      const match = groups.find((g) => {
+        const gKey = g.type === 'comment'
+          ? `comment|${g.username}|${g.po_number}|${g.comment_text || ''}`
+          : `change|${g.username}|${g.po_number}|${g.field_name || ''}|${g.old_value || ''}|${g.new_value || ''}`;
+        if (gKey !== key) return false;
+        const gTime = g.created_at ? new Date(g.created_at).getTime() : 0;
+        return Math.abs(gTime - eTime) <= WINDOW_MS;
+      });
+      if (match) {
+        if (e.style_code && !match.styles.includes(e.style_code)) {
+          match.styles.push(e.style_code);
+        }
+        match.count += 1;
+      } else {
+        groups.push({
+          ...e,
+          styles: e.style_code ? [e.style_code] : [],
+          count: 1,
+        });
+      }
+    }
+    return groups;
+  };
+
   const stats = dashboardStats;
 
   if (isLoading) {
@@ -691,10 +736,10 @@ function DashboardContent() {
                 <span className="text-[10px] text-gray-400">Live</span>
               </div>
             </div>
-            <div className="space-y-1 max-h-[340px] overflow-y-auto px-1">
+            <div className="space-y-1 max-h-[490px] overflow-y-auto px-1">
               {recentActivity.length === 0 ? (
                 <div className="py-6 text-center text-[11px] text-gray-400">No recent activity</div>
-              ) : recentActivity.map((event, idx) => {
+              ) : groupBulkActivity(recentActivity).map((event, idx) => {
                 const isComment = event.type === 'comment';
                 const isSupplierSource = event.source === 'Supplier';
                 const bgColor = isComment
@@ -703,6 +748,10 @@ function DashboardContent() {
                 const initialsColor = isComment
                   ? (isSupplierSource ? 'text-orange-500' : 'text-purple-500')
                   : (isSupplierSource ? 'text-orange-500' : 'text-blue-500');
+                const isBulk = event.count > 1;
+                const styleLabel = isBulk
+                  ? `${event.styles.length} styles`
+                  : (event.style_code || '');
 
                 return (
                   <div
@@ -718,7 +767,13 @@ function DashboardContent() {
                         <span className="text-[11px] font-semibold text-gray-900">{event.username}</span>
                         <span className="text-[10px] text-gray-300">·</span>
                         <span className="text-[10px] text-gray-400">{event.po_number}</span>
-                        {event.style_code && <span className="text-[10px] text-gray-300">{event.style_code}</span>}
+                        {styleLabel && (
+                          isBulk ? (
+                            <BulkStylesPill count={event.styles.length} styles={event.styles} />
+                          ) : (
+                            <span className="text-[10px] text-gray-300">{styleLabel}</span>
+                          )
+                        )}
                         <span className="text-[10px] text-gray-300 ml-auto">{event.created_at ? timeAgo(event.created_at) : ''}</span>
                       </div>
                       {isComment ? (
@@ -729,9 +784,9 @@ function DashboardContent() {
                       ) : (
                         <p className="text-[11px] text-gray-600 mt-0.5">
                           <span className="text-blue-500 font-medium">{formatFieldName(event.field_name || '')}: </span>
-                          {event.old_value && <span className="text-gray-400 line-through">{event.old_value}</span>}
+                          {event.old_value && <span className="text-gray-400 line-through">{stripTimeFromDate(event.old_value)}</span>}
                           {event.old_value && event.new_value && <span className="text-gray-300"> → </span>}
-                          {event.new_value && <span className="font-medium text-gray-700">{event.new_value}</span>}
+                          {event.new_value && <span className="font-medium text-gray-700">{stripTimeFromDate(event.new_value)}</span>}
                         </p>
                       )}
                     </div>
@@ -1029,5 +1084,33 @@ function WarningsCentre({ warnings }: { warnings: any[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+
+function BulkStylesPill({ count, styles }: { count: number; styles: string[] }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span
+      className="relative"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="text-[10px] font-semibold text-primary-700 bg-primary-50 ring-1 ring-primary-100 rounded px-1.5 py-0.5 cursor-default">
+        {count} styles
+      </span>
+      {show && (
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 bg-white text-gray-800 rounded-lg shadow-lg ring-1 ring-gray-200 py-2 px-3 z-50 min-w-[180px]">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[5px] border-b-white" />
+          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Styles</p>
+          <div className="space-y-0.5 max-h-48 overflow-y-auto">
+            {styles.map((s, i) => (
+              <div key={i} className="text-[11px] font-medium text-gray-700 whitespace-nowrap">{s}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </span>
   );
 }

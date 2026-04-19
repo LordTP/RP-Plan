@@ -8,6 +8,8 @@ import { useStore } from '@/store/useStore';
 import { ordersApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Comment, DateHistory } from '@/types';
+import { MentionTextarea } from './MentionTextarea';
+import { CommentText } from './CommentText';
 
 export function CommentSidebar() {
   const {
@@ -22,6 +24,7 @@ export function CommentSidebar() {
   } = useStore();
 
   const [newComment, setNewComment] = useState('');
+  const [mentionedIds, setMentionedIds] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<DateHistory[]>([]);
   const [activeTab, setActiveTab] = useState<'comments' | 'history'>('comments');
@@ -77,7 +80,7 @@ export function CommentSidebar() {
     setIsSubmitting(true);
     try {
       if (addToAllOnPO && selectedOrder.po_number) {
-        const result = await ordersApi.bulkAddComment(selectedOrder.po_number, newComment.trim());
+        const result = await ordersApi.bulkAddComment(selectedOrder.po_number, newComment.trim(), mentionedIds);
         toast.success(`Comment added to ${result.comments_added} orders`);
         setAddToAllOnPO(false);
       } else {
@@ -85,12 +88,14 @@ export function CommentSidebar() {
         const comment = await ordersApi.addOrderComment(
           selectedOrder.id,
           newComment.trim(),
-          source
+          source,
+          mentionedIds,
         );
         addComment(comment);
         toast.success('Comment added');
       }
       setNewComment('');
+      setMentionedIds([]);
       loadComments();
       // Update the comment count on the order in the table
       if (selectedOrder) {
@@ -323,21 +328,20 @@ export function CommentSidebar() {
             className="p-4 border-t border-gray-200/60 bg-white"
           >
             <div className="relative">
-              <textarea
+              <MentionTextarea
                 value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Write a message..."
-                rows={3}
-                className="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 transition-all resize-none"
-                disabled={isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (newComment.trim() && !isSubmitting) {
-                      (e.target as HTMLTextAreaElement).form?.requestSubmit();
-                    }
+                onChange={setNewComment}
+                onMentionsChange={setMentionedIds}
+                onSubmit={() => {
+                  if (newComment.trim() && !isSubmitting) {
+                    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
                   }
                 }}
+                onEnterSubmit
+                placeholder="Write a message... type @ to mention someone"
+                disabled={isSubmitting}
+                rows={3}
+                textareaClassName="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 transition-all resize-none"
               />
               <button
                 type="submit"
@@ -422,7 +426,9 @@ function CommentBubble({ comment, unread }: { comment: Comment; unread: boolean 
           {unread && (
             <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full ring-2 ring-white animate-pulse" />
           )}
-          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.comment_text}</p>
+          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+            <CommentText text={comment.comment_text} />
+          </p>
         </div>
 
         {/* Read receipts */}

@@ -177,10 +177,11 @@ export const ordersApi = {
     return response.data;
   },
 
-  addOrderComment: async (id: number, commentText: string, source: 'internal' | 'supplier'): Promise<Comment> => {
+  addOrderComment: async (id: number, commentText: string, source: 'internal' | 'supplier', mentionedUserIds?: number[]): Promise<Comment> => {
     const response = await api.post<Comment>(`/api/orders/${id}/comments`, {
       comment_text: commentText,
       source,
+      mentioned_user_ids: mentionedUserIds && mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
     });
     return response.data;
   },
@@ -221,10 +222,11 @@ export const ordersApi = {
     return response.data;
   },
 
-  bulkAddComment: async (poNumber: string, commentText: string): Promise<{ comments_added: number }> => {
+  bulkAddComment: async (poNumber: string, commentText: string, mentionedUserIds?: number[]): Promise<{ comments_added: number }> => {
     const response = await api.post('/api/orders/bulk-add-comment', {
       po_number: poNumber,
       comment_text: commentText,
+      mentioned_user_ids: mentionedUserIds && mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
     });
     return response.data;
   },
@@ -335,13 +337,20 @@ export const settingsApi = {
   },
 
   // Admin-managed app-wide settings (e.g. emails kill switch).
-  getAppSettings: async (): Promise<{ settings: Record<string, string> }> => {
+  getAppSettings: async (): Promise<{ settings: Record<string, string | boolean> }> => {
     const response = await api.get('/api/settings/app');
     return response.data;
   },
 
   updateAppSettings: async (updates: Record<string, string | boolean>): Promise<{ success: boolean; updated: string[] }> => {
     const response = await api.put('/api/settings/app', updates);
+    return response.data;
+  },
+
+  getEmailAutomations: async (): Promise<{
+    automations: { key: string; label: string; description: string; setting_key: string; enabled: boolean }[];
+  }> => {
+    const response = await api.get('/api/settings/email-automations');
     return response.data;
   },
 };
@@ -491,9 +500,23 @@ export const excelApi = {
 };
 
 // User management endpoints
+export interface MentionableUser {
+  id: number;
+  username: string;
+  full_name?: string | null;
+  role: string;
+}
+
 export const usersApi = {
   getUsers: async (): Promise<User[]> => {
     const response = await api.get<User[]>('/api/users');
+    return response.data;
+  },
+
+  getMentionableUsers: async (query: string, limit = 10): Promise<MentionableUser[]> => {
+    const response = await api.get<MentionableUser[]>('/api/users/mentionable', {
+      params: { q: query || undefined, limit },
+    });
     return response.data;
   },
 

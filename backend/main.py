@@ -16,13 +16,13 @@ from collections import defaultdict
 import time as _time
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, CommentRead, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent, AppSetting
+from models import User, PurchaseOrder, Comment, CommentRead, CommentMention, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent, AppSetting
 import app_settings
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
     PurchaseOrderSupplierResponse, PurchaseOrderSupplierUpdate,
-    CommentCreate, CommentResponse, CommentReadBy,
+    CommentCreate, CommentResponse, CommentReadBy, MentionableUser,
     ComponentCreate, ComponentUpdate, ComponentResponse,
     DateChangeResponse,
     ExcelUploadResponse,
@@ -41,6 +41,7 @@ from sample_helpers import (
     SAMPLE_PREFIXES_ORDER,
     SAMPLE_PREFIXES_COMPONENT,
 )
+import email_service
 from dashboard_warnings import router as dashboard_warnings_router
 from supplier_access import apply_supplier_filter, supplier_filter_clause, assert_supplier_can_access
 
@@ -283,6 +284,24 @@ async def get_all_users(
 ):
     """Get all users (internal/admin only)"""
     users = db.query(User).order_by(User.created_at.desc()).all()
+    return users
+
+
+@app.get("/api/users/mentionable", response_model=List[MentionableUser])
+async def get_mentionable_users(
+    q: Optional[str] = None,
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lightweight user search for @mention autocomplete in comments.
+    Available to any authenticated user. Returns active users matching the
+    query against username or full_name. Excludes the current user."""
+    query = db.query(User).filter(User.is_active == True, User.id != current_user.id)
+    if q:
+        pattern = f"%{q.strip()}%"
+        query = query.filter(or_(User.username.ilike(pattern), User.full_name.ilike(pattern)))
+    users = query.order_by(User.username.asc()).limit(limit).all()
     return users
 
 
@@ -1129,8 +1148,72 @@ async def add_comment(
 
     # Mark as read by the creator
     db.add(CommentRead(comment_id=new_comment.id, user_id=current_user.id))
+
+    # Resolve @mentions — union of explicit IDs from the client and usernames
+    # parsed from comment text (fallback for pasted text). Skip self-mentions
+    # and dedupe.
+    mentioned_ids = set()
+    if comment_data.mentioned_user_ids:
+        mentioned_ids.update(int(i) for i in comment_data.mentioned_user_ids)
+    # Parse @username tokens from text (letters/digits/underscore/dot/hyphen)
+    import re
+    for match in re.finditer(r'@([A-Za-z0-9_.-]{2,50})', comment_data.comment_text):
+        uname = match.group(1)
+        u = db.query(User).filter(User.username == uname, User.is_active == True).first()
+        if u:
+            mentioned_ids.add(u.id)
+    mentioned_ids.discard(current_user.id)  # No self-mentions
+
+    mentioned_users = []
+    if mentioned_ids:
+        # Validate each ID points to a real active user before inserting
+        mentioned_users = db.query(User).filter(User.id.in_(mentioned_ids), User.is_active == True).all()
+        for mu in mentioned_users:
+            db.add(CommentMention(comment_id=new_comment.id, user_id=mu.id))
+
     db.commit()
     db.refresh(new_comment)
+
+    # Send @mention emails (gated by the kill switch + the per-automation toggle).
+    # Failures are logged but never block the response.
+    if mentioned_users:
+        author_name = current_user.full_name or current_user.username
+        subject_base = f"{author_name} mentioned you on PO#{order.po_number}"
+        preheader_parts = [f"New mention by {author_name}"]
+        if order.style_code:
+            preheader_parts.append(order.style_code)
+        if order.customer:
+            preheader_parts.append(order.customer)
+        preheader = " · ".join(preheader_parts)
+        for mu in mentioned_users:
+            if not mu.email:
+                continue
+            html = email_service.render(
+                "mention.html.j2",
+                subject=subject_base,
+                preheader=preheader,
+                heading=f"{author_name} mentioned you",
+                subheading=f"On PO#{order.po_number}" + (f" · {order.style_code}" if order.style_code else ""),
+                cta_url=f"{email_service.APP_BASE_URL}/design?openStyle={order.id}",
+                cta_label="View comment",
+                po_number=order.po_number,
+                customer_po_number=order.customer_po_number,
+                style_code=order.style_code,
+                colour=order.colour,
+                description=order.description,
+                customer=order.customer,
+                factory=order.factory,
+                author_name=author_name,
+                comment_text=new_comment.comment_text,
+            )
+            email_service.send_automation_email(
+                db=db,
+                automation_key='email_mention',
+                to=mu.email,
+                subject=subject_base,
+                html=html,
+                reply_to=current_user.email,
+            )
 
     # Broadcast new comment
     await manager.broadcast({
@@ -1492,13 +1575,42 @@ async def get_app_settings(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Get all admin-managed app settings."""
+    """Get all admin-managed app settings. Secret keys are never returned in
+    plaintext — a companion `{key}_set` flag indicates whether a value exists."""
     rows = db.query(AppSetting).all()
-    settings = {r.key: r.value for r in rows}
+    raw = {r.key: (r.value or '') for r in rows}
     # Fill in defaults for any missing keys so the client always has a full map
     for key, default in app_settings.DEFAULTS.items():
-        settings.setdefault(key, default)
+        raw.setdefault(key, default)
+    settings = {}
+    set_flags = {}
+    for key, value in raw.items():
+        if key in app_settings.SECRET_KEYS:
+            set_flags[f'{key}_set'] = bool(value and value.strip())
+            settings[key] = ''  # never echo the secret back
+        else:
+            settings[key] = value
+    settings.update(set_flags)
     return {"settings": settings}
+
+
+@app.get("/api/settings/email-automations")
+async def get_email_automations(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """List all registered email automations and whether each is enabled."""
+    out = []
+    for a in app_settings.EMAIL_AUTOMATIONS:
+        setting_key = app_settings.automation_setting_key(a['key'])
+        out.append({
+            'key': a['key'],
+            'label': a['label'],
+            'description': a['description'],
+            'setting_key': setting_key,
+            'enabled': app_settings.get_bool(db, setting_key),
+        })
+    return {'automations': out}
 
 
 @app.put("/api/settings/app")
@@ -1507,15 +1619,25 @@ async def update_app_settings(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """Update one or more admin-managed app settings. Only keys in DEFAULTS are accepted."""
+    """Update one or more admin-managed app settings. Only keys in DEFAULTS are accepted.
+
+    Empty-string submissions for secret keys are ignored (treated as "no change")
+    so that re-saving other settings doesn't wipe a previously-set secret."""
     allowed = set(app_settings.DEFAULTS.keys())
-    updates = {k: v for k, v in data.items() if k in allowed}
-    for key, value in updates.items():
+    updated_keys = []
+    for key, value in data.items():
+        if key not in allowed:
+            continue
         # Normalize booleans submitted as real booleans
         if isinstance(value, bool):
             value = 'true' if value else 'false'
-        app_settings.set_setting(db, key, str(value))
-    return {"success": True, "updated": list(updates.keys())}
+        value = str(value)
+        # Don't overwrite a secret with an empty string (partial PUT protection)
+        if key in app_settings.SECRET_KEYS and not value.strip():
+            continue
+        app_settings.set_setting(db, key, value)
+        updated_keys.append(key)
+    return {"success": True, "updated": updated_keys}
 
 
 @app.get("/api/settings/role-columns/{role}")
@@ -1864,9 +1986,11 @@ async def bulk_add_comment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Add a comment to all orders with the same PO number"""
+    """Add a comment to all orders with the same PO number. @mentions send a
+    SINGLE consolidated email per mentioned user summarising every style."""
     po_number = data.get("po_number")
     comment_text = data.get("comment_text")
+    mentioned_user_ids = data.get("mentioned_user_ids") or []
 
     if not po_number or not comment_text:
         raise HTTPException(status_code=400, detail="po_number and comment_text are required")
@@ -1887,6 +2011,18 @@ async def bulk_add_comment(
     # Tag as "Supplier" for factory/supplier users, "Sourcelab" for internal/admin
     source_tag = "Sourcelab" if is_internal else "Supplier"
 
+    # Resolve @mentions — union of explicit IDs + @username tokens from text
+    import re
+    mentioned_ids = set(int(i) for i in mentioned_user_ids)
+    for match in re.finditer(r'@([A-Za-z0-9_.-]{2,50})', comment_text):
+        u = db.query(User).filter(User.username == match.group(1), User.is_active == True).first()
+        if u:
+            mentioned_ids.add(u.id)
+    mentioned_ids.discard(current_user.id)
+    mentioned_users = []
+    if mentioned_ids:
+        mentioned_users = db.query(User).filter(User.id.in_(mentioned_ids), User.is_active == True).all()
+
     # Add comment to each order
     new_comments = []
     for order in orders:
@@ -1903,11 +2039,58 @@ async def bulk_add_comment(
 
     db.flush()  # Get IDs for all comments
 
-    # Mark all as read by the creator
+    # Mark all as read by the creator + persist mention rows on every comment
     for comment in new_comments:
         db.add(CommentRead(comment_id=comment.id, user_id=current_user.id))
+        for mu in mentioned_users:
+            db.add(CommentMention(comment_id=comment.id, user_id=mu.id))
 
     db.commit()
+
+    # Send ONE email per mentioned user, summarising every style on the PO.
+    if mentioned_users and orders:
+        author_name = current_user.full_name or current_user.username
+        rep = orders[0]  # PO-level info (customer, factory) is shared across styles
+        styles_list = [
+            {
+                'style_code': o.style_code,
+                'colour': o.colour,
+                'description': o.description,
+            }
+            for o in orders if o.style_code
+        ]
+        subject_base = f"{author_name} mentioned you on PO#{rep.po_number}"
+        preheader_parts = [f"New mention by {author_name}", f"PO#{rep.po_number}", f"{len(styles_list)} styles"]
+        if rep.customer:
+            preheader_parts.append(rep.customer)
+        preheader = " · ".join(preheader_parts)
+        subheading = f"On PO#{rep.po_number} · {len(styles_list)} {'styles' if len(styles_list) != 1 else 'style'}"
+        for mu in mentioned_users:
+            if not mu.email:
+                continue
+            html = email_service.render(
+                "mention.html.j2",
+                subject=subject_base,
+                preheader=preheader,
+                heading=f"{author_name} mentioned you",
+                subheading=subheading,
+                cta_url=f"{email_service.APP_BASE_URL}/design?expandPO={rep.po_number}",
+                cta_label="View on PO",
+                po_number=rep.po_number,
+                styles=styles_list,  # list of {style_code, colour, description}; template renders richly
+                customer=rep.customer,
+                factory=rep.factory,
+                author_name=author_name,
+                comment_text=comment_text,
+            )
+            email_service.send_automation_email(
+                db=db,
+                automation_key='email_mention',
+                to=mu.email,
+                subject=subject_base,
+                html=html,
+                reply_to=current_user.email,
+            )
 
     # Broadcast update
     await manager.broadcast({
