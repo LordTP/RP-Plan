@@ -1,10 +1,25 @@
 """
 Pydantic schemas for request/response validation
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+
+
+# Coerce bare "YYYY-MM-DD" date strings (from HTML date inputs) into a form
+# Pydantic v2 accepts for datetime fields. Pydantic v2 requires a T separator.
+def _coerce_date_only_string(v):
+    if isinstance(v, str) and len(v) == 10 and v[4] == '-' and v[7] == '-':
+        return v + 'T00:00:00'
+    return v
+
+
+_COMPONENT_DATE_FIELDS = (
+    'fit_sample_received', 'fit_sample_approved',
+    'strike_off_received', 'strike_off_approved',
+    'lab_dip_received', 'lab_dip_approved',
+)
 
 
 class UserRole(str, Enum):
@@ -347,6 +362,8 @@ class ComponentCreate(BaseModel):
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
 
+    _coerce_date_fields = field_validator(*_COMPONENT_DATE_FIELDS, mode='before')(_coerce_date_only_string)
+
 
 class ComponentUpdate(BaseModel):
     name: Optional[str] = None
@@ -359,6 +376,8 @@ class ComponentUpdate(BaseModel):
     lab_dip_status: Optional[str] = None
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
+
+    _coerce_date_fields = field_validator(*_COMPONENT_DATE_FIELDS, mode='before')(_coerce_date_only_string)
 
 
 # Field Change History Schemas (tracks all field changes, not just dates)

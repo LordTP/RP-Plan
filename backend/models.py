@@ -260,6 +260,16 @@ class RoleColumnSettings(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AppSetting(Base):
+    """Generic key-value app settings (admin-managed). Used for the emails
+    kill switch and any future global toggles."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(String(500), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class DateChangeHistory(Base):
     """Tracks all field changes (not just dates, despite the name)"""
     __tablename__ = "date_change_history"

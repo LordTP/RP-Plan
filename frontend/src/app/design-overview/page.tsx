@@ -122,6 +122,58 @@ function DesignOverviewContent() {
           </div>
         </div>
 
+        {/* At Risk + Awaiting Action */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* At Risk */}
+          <SearchableAlertCard
+            title="Late / At Risk Samples"
+            description="Approaching ex-factory with unapproved samples"
+            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
+            emptyText="No at-risk samples"
+            items={data.at_risk_samples || []}
+            renderItem={(item: any) => (
+              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs hover:bg-red-50 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                  <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', item.days_until_ex_factory <= 14 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
+                    {item.days_until_ex_factory}d to ex-fac
+                  </span>
+                </div>
+                <p className="text-gray-500">{item.factory} · {item.customer}</p>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {item.issues.map((issue: string, i: number) => (
+                    <span key={i} className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">{issue}</span>
+                  ))}
+                </div>
+              </Link>
+            )}
+          />
+
+          {/* Awaiting Action */}
+          <SearchableAlertCard
+            title="Awaiting Action"
+            description="Samples received but not yet approved"
+            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
+            emptyText="All samples actioned"
+            items={data.awaiting_action || []}
+            renderItem={(item: any) => (
+              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-amber-50/60 rounded-xl border border-amber-100 text-xs hover:bg-amber-50 transition-colors">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
+                  <span className="text-[10px] text-gray-400">{item.factory}</span>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {item.actions.map((a: any, i: number) => (
+                    <span key={i} className={cn('text-[9px] px-1.5 py-0.5 rounded font-medium', a.received_days_ago > 14 ? 'bg-red-100 text-red-600' : a.received_days_ago > 7 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600')}>
+                      {a.type} · {a.received_days_ago}d ago
+                    </span>
+                  ))}
+                </div>
+              </Link>
+            )}
+          />
+        </div>
+
         {/* Component Coverage + Factory Performance */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Component Coverage */}
@@ -237,57 +289,6 @@ function DesignOverviewContent() {
           </div>
         </div>
 
-        {/* At Risk + Awaiting Action */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* At Risk */}
-          <SearchableAlertCard
-            title="Late / At Risk Samples"
-            description="Approaching ex-factory with unapproved samples"
-            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
-            emptyText="No at-risk samples"
-            items={data.at_risk_samples || []}
-            renderItem={(item: any) => (
-              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-red-50/60 rounded-xl border border-red-100 text-xs hover:bg-red-50 transition-colors">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
-                  <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full', item.days_until_ex_factory <= 14 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
-                    {item.days_until_ex_factory}d to ex-fac
-                  </span>
-                </div>
-                <p className="text-gray-500">{item.factory} · {item.customer}</p>
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {item.issues.map((issue: string, i: number) => (
-                    <span key={i} className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 rounded font-medium">{issue}</span>
-                  ))}
-                </div>
-              </Link>
-            )}
-          />
-
-          {/* Awaiting Action */}
-          <SearchableAlertCard
-            title="Awaiting Action"
-            description="Samples received but not yet approved"
-            emptyIcon={<CheckCircle className="w-6 h-6 mx-auto mb-2 text-green-400" />}
-            emptyText="All samples actioned"
-            items={data.awaiting_action || []}
-            renderItem={(item: any) => (
-              <Link key={item.id} href={`/design?openStyle=${item.id}`} className="block px-3 py-2.5 bg-amber-50/60 rounded-xl border border-amber-100 text-xs hover:bg-amber-50 transition-colors">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-gray-900">{item.po_number} · {item.style_code}</span>
-                  <span className="text-[10px] text-gray-400">{item.factory}</span>
-                </div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {item.actions.map((a: any, i: number) => (
-                    <span key={i} className={cn('text-[9px] px-1.5 py-0.5 rounded font-medium', a.received_days_ago > 14 ? 'bg-red-100 text-red-600' : a.received_days_ago > 7 ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600')}>
-                      {a.type} · {a.received_days_ago}d ago
-                    </span>
-                  ))}
-                </div>
-              </Link>
-            )}
-          />
-        </div>
       </div>
     </AppShell>
   );

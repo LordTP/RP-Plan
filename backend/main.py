@@ -16,7 +16,8 @@ from collections import defaultdict
 import time as _time
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, CommentRead, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent
+from models import User, PurchaseOrder, Comment, CommentRead, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent, AppSetting
+import app_settings
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderUpdate, PurchaseOrderList,
@@ -146,13 +147,20 @@ async def startup_event():
 
     # Migration: add full_name column to users if missing
     from sqlalchemy import inspect, text
-    from database import engine
+    from database import engine, SessionLocal
     inspector = inspect(engine)
     user_columns = [c['name'] for c in inspector.get_columns('users')]
     if 'full_name' not in user_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN full_name VARCHAR(100)"))
         print("✓ Added full_name column to users table")
+
+    # Seed default app_settings rows
+    seed_db = SessionLocal()
+    try:
+        app_settings.seed_defaults(seed_db)
+    finally:
+        seed_db.close()
 
     print("✓ API server started successfully")
 
@@ -1370,16 +1378,37 @@ async def apply_component_field_to_po(
         OrderComponent.name == component.name
     ).all()
     # Remaining keys in body are the fields to update
-    update_data = {k: v for k, v in body.items() if k in [
+    allowed_fields = {
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
         'strike_off_status', 'strike_off_received', 'strike_off_approved',
         'lab_dip_status', 'lab_dip_received', 'lab_dip_approved', 'name'
-    ]}
+    }
+    date_fields = {
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+    }
+    update_data = {}
+    for k, v in body.items():
+        if k not in allowed_fields:
+            continue
+        # Coerce date strings (YYYY-MM-DD from HTML date inputs) into datetimes
+        if k in date_fields and isinstance(v, str) and v:
+            try:
+                v = datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                try:
+                    v = datetime.strptime(v, '%Y-%m-%d')
+                except ValueError:
+                    continue  # skip unparseable
+        update_data[k] = v
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
     updated = 0
     for comp in matching:
         for key, value in update_data.items():
             setattr(comp, key, value)
         comp.updated_at = datetime.utcnow()
+        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
         updated += 1
     db.commit()
     return {"success": True, "components_updated": updated, "po_number": order.po_number}
@@ -1456,6 +1485,37 @@ DEFAULT_SUPPLIER_HIDDEN = [
 DEFAULT_SUPPLIER_EDITABLE = [
     'factory_confirmed_ex_factory', 'revised_po_ex_factory',
 ]
+
+
+@app.get("/api/settings/app")
+async def get_app_settings(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Get all admin-managed app settings."""
+    rows = db.query(AppSetting).all()
+    settings = {r.key: r.value for r in rows}
+    # Fill in defaults for any missing keys so the client always has a full map
+    for key, default in app_settings.DEFAULTS.items():
+        settings.setdefault(key, default)
+    return {"settings": settings}
+
+
+@app.put("/api/settings/app")
+async def update_app_settings(
+    data: dict,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update one or more admin-managed app settings. Only keys in DEFAULTS are accepted."""
+    allowed = set(app_settings.DEFAULTS.keys())
+    updates = {k: v for k, v in data.items() if k in allowed}
+    for key, value in updates.items():
+        # Normalize booleans submitted as real booleans
+        if isinstance(value, bool):
+            value = 'true' if value else 'false'
+        app_settings.set_setting(db, key, str(value))
+    return {"success": True, "updated": list(updates.keys())}
 
 
 @app.get("/api/settings/role-columns/{role}")

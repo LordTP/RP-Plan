@@ -333,6 +333,17 @@ export const settingsApi = {
     const response = await api.put(`/api/settings/role-columns/${role}`, { columns });
     return response.data;
   },
+
+  // Admin-managed app-wide settings (e.g. emails kill switch).
+  getAppSettings: async (): Promise<{ settings: Record<string, string> }> => {
+    const response = await api.get('/api/settings/app');
+    return response.data;
+  },
+
+  updateAppSettings: async (updates: Record<string, string | boolean>): Promise<{ success: boolean; updated: string[] }> => {
+    const response = await api.put('/api/settings/app', updates);
+    return response.data;
+  },
 };
 
 // Statuses endpoint
