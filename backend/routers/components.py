@@ -1,0 +1,340 @@
+"""Order components — per-style samples (fit / strike off / lab dip) with
+bulk update + apply-to-PO actions. All status/date changes also write to
+DateChangeHistory so the activity feed picks them up."""
+from datetime import datetime
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import User, PurchaseOrder, OrderComponent, DateChangeHistory
+from schemas import ComponentCreate, ComponentUpdate, ComponentResponse
+from auth import get_current_user
+from sample_helpers import (
+    reconcile_sample_status,
+    SAMPLE_PREFIXES_COMPONENT,
+)
+
+
+router = APIRouter()
+
+
+@router.get("/api/orders/{order_id}/components", response_model=List[ComponentResponse])
+async def get_order_components(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all components for an order"""
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    components = db.query(OrderComponent).filter(OrderComponent.order_id == order_id).order_by(OrderComponent.created_at).all()
+    return components
+
+
+@router.post("/api/orders/{order_id}/components", response_model=ComponentResponse, status_code=status.HTTP_201_CREATED)
+async def create_component(
+    order_id: int,
+    data: ComponentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a component to an order"""
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    create_data = data.model_dump(exclude_unset=True)
+    component = OrderComponent(order_id=order_id, **create_data)
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in create_data]
+    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+    db.add(component)
+    db.commit()
+    db.refresh(component)
+    return component
+
+
+@router.put("/api/components/{component_id}", response_model=ComponentResponse)
+async def update_component(
+    component_id: int,
+    data: ComponentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a component"""
+    component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
+    if not component:
+        raise HTTPException(status_code=404, detail="Component not found")
+    update_data = data.model_dump(exclude_unset=True)
+
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
+
+    # Log each field change to DateChangeHistory so the activity feed picks it up
+    for key, value in update_data.items():
+        if key == 'name':
+            continue  # renaming a component isn't a "field change" we track here
+        old_value = getattr(component, key, None)
+        if old_value != value:
+            db.add(DateChangeHistory(
+                po_id=component.order_id,
+                user_id=current_user.id,
+                field_name=key,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(value) if value is not None else None,
+                source=source_tag,
+                component_name=component.name,
+            ))
+        setattr(component, key, value)
+    component.updated_at = datetime.utcnow()
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
+    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+    db.commit()
+    db.refresh(component)
+    return component
+
+
+@router.post("/api/components/bulk-update")
+async def bulk_update_components(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Atomically update the same field on many components.
+
+    Body: {
+        "component_ids": [1, 2, 3, ...],
+        "field":  "fit_sample_status" | "fit_sample_received" | "fit_sample_approved"
+                  | "strike_off_status" | "strike_off_received" | "strike_off_approved"
+                  | "lab_dip_status" | "lab_dip_received" | "lab_dip_approved",
+        "value":  "APPROVED" | "2026-04-19" | null   (string for status, ISO date for date, null to clear)
+    }
+
+    Returns a row-level summary (what changed vs what stayed the same).
+    """
+    component_ids = data.get("component_ids") or []
+    field = data.get("field")
+    value = data.get("value")
+
+    ALLOWED_FIELDS = {
+        'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+        'strike_off_status', 'strike_off_received', 'strike_off_approved',
+        'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+    }
+    if field not in ALLOWED_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable in bulk")
+    if not component_ids or not isinstance(component_ids, list):
+        raise HTTPException(status_code=400, detail="component_ids must be a non-empty list")
+
+    # Coerce date strings (YYYY-MM-DD) to datetimes for date columns
+    date_fields = {
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+    }
+    if field in date_fields and isinstance(value, str) and value:
+        try:
+            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            try:
+                value = datetime.strptime(value, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Could not parse date '{value}'")
+
+    rows = db.query(OrderComponent).filter(OrderComponent.id.in_(component_ids)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching components found")
+
+    # For the status-vs-date reconciliation logic, only skip reconcile when the
+    # user explicitly touched the status field. Here we always touch ONE field.
+    touched_status_prefixes = []
+    if field.endswith('_status'):
+        prefix = field[:-len('_status')]
+        if prefix in SAMPLE_PREFIXES_COMPONENT:
+            touched_status_prefixes = [prefix]
+
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
+
+    changed = []
+    unchanged = []
+    for comp in rows:
+        old_value = getattr(comp, field, None)
+        values_differ = old_value != value
+        if values_differ:
+            # Record the change BEFORE mutating so we capture the true old value
+            db.add(DateChangeHistory(
+                po_id=comp.order_id,
+                user_id=current_user.id,
+                field_name=field,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(value) if value is not None else None,
+                source=source_tag,
+                component_name=comp.name,
+            ))
+            setattr(comp, field, value)
+            comp.updated_at = datetime.utcnow()
+            reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=touched_status_prefixes)
+            changed.append(comp.id)
+        else:
+            unchanged.append(comp.id)
+
+    db.commit()
+    return {
+        "success": True,
+        "changed_count": len(changed),
+        "unchanged_count": len(unchanged),
+        "changed_ids": changed,
+    }
+
+
+@router.delete("/api/components/{component_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_component(
+    component_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a component"""
+    component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
+    if not component:
+        raise HTTPException(status_code=404, detail="Component not found")
+    db.delete(component)
+    db.commit()
+
+
+@router.post("/api/orders/{order_id}/components/bulk-add")
+async def bulk_add_component(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a component to selected styles or all styles on the same PO"""
+    body = await request.json()
+    name = body.get("name")
+    if not name:
+        raise HTTPException(status_code=400, detail="Component name is required")
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    # If order_ids provided, use those; otherwise all styles on PO
+    order_ids = body.get("order_ids")
+    if order_ids:
+        sibling_orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+    else:
+        sibling_orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == order.po_number).all()
+    created = 0
+    for sib in sibling_orders:
+        existing = db.query(OrderComponent).filter(
+            OrderComponent.order_id == sib.id,
+            OrderComponent.name == name
+        ).first()
+        if not existing:
+            component = OrderComponent(order_id=sib.id, name=name)
+            db.add(component)
+            created += 1
+    db.commit()
+    return {"success": True, "components_created": created, "po_number": order.po_number}
+
+
+@router.post("/api/components/{component_id}/apply-to-po")
+async def apply_component_field_to_po(
+    component_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Apply a component field update to matching components (same name) on selected or all styles on the PO"""
+    body = await request.json()
+    component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
+    if not component:
+        raise HTTPException(status_code=404, detail="Component not found")
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    # If order_ids provided, scope to those; otherwise all on PO
+    selected_ids = body.pop("order_ids", None)
+    if selected_ids:
+        sibling_ids = selected_ids
+    else:
+        sibling_ids = [o.id for o in db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number).all()]
+    matching = db.query(OrderComponent).filter(
+        OrderComponent.order_id.in_(sibling_ids),
+        OrderComponent.name == component.name
+    ).all()
+    # Remaining keys in body are the fields to update
+    allowed_fields = {
+        'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+        'strike_off_status', 'strike_off_received', 'strike_off_approved',
+        'lab_dip_status', 'lab_dip_received', 'lab_dip_approved', 'name'
+    }
+    date_fields = {
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+    }
+    update_data = {}
+    for k, v in body.items():
+        if k not in allowed_fields:
+            continue
+        if k in date_fields and isinstance(v, str) and v:
+            try:
+                v = datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                try:
+                    v = datetime.strptime(v, '%Y-%m-%d')
+                except ValueError:
+                    continue  # skip unparseable
+        update_data[k] = v
+    user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
+    updated = 0
+    for comp in matching:
+        for key, value in update_data.items():
+            if key == 'name':
+                continue  # not tracked as a field change
+            old_value = getattr(comp, key, None)
+            if old_value != value:
+                db.add(DateChangeHistory(
+                    po_id=comp.order_id,
+                    user_id=current_user.id,
+                    field_name=key,
+                    old_value=str(old_value) if old_value is not None else None,
+                    new_value=str(value) if value is not None else None,
+                    source=source_tag,
+                    component_name=comp.name,
+                ))
+            setattr(comp, key, value)
+        comp.updated_at = datetime.utcnow()
+        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+        updated += 1
+    db.commit()
+    return {"success": True, "components_updated": updated, "po_number": order.po_number}
+
+
+@router.get("/api/components/styles-with-component")
+async def get_styles_with_component(
+    po_number: str = Query(...),
+    component_name: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all styles on a PO that have a component with a given name"""
+    orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
+    results = []
+    for o in orders:
+        comp = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.name == component_name
+        ).first()
+        if comp:
+            results.append({
+                "id": o.id,
+                "style_code": o.style_code or "",
+                "description": o.description or "",
+                "colour": o.colour or "",
+                "component_id": comp.id,
+            })
+    return {"styles": results}
