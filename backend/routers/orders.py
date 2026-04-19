@@ -1,0 +1,895 @@
+"""Purchase order endpoints — list / detail / create / update / delete,
+bulk status + bulk date updates, styles-on-PO, and recent-changes.
+
+The PUT endpoint is the big one: supplier pending-change flow, field-change
+history logging, auto-calc chain (total_qty, total_order_value, ETA UK/
+customer, estimated_del_to_customer, month fields, ex_factory_from_pp_approval),
+and the reconcile_sample_status invariant."""
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import (
+    User, UserRole, PurchaseOrder, Comment, CommentRead, DateChangeHistory,
+    PendingDateChange, ORDER_STATUSES,
+)
+from schemas import (
+    PurchaseOrderCreate, PurchaseOrderResponse,
+    PurchaseOrderSupplierResponse,
+)
+from auth import (
+    get_current_user, get_current_internal_user, get_current_full_internal_user,
+    get_current_admin_user,
+)
+from supplier_access import (
+    apply_supplier_filter, supplier_filter_clause, assert_supplier_can_access,
+)
+from sample_helpers import (
+    reconcile_sample_status,
+    SAMPLE_PREFIXES_ORDER,
+    SAMPLE_PREFIXES_COMPONENT,
+)
+from realtime import manager
+
+
+router = APIRouter()
+
+
+@router.get("/api/orders")
+async def get_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    search: Optional[str] = None,
+    factory: Optional[str] = None,
+    customer: Optional[str] = None,
+    status: Optional[str] = None,
+    po_number: Optional[str] = None,
+    style_code: Optional[str] = None,
+    tab: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get paginated list of purchase orders
+    - Internal users see all orders with ALL fields
+    - Supplier users only see their factory's orders with LIMITED fields (no pricing/internal data)
+    - tab=shipped: filter where tracking_reference IS NOT NULL (internal only)
+    - tab=orders (default for internal): filter where tracking_reference IS NULL
+    """
+    query = db.query(PurchaseOrder)
+    query = apply_supplier_filter(query, current_user)
+
+    # Tab filtering for internal/admin users only
+    if current_user.role != UserRole.SUPPLIER and tab:
+        if tab == 'shipped':
+            query = query.filter(PurchaseOrder.tracking_reference.isnot(None))
+        elif tab == 'orders':
+            query = query.filter(PurchaseOrder.tracking_reference.is_(None))
+
+    # Apply filters
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                PurchaseOrder.po_number.ilike(search_pattern),
+                PurchaseOrder.style_code.ilike(search_pattern),
+                PurchaseOrder.customer.ilike(search_pattern)
+            )
+        )
+
+    if factory:
+        query = query.filter(PurchaseOrder.factory == factory)
+
+    if customer:
+        query = query.filter(PurchaseOrder.customer == customer)
+
+    if status:
+        query = query.filter(PurchaseOrder.status == status)
+
+    if po_number:
+        # Search both po_number and customer_po_number
+        po_pattern = f"%{po_number}%"
+        query = query.filter(
+            or_(
+                PurchaseOrder.po_number.ilike(po_pattern),
+                PurchaseOrder.customer_po_number.ilike(po_pattern)
+            )
+        )
+
+    if style_code:
+        query = query.filter(PurchaseOrder.style_code.ilike(f"%{style_code}%"))
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination
+    offset = (page - 1) * page_size
+    orders = query.order_by(PurchaseOrder.system_po_number.asc()).offset(offset).limit(page_size).all()
+    
+    # Add comment count and unread count per user
+    for order in orders:
+        order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+        # Count comments this specific user hasn't read
+        read_comment_ids = db.query(CommentRead.comment_id).filter(
+            CommentRead.user_id == current_user.id
+        ).subquery()
+        order.unread_comment_count = db.query(Comment).filter(
+            Comment.po_id == order.id,
+            ~Comment.id.in_(read_comment_ids)
+        ).count()
+    
+    # Return different response based on user role
+    if current_user.role == UserRole.SUPPLIER:
+        # Suppliers get limited fields (Sheet 2 equivalent)
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "orders": [PurchaseOrderSupplierResponse.from_orm(o) for o in orders]
+        }
+    else:
+        # Internal users get all fields (Sheet 1 equivalent)
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "orders": [PurchaseOrderResponse.from_orm(o) for o in orders]
+        }
+
+
+@router.get("/api/orders/recent-changes")
+async def get_recent_changes(
+    po_number: Optional[str] = Query(None),
+    since: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get recent date changes for orders, optionally filtered by PO number.
+    Used to highlight changed cells in the UI.
+    """
+    # Default to last login time or 24 hours ago
+    since_date = None
+    if since:
+        try:
+            since_date = datetime.fromisoformat(since.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+
+    if not since_date:
+        since_date = current_user.last_login or (datetime.utcnow() - timedelta(hours=24))
+
+    # Build query for recent changes
+    query = db.query(DateChangeHistory).filter(DateChangeHistory.created_at > since_date)
+
+    # Filter by PO number if provided
+    if po_number:
+        # Get order IDs for this PO number
+        order_ids_query = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == str(po_number))
+        order_ids_query = apply_supplier_filter(order_ids_query, current_user)
+        order_ids = [o[0] for o in order_ids_query.all()]
+
+        # If no orders found, return empty result
+        if not order_ids:
+            return {
+                "since": since_date.isoformat(),
+                "changes": {}
+            }
+
+        query = query.filter(DateChangeHistory.po_id.in_(order_ids))
+    else:
+        # Filter by factory for supplier users
+        if current_user.role == UserRole.SUPPLIER and current_user.factory_name:
+            order_ids = apply_supplier_filter(
+                db.query(PurchaseOrder.id), current_user
+            ).all()
+            order_ids = [o[0] for o in order_ids]
+
+            if not order_ids:
+                return {
+                    "since": since_date.isoformat(),
+                    "changes": {}
+                }
+
+            query = query.filter(DateChangeHistory.po_id.in_(order_ids))
+
+    changes = query.order_by(DateChangeHistory.created_at.desc()).all()
+
+    # Group changes by order_id and field_name
+    # Return: { order_id: [field_name, ...] }
+    changes_by_order: dict = {}
+    for change in changes:
+        order_id = change.po_id
+        if order_id not in changes_by_order:
+            changes_by_order[order_id] = set()
+        changes_by_order[order_id].add(change.field_name)
+
+    # Convert sets to lists for JSON serialization
+    return {
+        "since": since_date.isoformat(),
+        "changes": {str(k): list(v) for k, v in changes_by_order.items()}
+    }
+
+
+@router.get("/api/orders/{order_id}")
+async def get_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a single purchase order by ID - returns role-appropriate response"""
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} was not found. It may have been deleted."
+        )
+
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only view orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
+    )
+
+    # Add comment count
+    order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+    
+    # Return appropriate response based on role
+    if current_user.role == UserRole.SUPPLIER:
+        return PurchaseOrderSupplierResponse.from_orm(order)
+    else:
+        return PurchaseOrderResponse.from_orm(order)
+
+
+@router.post("/api/orders", response_model=PurchaseOrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_order(
+    order_data: PurchaseOrderCreate,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new purchase order (internal users only)"""
+    # Check if PO number already exists
+    existing_po = db.query(PurchaseOrder).filter(
+        PurchaseOrder.po_number == order_data.po_number
+    ).first()
+    
+    if existing_po:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"PO# {order_data.po_number} already exists"
+        )
+    
+    new_order = PurchaseOrder(**order_data.dict())
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+    
+    # Broadcast update
+    await manager.broadcast({
+        "type": "po_created",
+        "data": {"po_id": new_order.id, "po_number": new_order.po_number},
+        "timestamp": datetime.utcnow().isoformat()
+    })
+    
+    return new_order
+
+
+@router.put("/api/orders/{order_id}")
+async def update_order(
+    order_id: int,
+    order_data: dict,  # Accept raw dict to handle different schemas
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a purchase order
+    - Suppliers can only update: factory_confirmed_ex_factory, revised_po_ex_factory
+    - Internal users can update everything
+    - ALL date changes are tracked in DateChangeHistory
+    """
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} was not found. It may have been deleted or the page needs refreshing."
+        )
+
+    # Check permissions
+    assert_supplier_can_access(
+        order, current_user,
+        detail=f"You can only edit orders for your factory ({current_user.factory_name}). This order belongs to a different factory."
+    )
+    if current_user.role == UserRole.SUPPLIER:
+        # Suppliers can only edit if the order has been sent to factory
+        if not order.order_sent_to_factory_date or not order.tech_packs_sent_to_factory or not order.specs_sent_to_factory:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This order cannot be edited yet. Order Sent to Factory, Tech Packs, and Specs must all be sent first."
+            )
+
+        # Build supplier allowed fields from DB settings, fall back to defaults
+        db_settings = db.query(RoleColumnSettings).filter(
+            RoleColumnSettings.role == 'supplier',
+            RoleColumnSettings.is_editable == True
+        ).all()
+        if db_settings:
+            allowed_fields = [s.column_key for s in db_settings]
+        else:
+            allowed_fields = ['factory_confirmed_ex_factory', 'revised_po_ex_factory']
+
+        # Determine which fields are dates (need approval) vs text (direct save)
+        DATE_FIELDS = {
+            'factory_confirmed_ex_factory', 'revised_po_ex_factory',
+            'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'fit_sample_received', 'fit_sample_approved',
+            'strike_off_received', 'strike_off_approved', 'lab_dip_received', 'lab_dip_approved',
+            'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'shipment_sample_received', 'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer', 'estimated_del_to_customer',
+        }
+
+        # Reject any fields not in the allowed list
+        submitted_fields = [k for k in order_data.keys() if k != 'change_reason']
+        for f in submitted_fields:
+            if f not in allowed_fields:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"You are not allowed to edit '{f}'"
+                )
+
+        # Handle text/non-date fields — save directly, no approval needed
+        direct_updates = {}
+        for field in allowed_fields:
+            if field in order_data and field not in DATE_FIELDS:
+                direct_updates[field] = order_data[field]
+
+        for field, value in direct_updates.items():
+            if hasattr(order, field):
+                setattr(order, field, value)
+
+        # Handle date fields — require approval
+        change_reason = order_data.get('change_reason', '').strip()
+        pending_changes_created = []
+
+        for field in allowed_fields:
+            if field not in DATE_FIELDS:
+                continue
+            if field in order_data and order_data[field] is not None:
+                new_value_str = order_data[field]
+
+                # Parse datetime if it's a string
+                if isinstance(new_value_str, str):
+                    try:
+                        new_value = datetime.fromisoformat(new_value_str.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        continue
+                elif isinstance(new_value_str, datetime):
+                    new_value = new_value_str
+                else:
+                    continue
+
+                old_value = getattr(order, field)
+
+                # Only create pending change if value actually changed
+                if old_value != new_value:
+                    if not change_reason:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Please provide a reason for the date change"
+                        )
+
+                    # Check for existing pending change on this field - replace it
+                    existing_pending = db.query(PendingDateChange).filter(
+                        PendingDateChange.order_id == order.id,
+                        PendingDateChange.field_name == field,
+                        PendingDateChange.status == "pending"
+                    ).first()
+
+                    if existing_pending:
+                        # Update existing pending change
+                        existing_pending.proposed_value = new_value.strftime('%Y-%m-%d') if new_value else None
+                        existing_pending.reason = change_reason
+                        existing_pending.submitted_at = datetime.utcnow()
+                    else:
+                        # Create new pending change
+                        pending_change = PendingDateChange(
+                            order_id=order.id,
+                            field_name=field,
+                            current_value=old_value.strftime('%Y-%m-%d') if old_value else None,
+                            proposed_value=new_value.strftime('%Y-%m-%d') if new_value else None,
+                            reason=change_reason,
+                            submitted_by_id=current_user.id,
+                            submitted_by_username=current_user.username,
+                            status="pending"
+                        )
+                        db.add(pending_change)
+
+                    pending_changes_created.append(field)
+
+        # If we had direct updates but no pending changes, commit and return
+        if direct_updates and not pending_changes_created:
+            order.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(order)
+            order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+            read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
+            order.unread_comment_count = db.query(Comment).filter(
+                Comment.po_id == order.id,
+                ~Comment.id.in_(read_ids)
+            ).count()
+            return PurchaseOrderSupplierResponse.from_orm(order)
+
+        # If pending changes were created, commit and return early
+        if pending_changes_created:
+            db.commit()
+            db.refresh(order)
+            # Return with pending info
+            order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+            read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
+            order.unread_comment_count = db.query(Comment).filter(
+                Comment.po_id == order.id,
+                ~Comment.id.in_(read_ids)
+            ).count()
+            return {
+                "order": PurchaseOrderSupplierResponse.from_orm(order),
+                "pending_approval": True,
+                "pending_fields": pending_changes_created,
+                "message": "Date change(s) submitted for approval"
+            }
+    
+    else:  # Internal/Admin users can update everything
+        # If status is being set to "Shipped", require tracking_reference
+        if order_data.get('status') == 'Shipped' and not order_data.get('tracking_reference') and not order.tracking_reference:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A tracking reference is required when setting status to Shipped"
+            )
+
+        # Only allow updating known business fields — block id, metadata, and relationships
+        ALLOWED_UPDATE_FIELDS = {
+            'po_number', 'system_po_number', 'is_active', 'customer', 'china_orderbook_ref',
+            'customer_po_number', 'direct_repeat_new', 'season', 'factory', 'terms', 'sales_person',
+            'style_code', 'customer_style_code', 'description', 'colour', 'gender',
+            'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
+            'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+            'size_11', 'size_12', 'size_13', 'size_14',
+            'total_quantity', 'trade_price', 'total_order_value',
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'factory_confirmed_ex_factory',
+            'fit_sample_required', 'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+            'strike_off_status', 'strike_off_received', 'strike_off_approved',
+            'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+            'pps_status', 'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'revised_po_ex_factory', 'shipment_sample_received',
+            'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer',
+            'customer_po_open_month', 'expected_dispatch_arrive_uk_month',
+            'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
+            'revised_vessel_eta_to_port', 'estimated_del_to_customer',
+            'status', 'is_late', 'tracking_reference',
+            # Legacy fields (still updatable for backwards compatibility)
+            'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
+        }
+
+        # Fields to skip change tracking (non-business fields)
+        skip_tracking = {'id', 'created_at', 'updated_at', 'import_batch_id'}
+
+        # Date fields that need parsing
+        date_fields = {
+            'order_received_date', 'order_sent_to_factory_date',
+            'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+            'original_po_ex_factory', 'factory_confirmed_ex_factory',
+            'fit_sample_received', 'fit_sample_approved',
+            'strike_off_received', 'strike_off_approved',
+            'lab_dip_received', 'lab_dip_approved',
+            'pps_received', 'pps_sent_to_customer', 'pps_approved',
+            'photo_sample_received', 'ex_factory_from_pp_approval',
+            'revised_po_ex_factory', 'shipment_sample_received',
+            'original_del_date_to_customer',
+            'eta_to_uk', 'eta_to_customer',
+            'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+            'estimated_del_to_customer',
+            # Legacy
+            'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
+        }
+
+        for key, value in order_data.items():
+            if key not in ALLOWED_UPDATE_FIELDS:
+                continue
+            if value is not None and hasattr(order, key):
+                old_value = getattr(order, key)
+
+                # Parse datetime for date fields if it's a string
+                if (key in date_fields or 'date' in key.lower()) and isinstance(value, str) and value:
+                    try:
+                        value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    except ValueError:
+                        try:
+                            value = datetime.strptime(value, '%Y-%m-%d')
+                        except ValueError:
+                            try:
+                                value = datetime.strptime(value, '%d/%m/%Y')
+                            except ValueError:
+                                continue  # Skip this field if we can't parse the date
+
+                # Track changes for all business fields
+                values_different = old_value != value
+
+                if key not in skip_tracking and values_different:
+                    role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+                    change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
+
+                    old_value_str = str(old_value) if old_value is not None else None
+                    new_value_str = str(value) if value is not None else None
+
+                    field_change = DateChangeHistory(
+                        po_id=order.id,
+                        user_id=current_user.id,
+                        field_name=key,
+                        old_value=old_value_str,
+                        new_value=new_value_str,
+                        source=change_source
+                    )
+                    db.add(field_change)
+
+                # Update the field
+                setattr(order, key, value)
+    
+    # Auto-calculate total_quantity from size columns
+    size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
+                   'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+                   'size_11', 'size_12', 'size_13', 'size_14']
+    total_qty = sum(getattr(order, f) or 0 for f in size_fields)
+    if total_qty > 0:
+        order.total_quantity = total_qty
+
+    # Auto-calculate total_order_value = trade_price × total_quantity
+    if order.trade_price is not None and order.total_quantity is not None:
+        order.total_order_value = round(order.trade_price * order.total_quantity, 2)
+
+    # If revised_po_ex_factory is blank, default to factory_confirmed_ex_factory
+    if not order.revised_po_ex_factory and order.factory_confirmed_ex_factory:
+        order.revised_po_ex_factory = order.factory_confirmed_ex_factory
+
+    # Auto-calculate ETA dates when revised_po_ex_factory changes
+    if order.revised_po_ex_factory:
+        order.eta_to_uk = order.revised_po_ex_factory + timedelta(days=60)
+        order.eta_to_customer = order.eta_to_uk + timedelta(days=5)
+
+    # Auto-calculate estimated_del_to_customer from vessel ETA + FCL/LCL
+    vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+    if vessel_eta:
+        fcl_lcl = (order.fcl_lcl or '').strip().upper()
+        days_to_add = 7 if fcl_lcl == 'LCL' else 2 if fcl_lcl == 'AIR' else 5
+        order.estimated_del_to_customer = vessel_eta + timedelta(days=days_to_add)
+
+    # Auto-calculate month fields
+    if order.original_del_date_to_customer:
+        order.customer_po_open_month = order.original_del_date_to_customer.strftime('%B')
+    if order.eta_to_customer:
+        order.expected_dispatch_arrive_uk_month = order.eta_to_customer.strftime('%B')
+
+    # Auto-calculate ex_factory_from_pp_approval = PPS Approved + 35 days
+    if order.pps_approved:
+        order.ex_factory_from_pp_approval = order.pps_approved + timedelta(days=35)
+
+    user_touched_order_status = [p for p in SAMPLE_PREFIXES_ORDER if f'{p}_status' in order_data]
+    reconcile_sample_status(order, SAMPLE_PREFIXES_ORDER, skip_prefixes=user_touched_order_status)
+    for comp in order.components:
+        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT)
+
+    db.commit()
+    db.refresh(order)
+
+    # Broadcast update
+    await manager.broadcast({
+        "type": "po_updated",
+        "data": {"po_id": order.id, "po_number": order.po_number},
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+    # Add comment counts before returning
+    order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
+    read_ids = db.query(CommentRead.comment_id).filter(CommentRead.user_id == current_user.id).subquery()
+    order.unread_comment_count = db.query(Comment).filter(
+        Comment.po_id == order.id,
+        ~Comment.id.in_(read_ids)
+    ).count()
+
+    # Return appropriate response based on user role
+    if current_user.role == UserRole.SUPPLIER:
+        return PurchaseOrderSupplierResponse.from_orm(order)
+    else:
+        return PurchaseOrderResponse.from_orm(order)
+
+
+@router.delete("/api/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_order(
+    order_id: int,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a purchase order (admin only)"""
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} was not found. It may have already been deleted."
+        )
+
+    db.delete(order)
+    db.commit()
+
+    return None
+
+
+
+
+@router.post("/api/orders/bulk-update-status")
+async def bulk_update_status(
+    data: dict,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Update status for all orders (or selected order IDs) with the same PO number"""
+    po_number = data.get("po_number")
+    new_status = data.get("status")
+    tracking_reference = data.get("tracking_reference")
+    order_ids = data.get("order_ids", [])  # Empty list = all orders on PO
+
+    if not po_number or not new_status:
+        raise HTTPException(status_code=400, detail="po_number and status are required")
+
+    if new_status not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {ORDER_STATUSES}")
+
+    if new_status == "Shipped" and not tracking_reference:
+        raise HTTPException(status_code=400, detail="A tracking reference is required when setting status to Shipped")
+
+    # Update all orders with this PO number, or only the selected IDs
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number)
+    if order_ids:
+        query = query.filter(PurchaseOrder.id.in_(order_ids))
+    orders = query.all()
+
+    if not orders:
+        raise HTTPException(status_code=404, detail="No orders found with this PO number")
+
+    for order in orders:
+        order.status = new_status
+        if tracking_reference is not None:
+            order.tracking_reference = tracking_reference
+        order.updated_at = datetime.utcnow()
+
+    db.commit()
+
+    # Broadcast update
+    await manager.broadcast({
+        "type": "bulk_status_update",
+        "data": {"po_number": po_number, "status": new_status, "count": len(orders)},
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+    return {"success": True, "orders_updated": len(orders)}
+
+
+@router.post("/api/orders/bulk-update-date")
+async def bulk_update_date(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a date field for multiple orders with the same PO number.
+    - po_number: The PO number to filter orders
+    - field_name: The date field to update
+    - new_value: The new date value (ISO format string)
+    - order_ids: Optional list of specific order IDs to update (empty = all orders on PO)
+    """
+    po_number = data.get("po_number")
+    field_name = data.get("field_name")
+    new_value_str = data.get("new_value")
+    order_ids = data.get("order_ids", [])  # Empty list means all orders
+
+    if not po_number or not field_name:
+        raise HTTPException(status_code=400, detail="po_number and field_name are required")
+
+    # Valid date fields
+    date_fields = [
+        'order_received_date', 'order_sent_to_factory_date',
+        'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
+        'original_po_ex_factory', 'factory_confirmed_ex_factory',
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+        'pps_received', 'pps_sent_to_customer', 'pps_approved',
+        'photo_sample_received', 'ex_factory_from_pp_approval',
+        'revised_po_ex_factory', 'shipment_sample_received',
+        'original_del_date_to_customer',
+        'eta_to_uk', 'eta_to_customer',
+        'vessel_etd', 'vessel_eta_to_port', 'revised_vessel_eta_to_port',
+        'estimated_del_to_customer',
+        # Legacy
+        'date_approved_to_production', 'actual_date_del_to_uk', 'actual_date_del_to_customer',
+    ]
+
+    # Text fields with dropdown options that support bulk update
+    dropdown_text_fields = [
+        'fcl_lcl',
+        'fit_sample_status', 'strike_off_status', 'lab_dip_status', 'pps_status',
+    ]
+
+    if field_name not in date_fields and field_name not in dropdown_text_fields:
+        raise HTTPException(status_code=400, detail=f"Invalid field for bulk update")
+
+    # Parse the new value — date or text
+    is_text_field = field_name in dropdown_text_fields
+    new_value = None
+    if new_value_str:
+        if is_text_field:
+            new_value = str(new_value_str).strip() or None
+        else:
+            try:
+                new_value = datetime.fromisoformat(new_value_str.replace('Z', '+00:00'))
+            except ValueError:
+                try:
+                    new_value = datetime.strptime(new_value_str, '%Y-%m-%d')
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Could not parse date value: {new_value_str}")
+
+    # Get orders with this PO number
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number)
+
+    # Filter by specific order IDs if provided
+    if order_ids:
+        query = query.filter(PurchaseOrder.id.in_(order_ids))
+
+    orders = query.all()
+
+    if not orders:
+        raise HTTPException(status_code=404, detail="No orders found with this PO number")
+
+    # Check permissions
+    if current_user.role == UserRole.SUPPLIER:
+        # Build supplier allowed fields from DB settings, fall back to defaults
+        db_settings = db.query(RoleColumnSettings).filter(
+            RoleColumnSettings.role == 'supplier',
+            RoleColumnSettings.is_editable == True
+        ).all()
+        if db_settings:
+            supplier_allowed_fields = [s.column_key for s in db_settings]
+        else:
+            supplier_allowed_fields = ['factory_confirmed_ex_factory', 'revised_po_ex_factory']
+        if field_name not in supplier_allowed_fields:
+            raise HTTPException(status_code=403, detail=f"Suppliers can only edit: {supplier_allowed_fields}")
+
+        # Verify all orders belong to supplier's factory
+        for order in orders:
+            assert_supplier_can_access(order, current_user, detail="Not authorized to update these orders")
+
+    # Determine source tag based on role
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    is_supplier = role_str == 'supplier'
+
+    # For suppliers, create pending changes instead of updating directly
+    if is_supplier and not is_text_field:
+        change_reason = data.get("change_reason", "").strip()
+        if not change_reason:
+            raise HTTPException(status_code=400, detail="Please provide a reason for the date change")
+
+        pending_count = 0
+        for order in orders:
+            old_value = getattr(order, field_name)
+
+            # Only create pending if value actually changed
+            if old_value != new_value:
+                # Check for existing pending change on this field - replace it
+                existing_pending = db.query(PendingDateChange).filter(
+                    PendingDateChange.order_id == order.id,
+                    PendingDateChange.field_name == field_name,
+                    PendingDateChange.status == "pending"
+                ).first()
+
+                if existing_pending:
+                    existing_pending.proposed_value = new_value.strftime('%Y-%m-%d') if new_value else None
+                    existing_pending.reason = change_reason
+                    existing_pending.submitted_at = datetime.utcnow()
+                else:
+                    pending_change = PendingDateChange(
+                        order_id=order.id,
+                        field_name=field_name,
+                        current_value=old_value.strftime('%Y-%m-%d') if old_value else None,
+                        proposed_value=new_value.strftime('%Y-%m-%d') if new_value else None,
+                        reason=change_reason,
+                        submitted_by_id=current_user.id,
+                        submitted_by_username=current_user.username,
+                        status="pending"
+                    )
+                    db.add(pending_change)
+
+                pending_count += 1
+
+        db.commit()
+
+        return {
+            "success": True,
+            "pending_approval": True,
+            "pending_count": pending_count,
+            "message": f"Date change(s) submitted for approval ({pending_count} orders)"
+        }
+
+    # For internal/admin users, update directly
+    change_source = "Sourcelab"
+    updated_count = 0
+    for order in orders:
+        old_value = getattr(order, field_name)
+
+        # Only update if value actually changed
+        if old_value != new_value:
+            # Track the change in history (store as strings)
+            date_change = DateChangeHistory(
+                po_id=order.id,
+                user_id=current_user.id,
+                field_name=field_name,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(new_value) if new_value is not None else None,
+                source=change_source
+            )
+            db.add(date_change)
+
+            # Update the field
+            setattr(order, field_name, new_value)
+            order.updated_at = datetime.utcnow()
+            updated_count += 1
+
+    db.commit()
+
+    # Broadcast update
+    await manager.broadcast({
+        "type": "bulk_date_update",
+        "data": {"po_number": po_number, "field_name": field_name, "count": updated_count},
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+    return {"success": True, "orders_updated": updated_count}
+
+
+@router.get("/api/orders/styles-on-po/{po_number}")
+async def get_styles_on_po(
+    po_number: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all orders/styles on a specific PO number"""
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number)
+
+    query = apply_supplier_filter(query, current_user)
+
+    orders = query.order_by(PurchaseOrder.style_code).all()
+
+    if not orders:
+        raise HTTPException(status_code=404, detail="No orders found with this PO number")
+
+    # Return simplified order info for the bulk update UI
+    return {
+        "orders": [
+            {
+                "id": order.id,
+                "style_code": order.style_code,
+                "description": order.description,
+                "colour": order.colour
+            }
+            for order in orders
+        ]
+    }
