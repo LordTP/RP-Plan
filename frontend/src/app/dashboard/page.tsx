@@ -256,12 +256,12 @@ function DashboardContent() {
       const eTime = e.created_at ? new Date(e.created_at).getTime() : 0;
       const key = e.type === 'comment'
         ? `comment|${e.username}|${e.po_number}|${e.comment_text || ''}`
-        : `change|${e.username}|${e.po_number}|${e.field_name || ''}|${e.old_value || ''}|${e.new_value || ''}`;
+        : `change|${e.username}|${e.po_number}|${e.field_name || ''}|${e.old_value || ''}|${e.new_value || ''}|${e.component_name || ''}`;
       // Find a matching group from the most recent entries (events come newest-first)
       const match = groups.find((g) => {
         const gKey = g.type === 'comment'
           ? `comment|${g.username}|${g.po_number}|${g.comment_text || ''}`
-          : `change|${g.username}|${g.po_number}|${g.field_name || ''}|${g.old_value || ''}|${g.new_value || ''}`;
+          : `change|${g.username}|${g.po_number}|${g.field_name || ''}|${g.old_value || ''}|${g.new_value || ''}|${g.component_name || ''}`;
         if (gKey !== key) return false;
         const gTime = g.created_at ? new Date(g.created_at).getTime() : 0;
         return Math.abs(gTime - eTime) <= WINDOW_MS;
@@ -783,6 +783,9 @@ function DashboardContent() {
                         </p>
                       ) : (
                         <p className="text-[11px] text-gray-600 mt-0.5">
+                          {event.component_name && (
+                            <span className="text-violet-600 font-semibold">{event.component_name} · </span>
+                          )}
                           <span className="text-blue-500 font-medium">{formatFieldName(event.field_name || '')}: </span>
                           {event.old_value && <span className="text-gray-400 line-through">{stripTimeFromDate(event.old_value)}</span>}
                           {event.old_value && event.new_value && <span className="text-gray-300"> → </span>}

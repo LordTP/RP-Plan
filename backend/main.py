@@ -164,6 +164,13 @@ async def startup_event():
             conn.execute(text("UPDATE users SET mentionable = TRUE WHERE mentionable IS NULL"))
         print("✓ Added mentionable column to users table")
 
+    # Migration: add component_name column to date_change_history for per-component changes
+    history_columns = [c['name'] for c in inspector.get_columns('date_change_history')]
+    if 'component_name' not in history_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE date_change_history ADD COLUMN component_name VARCHAR(100)"))
+        print("✓ Added component_name column to date_change_history table")
+
     # Seed default app_settings rows
     seed_db = SessionLocal()
     try:
@@ -1397,7 +1404,25 @@ async def update_component(
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
     update_data = data.model_dump(exclude_unset=True)
+
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
+
+    # Log each field change to DateChangeHistory so the activity feed picks it up
     for key, value in update_data.items():
+        if key == 'name':
+            continue  # renaming a component isn't a "field change" we track here
+        old_value = getattr(component, key, None)
+        if old_value != value:
+            db.add(DateChangeHistory(
+                po_id=component.order_id,
+                user_id=current_user.id,
+                field_name=key,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(value) if value is not None else None,
+                source=source_tag,
+                component_name=component.name,
+            ))
         setattr(component, key, value)
     component.updated_at = datetime.utcnow()
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
@@ -1405,6 +1430,101 @@ async def update_component(
     db.commit()
     db.refresh(component)
     return component
+
+
+@app.post("/api/components/bulk-update")
+async def bulk_update_components(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Atomically update the same field on many components.
+
+    Body: {
+        "component_ids": [1, 2, 3, ...],
+        "field":  "fit_sample_status" | "fit_sample_received" | "fit_sample_approved"
+                  | "strike_off_status" | "strike_off_received" | "strike_off_approved"
+                  | "lab_dip_status" | "lab_dip_received" | "lab_dip_approved",
+        "value":  "APPROVED" | "2026-04-19" | null   (string for status, ISO date for date, null to clear)
+    }
+
+    Returns a row-level summary (what changed vs what stayed the same).
+    """
+    component_ids = data.get("component_ids") or []
+    field = data.get("field")
+    value = data.get("value")
+
+    ALLOWED_FIELDS = {
+        'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+        'strike_off_status', 'strike_off_received', 'strike_off_approved',
+        'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+    }
+    if field not in ALLOWED_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable in bulk")
+    if not component_ids or not isinstance(component_ids, list):
+        raise HTTPException(status_code=400, detail="component_ids must be a non-empty list")
+
+    # Coerce date strings (YYYY-MM-DD) to datetimes for date columns
+    date_fields = {
+        'fit_sample_received', 'fit_sample_approved',
+        'strike_off_received', 'strike_off_approved',
+        'lab_dip_received', 'lab_dip_approved',
+    }
+    if field in date_fields and isinstance(value, str) and value:
+        try:
+            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            try:
+                value = datetime.strptime(value, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Could not parse date '{value}'")
+
+    rows = db.query(OrderComponent).filter(OrderComponent.id.in_(component_ids)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching components found")
+
+    # For the status-vs-date reconciliation logic, only skip reconcile when the
+    # user explicitly touched the status field. Here we always touch ONE field.
+    touched_status_prefixes = []
+    if field.endswith('_status'):
+        prefix = field[:-len('_status')]
+        if prefix in SAMPLE_PREFIXES_COMPONENT:
+            touched_status_prefixes = [prefix]
+
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
+
+    changed = []
+    unchanged = []
+    for comp in rows:
+        old_value = getattr(comp, field, None)
+        # Normalize for comparison
+        values_differ = old_value != value
+        if values_differ:
+            # Record the change BEFORE mutating so we capture the true old value
+            db.add(DateChangeHistory(
+                po_id=comp.order_id,
+                user_id=current_user.id,
+                field_name=field,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(value) if value is not None else None,
+                source=source_tag,
+                component_name=comp.name,
+            ))
+            setattr(comp, field, value)
+            comp.updated_at = datetime.utcnow()
+            reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=touched_status_prefixes)
+            changed.append(comp.id)
+        else:
+            unchanged.append(comp.id)
+
+    db.commit()
+    return {
+        "success": True,
+        "changed_count": len(changed),
+        "unchanged_count": len(unchanged),
+        "changed_ids": changed,
+    }
 
 
 @app.delete("/api/components/{component_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1507,9 +1627,24 @@ async def apply_component_field_to_po(
                     continue  # skip unparseable
         update_data[k] = v
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
     updated = 0
     for comp in matching:
         for key, value in update_data.items():
+            if key == 'name':
+                continue  # not tracked as a field change
+            old_value = getattr(comp, key, None)
+            if old_value != value:
+                db.add(DateChangeHistory(
+                    po_id=comp.order_id,
+                    user_id=current_user.id,
+                    field_name=key,
+                    old_value=str(old_value) if old_value is not None else None,
+                    new_value=str(value) if value is not None else None,
+                    source=source_tag,
+                    component_name=comp.name,
+                ))
             setattr(comp, key, value)
         comp.updated_at = datetime.utcnow()
         reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
@@ -3136,6 +3271,7 @@ async def get_recent_activity(
             "old_value": change.old_value,
             "new_value": change.new_value,
             "source": change.source,
+            "component_name": change.component_name,
             "created_at": change.created_at.isoformat() if change.created_at else None,
         })
 

@@ -289,6 +289,19 @@ export const componentsApi = {
     return response.data;
   },
 
+  bulkUpdateComponents: async (
+    componentIds: number[],
+    field: string,
+    value: string | null,
+  ): Promise<{ success: boolean; changed_count: number; unchanged_count: number; changed_ids: number[] }> => {
+    const response = await api.post('/api/components/bulk-update', {
+      component_ids: componentIds,
+      field,
+      value,
+    });
+    return response.data;
+  },
+
   deleteComponent: async (componentId: number): Promise<void> => {
     await api.delete(`/api/components/${componentId}`);
   },
@@ -609,6 +622,7 @@ export interface RecentActivityEvent {
   new_value?: string;
   comment_text?: string;
   source: string;
+  component_name?: string | null;
   created_at: string | null;
 }
 

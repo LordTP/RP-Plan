@@ -299,6 +299,7 @@ class DateChangeHistory(Base):
     old_value = Column(Text, nullable=True)  # String representation of old value
     new_value = Column(Text, nullable=True)  # String representation of new value
     source = Column(String(50), default="Supplier")  # "Sourcelab" or "Supplier"
+    component_name = Column(String(100), nullable=True)  # When the change is on a component, this names it
     import_batch_id = Column(String(36), nullable=True, index=True)
 
     # For approved/rejected supplier changes - who reviewed it
