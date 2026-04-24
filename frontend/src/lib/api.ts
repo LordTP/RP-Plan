@@ -1026,6 +1026,17 @@ export const submissionsApi = {
     return response.data;
   },
 
+  bulkReject: async (body: {
+    component_ids: number[];
+    sample_type: SampleType;
+    reason: string;
+    notes?: string;
+    photo_url?: string;
+  }): Promise<{ ok: boolean; rejected_count: number }> => {
+    const response = await api.post('/api/submissions/bulk-reject', body);
+    return response.data;
+  },
+
   markReceived: async (body: {
     order_id: number;
     component_id: number | null;

@@ -6,7 +6,8 @@ import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTri
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
-import { ordersApi, componentsApi } from '@/lib/api';
+import { ordersApi, componentsApi, submissionsApi, type RejectReason, type SampleType } from '@/lib/api';
+import { SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { isSampleDone, businessDaysBetween, businessDaysUntil, relativeTimeShort } from '@/lib/sampleStatus';
@@ -570,13 +571,25 @@ function DesignComponentsContent() {
           instances={selectedGroup.visibleInstances.filter((i) => selectedComponentIds.has(i.component.id))}
           submitting={bulkSubmitting}
           onCancel={() => setBulkAction(null)}
-          onConfirm={async () => {
+          onConfirm={async (extra) => {
             const ids = Array.from(selectedComponentIds);
             if (ids.length === 0) { setBulkAction(null); return; }
             setBulkSubmitting(true);
             try {
-              const res = await componentsApi.bulkUpdateComponents(ids, bulkAction.field, bulkAction.value);
-              toast.success(`${res.changed_count} updated${res.unchanged_count ? ` · ${res.unchanged_count} already matched` : ''}`);
+              const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[bulkAction.field];
+              if (bulkAction.value === 'REJECTED' && sampleType && extra) {
+                // Route through the submissions flow so v+1 attempts actually open.
+                const res = await submissionsApi.bulkReject({
+                  component_ids: ids,
+                  sample_type: sampleType as SampleType,
+                  reason: extra.reason,
+                  notes: extra.notes || undefined,
+                });
+                toast.success(`Rejected on ${res.rejected_count} styles — v+1 opened`);
+              } else {
+                const res = await componentsApi.bulkUpdateComponents(ids, bulkAction.field, bulkAction.value);
+                toast.success(`${res.changed_count} updated${res.unchanged_count ? ` · ${res.unchanged_count} already matched` : ''}`);
+              }
               // Reload orders to pick up fresh component values
               const r = await ordersApi.getOrders(1, 500, {});
               setOrders(r.orders);
@@ -679,10 +692,33 @@ function BulkConfirmModal({
   instances: Instance[];
   submitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (extra?: { reason: string; notes: string }) => void;
 }) {
-  // Preview: split into changing vs already-matching so user sees real impact
+  // REJECTED isn't a plain status update — it triggers the resubmission flow
+  // (close current attempt, open v+1). So when the user picks it, we need a
+  // reason + optional note inside this same modal before confirming.
+  const isReject = action.value === 'REJECTED';
+  const [reason, setReason] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+  const [reasons, setReasons] = useState<RejectReason[]>([]);
+  const [loadingReasons, setLoadingReasons] = useState(false);
+
+  useEffect(() => {
+    if (!isReject) return;
+    let cancelled = false;
+    setLoadingReasons(true);
+    submissionsApi.getRejectReasons()
+      .then(res => { if (!cancelled) setReasons(res.reasons); })
+      .catch(() => { if (!cancelled) toast.error('Failed to load reasons'); })
+      .finally(() => { if (!cancelled) setLoadingReasons(false); });
+    return () => { cancelled = true; };
+  }, [isReject]);
+
+  // Preview: split into changing vs already-matching so user sees real impact.
+  // For REJECTED we treat every selected row as "changing" — even rows already
+  // at REJECTED need to go through the submission flow to get a v+1 opened.
   const { changing, matching } = useMemo(() => {
+    if (isReject) return { changing: instances, matching: [] as Instance[] };
     const changing: Instance[] = [];
     const matching: Instance[] = [];
     for (const i of instances) {
@@ -693,7 +729,7 @@ function BulkConfirmModal({
       else changing.push(i);
     }
     return { changing, matching };
-  }, [instances, action]);
+  }, [instances, action, isReject]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !submitting) onCancel(); };
@@ -705,25 +741,78 @@ function BulkConfirmModal({
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={submitting ? undefined : onCancel}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-scale-in overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-          <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
+          <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center', isReject ? 'bg-red-100' : 'bg-amber-100')}>
+            <AlertTriangle className={cn('w-5 h-5', isReject ? 'text-red-600' : 'text-amber-600')} />
           </div>
           <div>
-            <h3 className="text-base font-bold text-gray-900">Confirm bulk update</h3>
-            <p className="text-xs text-gray-500">This action will update multiple components at once.</p>
+            <h3 className="text-base font-bold text-gray-900">
+              {isReject ? `Reject ${action.fieldLabel} on ${changing.length} styles` : 'Confirm bulk update'}
+            </h3>
+            <p className="text-xs text-gray-500">
+              {isReject
+                ? 'Closes the current attempt and opens v+1 on every selected component.'
+                : 'This action will update multiple components at once.'}
+            </p>
           </div>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">What will happen</p>
-            <p className="text-sm text-gray-900">
-              Set <strong>{action.fieldLabel} Status</strong> to <strong>{action.valueLabel}</strong>
-            </p>
-            <p className="text-xs text-gray-500 mt-2">
-              <strong className="text-gray-900">{changing.length}</strong> will change
-              {matching.length > 0 && <> · <span className="text-gray-500">{matching.length} already set to this</span></>}
-            </p>
-          </div>
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {!isReject && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">What will happen</p>
+              <p className="text-sm text-gray-900">
+                Set <strong>{action.fieldLabel} Status</strong> to <strong>{action.valueLabel}</strong>
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                <strong className="text-gray-900">{changing.length}</strong> will change
+                {matching.length > 0 && <> · <span className="text-gray-500">{matching.length} already set to this</span></>}
+              </p>
+            </div>
+          )}
+          {isReject && (
+            <>
+              <div>
+                <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">
+                  Reason
+                </label>
+                {loadingReasons ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Loading reasons…
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {reasons.map((r) => (
+                      <button
+                        key={r.code}
+                        type="button"
+                        onClick={() => setReason(r.code)}
+                        className={cn(
+                          'px-2.5 py-1.5 text-xs rounded-lg border text-left transition-colors',
+                          reason === r.code
+                            ? 'bg-red-50 border-red-300 text-red-800 font-semibold'
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+                        )}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">
+                  Note to factory <span className="text-gray-400 font-normal normal-case">(optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="What's wrong and what do you want them to change? Same note sent on all styles."
+                  className="w-full px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent resize-none"
+                />
+              </div>
+            </>
+          )}
           {changing.length > 0 && (
             <div className="border border-gray-200 rounded-xl max-h-52 overflow-y-auto divide-y divide-gray-100">
               <div className="sticky top-0 bg-gray-50 px-3 py-1.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Affected styles ({changing.length})</div>
@@ -760,12 +849,19 @@ function BulkConfirmModal({
             Cancel
           </button>
           <button
-            onClick={onConfirm}
-            disabled={submitting || changing.length === 0}
-            className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
+            onClick={() => onConfirm(isReject ? { reason, notes } : undefined)}
+            disabled={submitting || changing.length === 0 || (isReject && !reason)}
+            className={cn(
+              'px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 flex items-center gap-2',
+              isReject ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'
+            )}
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? 'Updating...' : `Update ${changing.length} style${changing.length === 1 ? '' : 's'}`}
+            {submitting
+              ? (isReject ? 'Rejecting…' : 'Updating…')
+              : isReject
+                ? `Reject ${changing.length} style${changing.length === 1 ? '' : 's'}`
+                : `Update ${changing.length} style${changing.length === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

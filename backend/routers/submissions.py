@@ -390,6 +390,55 @@ async def approve_sample(
     return {"ok": True, "attempt_no": primary_attempt_no or 1, "applied_to_count": applied_to_count}
 
 
+class BulkRejectRequest(BaseModel):
+    """Reject a specific sample area across many components in one go.
+    Used by the Components page bulk action so picking REJECTED in the bulk
+    dropdown actually opens proper v+1 attempts rather than silently setting
+    the status column. component_ids is the list of OrderComponent IDs to act on."""
+    component_ids: list[int]
+    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    reason: str
+    notes: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+@router.post("/api/submissions/bulk-reject")
+async def bulk_reject_components(
+    body: BulkRejectRequest,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db),
+):
+    """Apply reject() to a list of components. Each component gets its own
+    v+1 opened; orphan components currently at status=REJECTED with no
+    submission row will be backfilled correctly by _reject_one_target."""
+    if body.reason not in [code for code, _ in SAMPLE_REJECT_REASONS]:
+        raise HTTPException(400, f"Unknown reason '{body.reason}'")
+    if not body.component_ids:
+        raise HTTPException(400, "component_ids cannot be empty")
+    # PPS is order-level — this endpoint is for component-level bulk actions only.
+    if body.sample_type == 'pps':
+        raise HTTPException(400, "Use /reject with apply_scope for order-level PPS bulk rejection")
+
+    now = datetime.utcnow()
+    rejected_count = 0
+    for comp_id in body.component_ids:
+        component = db.query(OrderComponent).filter(OrderComponent.id == comp_id).first()
+        if component is None:
+            continue
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
+        if order is None:
+            continue
+        _reject_one_target(
+            db, order, component, body.sample_type,
+            body.reason, body.notes, body.photo_url,
+            current_user.id, now,
+        )
+        rejected_count += 1
+
+    db.commit()
+    return {"ok": True, "rejected_count": rejected_count}
+
+
 class MarkReceivedRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None
