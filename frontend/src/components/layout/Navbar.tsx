@@ -21,6 +21,7 @@ import {
   ExternalLink,
   BookOpen,
   Layers,
+  RefreshCcw,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -46,6 +47,7 @@ const designSubItems = [
   { href: '/design-overview', label: 'Overview', icon: BarChart3 },
   { href: '/design', label: 'Orders', icon: Palette },
   { href: '/design-components', label: 'Components', icon: Layers },
+  { href: '/resubmissions', label: 'Resubmissions', icon: RefreshCcw },
 ];
 
 const designRoles = ['admin', 'internal', 'sourcelab_designer'];

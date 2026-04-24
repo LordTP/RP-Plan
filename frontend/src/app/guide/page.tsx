@@ -173,6 +173,77 @@ const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: 'resubmissions',
+    title: 'Resubmissions',
+    description: 'Rejected samples, v1/v2/v3 attempts, and the rework dashboard',
+    icon: AlertTriangle,
+    color: 'from-red-500 to-red-600',
+    steps: [
+      {
+        title: 'What happens when you reject a sample',
+        content: [
+          'Every sample area (Fit Sample / Strike Off / Lab Dip / PPS) can be rejected independently. When a designer picks REJECTED from the status dropdown, a modal pops up asking why.',
+          {
+            type: 'fields',
+            items: [
+              { name: '1. Reason', desc: 'Pick a structured reason (Colour, Placement, Stitch, Material, Spec, Print, or Other). This makes it possible to chart "what are we getting rejected for" later.' },
+              { name: '2. Note', desc: 'Optional free-text note to the factory. Highly recommended — it\'s what they see on their view.' },
+              { name: '3. Confirm', desc: 'Closes the current attempt as REJECTED, opens v+1 at OUTSTANDING. The sample status column resets; v1 history is preserved on the submission record.' },
+            ],
+          },
+          { type: 'callout', tone: 'info', text: 'The clock resets with each new attempt — "days on v2" is how long v2 has been open, not cumulative time from v1.' },
+        ],
+      },
+      {
+        title: 'Per-area attempt indicators',
+        content: [
+          'When a component has one or more rejections on a sample area, the V2 detail panel\'s component summary chips show extra info at a glance.',
+          {
+            type: 'fields',
+            items: [
+              { name: '✓ LD', desc: 'Lab Dip approved on the current attempt (v1 if no prior rework).' },
+              { name: 'LD v2 ·1', desc: 'Lab Dip currently on v2 with 1 prior rejection. Amber border.' },
+              { name: 'LD v3 ·2', desc: 'Stuck — 3+ attempts, 2+ prior rejections. Red border and pulsing dot.' },
+            ],
+          },
+          { type: 'callout', tone: 'warn', text: 'Stuck components (3+ attempts) are flagged on the Resubmissions dashboard and need direct attention — there\'s usually a comms issue with the factory that the reason/note alone hasn\'t fixed.' },
+        ],
+      },
+      {
+        title: 'The Resubmissions dashboard',
+        content: [
+          'Found at Design → Resubmissions. Only appears populated once something has actually been rejected. Until then it shows a friendly empty state.',
+          {
+            type: 'fields',
+            items: [
+              { name: 'KPI row', desc: 'Sample areas in rework now, total rejections logged, and count of stuck (3+ attempt) items.' },
+              { name: 'Stuck in rework', desc: 'Table of every open attempt at v2 or higher, sorted by days open desc. Click a row to open that order. Stuck items (v3+) are tinted red.' },
+              { name: 'By factory', desc: 'First-time-right rate per factory across all submissions. Red = <50% FTR, amber = 50–75%, green = 75%+.' },
+              { name: 'By sample type', desc: 'Same FTR breakdown by Fit / Strike / Lab / PPS — useful for spotting patterns ("why is every Strike Off bouncing?").' },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'Permissions',
+        content: [
+          'Who can do what:',
+          {
+            type: 'table',
+            headers: ['Role', 'Can reject?', 'Can approve?', 'Can view dashboard?'],
+            rows: [
+              ['Admin', 'Yes', 'Yes', 'Yes'],
+              ['Internal', 'Yes', 'Yes', 'Yes'],
+              ['Designer', 'Yes', 'Yes', 'Yes'],
+              ['Supplier', 'No', 'No', 'No'],
+            ],
+          },
+          { type: 'callout', tone: 'info', text: 'Suppliers never see the REJECTED option in dropdowns and can\'t access the dashboard. Their view continues to show the current open attempt\'s status only.' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'design-components',
     title: 'Design → Components',
     description: 'Catalogue of every component with bulk edit, merge, and search',

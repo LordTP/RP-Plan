@@ -31,7 +31,9 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
+import { submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -292,6 +294,18 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   };
 
   const handleDetailSave = async (orderId: number, field: string, value: any) => {
+    // Sentinel used by child components (e.g. rejection flow) to force a refresh
+    // of the order row after an out-of-band mutation — no actual field change.
+    if (field === '__refresh__') {
+      try {
+        const fresh = await ordersApi.getOrder(orderId);
+        setOrders(prev => prev.map(o => o.id === fresh.id ? fresh : o));
+      } catch {
+        // Silent — a failed refresh doesn't break the UI, just leaves stale state.
+      }
+      return;
+    }
+
     // For supplier date edits, show the reason modal instead of saving directly
     const col = COLUMNS.find(c => c.key === field);
     if (isSupplier && col?.type === 'date') {
@@ -1030,6 +1044,37 @@ function DetailPanel({
   const [modalTab, setModalTab] = useState<'details' | 'comments'>('details');
   const modalContentRef = useRef<HTMLDivElement>(null);
 
+  // Order-level submissions (component_id IS NULL). We only care about these for the
+  // rejection flow on PPS (always order-level) and on fit/strike/lab for orders without components.
+  const [orderSubmissions, setOrderSubmissions] = useState<SampleSubmission[]>([]);
+  const [rejectModal, setRejectModal] = useState<{ sampleType: SampleType; currentAttemptNo: number } | null>(null);
+
+  const loadOrderSubmissions = useCallback(async () => {
+    try {
+      const res = await submissionsApi.getForOrder(order.id);
+      setOrderSubmissions(res.submissions.filter(s => s.component_id === null));
+    } catch {
+      // Silent — dormant until first rejection.
+    }
+  }, [order.id]);
+
+  useEffect(() => { loadOrderSubmissions(); }, [loadOrderSubmissions]);
+
+  const orderLevelCurrentAttempt = (sampleType: SampleType): number => {
+    const matching = orderSubmissions.filter(s => s.sample_type === sampleType);
+    if (matching.length === 0) return 1;
+    return Math.max(...matching.map(s => s.attempt_no));
+  };
+
+  const handleSampleStatusSave = (field: string, value: any) => {
+    const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[field];
+    if (value === 'REJECTED' && sampleType) {
+      setRejectModal({ sampleType, currentAttemptNo: orderLevelCurrentAttempt(sampleType) });
+      return;
+    }
+    onSave?.(order.id, field, value);
+  };
+
   const statusStyle = getStatusStyle(order.status);
 
   const sizes = getSizeBreakdown(order);
@@ -1242,7 +1287,7 @@ function DetailPanel({
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Fit Sample</p>
                   {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
-                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} />}
                   {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
                   {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
                 </div>
@@ -1250,7 +1295,7 @@ function DetailPanel({
               {!hasComponents && (hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Strike Off</p>
-                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
+                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('strike_off_status', v)} />}
                   {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} />}
                   {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} />}
                 </div>
@@ -1258,7 +1303,7 @@ function DetailPanel({
               {!hasComponents && (hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Lab Dip</p>
-                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
+                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} />}
                   {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} />}
                   {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} />}
                 </div>
@@ -1266,7 +1311,7 @@ function DetailPanel({
               {(hasCol('pps_status') || hasCol('pps_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">PPS</p>
-                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
+                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} />}
                   {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} />}
                   {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
                   {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} />}
@@ -1324,6 +1369,23 @@ function DetailPanel({
         </p>
       </div>
       </div>
+
+      {rejectModal && (
+        <RejectSampleModal
+          orderId={order.id}
+          componentId={null}
+          componentName={null}
+          sampleType={rejectModal.sampleType}
+          currentAttemptNo={rejectModal.currentAttemptNo}
+          onClose={() => setRejectModal(null)}
+          onRejected={() => {
+            setRejectModal(null);
+            loadOrderSubmissions();
+            // Trigger a refresh of the order itself so the new OUTSTANDING status shows.
+            onSave?.(order.id, '__refresh__', null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1356,6 +1418,7 @@ export function ComponentsSection({
   onComponentsLoaded?: (count: number) => void;
 }) {
   const [components, setComponents] = useState<OrderComponent[]>([]);
+  const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -1368,6 +1431,13 @@ export function ComponentsSection({
   // for autocomplete so users pick existing names instead of creating variants.
   const [knownNames, setKnownNames] = useState<{ name: string; count: number }[]>([]);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  // Reject modal state — populated when a user picks REJECTED from a sample status dropdown.
+  const [rejectModal, setRejectModal] = useState<{
+    componentId: number;
+    componentName: string;
+    sampleType: SampleType;
+    currentAttemptNo: number;
+  } | null>(null);
 
   const loadComponents = useCallback(async () => {
     try {
@@ -1381,9 +1451,27 @@ export function ComponentsSection({
     }
   }, [orderId, onComponentsLoaded]);
 
+  const loadSubmissions = useCallback(async () => {
+    try {
+      const res = await submissionsApi.getForOrder(orderId);
+      setSubmissions(res.submissions);
+    } catch {
+      // Silent — submissions are additive context, don't break component loading if this fails.
+    }
+  }, [orderId]);
+
   useEffect(() => {
     loadComponents();
-  }, [loadComponents]);
+    loadSubmissions();
+  }, [loadComponents, loadSubmissions]);
+
+  // Current (highest) attempt number for a given (component, sample_type). Returns
+  // 1 when nothing's been rejected yet — that's the implicit v1 from legacy columns.
+  const currentAttempt = (componentId: number | null, sampleType: SampleType): number => {
+    const matching = submissions.filter(s => s.component_id === componentId && s.sample_type === sampleType);
+    if (matching.length === 0) return 1;
+    return Math.max(...matching.map(s => s.attempt_no));
+  };
 
   // Load styles on PO when add form opens
   useEffect(() => {
@@ -1462,6 +1550,19 @@ export function ComponentsSection({
   };
 
   const handleFieldSave = async (component: OrderComponent, fieldKey: string, value: string, applyToPO: boolean, selectedIds?: number[]) => {
+    // Intercept REJECTED on a sample status field — open the reject modal so we
+    // can capture a reason/note and kick off a v+1 attempt via the submissions API.
+    const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[fieldKey];
+    if (value === 'REJECTED' && sampleType) {
+      setRejectModal({
+        componentId: component.id,
+        componentName: component.name,
+        sampleType,
+        currentAttemptNo: currentAttempt(component.id, sampleType),
+      });
+      return;
+    }
+
     const update: Record<string, any> = {};
     update[fieldKey] = value || null;
 
@@ -1640,22 +1741,11 @@ export function ComponentsSection({
                   <span className="text-xs font-semibold text-gray-700">{comp.name}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* Quick status summary — always shown so incomplete samples are visible at a glance */}
-                  {(() => {
-                    const s = (comp.fit_sample_status || '').toUpperCase();
-                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.fit_sample_approved;
-                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} Fit</span>;
-                  })()}
-                  {(() => {
-                    const s = (comp.strike_off_status || '').toUpperCase();
-                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.strike_off_approved;
-                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} SO</span>;
-                  })()}
-                  {(() => {
-                    const s = (comp.lab_dip_status || '').toUpperCase();
-                    const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!comp.lab_dip_approved;
-                    return <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold', done ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}>{done ? '✓' : ''} LD</span>;
-                  })()}
+                  {/* Quick status summary with rework indicator. Shows the current attempt
+                      number and prior rejection count when submissions exist. */}
+                  <SampleAreaChip label="Fit" done={(comp.fit_sample_status || '').toUpperCase() === 'APPROVED' || (comp.fit_sample_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.fit_sample_approved} submissions={submissions} componentId={comp.id} sampleType="fit" />
+                  <SampleAreaChip label="SO" done={(comp.strike_off_status || '').toUpperCase() === 'APPROVED' || (comp.strike_off_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.strike_off_approved} submissions={submissions} componentId={comp.id} sampleType="strike" />
+                  <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
                 </div>
               </button>
 
@@ -1705,6 +1795,22 @@ export function ComponentsSection({
             </div>
           ))}
         </div>
+      )}
+
+      {rejectModal && (
+        <RejectSampleModal
+          orderId={orderId}
+          componentId={rejectModal.componentId}
+          componentName={rejectModal.componentName}
+          sampleType={rejectModal.sampleType}
+          currentAttemptNo={rejectModal.currentAttemptNo}
+          onClose={() => setRejectModal(null)}
+          onRejected={() => {
+            setRejectModal(null);
+            loadComponents();
+            loadSubmissions();
+          }}
+        />
       )}
     </div>
   );
@@ -1995,5 +2101,41 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
         )}
       </div>
     </div>
+  );
+}
+
+// Small at-a-glance chip showing the current state of a sample area on a component
+// — tick for approved, amber for in-progress, and a v2/v3 badge + prior-rejection
+// count when the area has been rejected at least once.
+function SampleAreaChip({
+  label,
+  done,
+  submissions,
+  componentId,
+  sampleType,
+}: {
+  label: string;
+  done: boolean;
+  submissions: SampleSubmission[];
+  componentId: number | null;
+  sampleType: SampleType;
+}) {
+  const matching = submissions.filter(s => s.component_id === componentId && s.sample_type === sampleType);
+  const attemptNo = matching.length === 0 ? 1 : Math.max(...matching.map(s => s.attempt_no));
+  const rejections = matching.filter(s => s.outcome === 'REJECTED').length;
+  const stuck = rejections >= 2;
+  const inRework = attemptNo > 1 && !done;
+
+  let classes = 'bg-green-100 text-green-700';
+  if (!done && inRework && stuck) classes = 'bg-red-100 text-red-700 ring-1 ring-red-400';
+  else if (!done && inRework)      classes = 'bg-amber-100 text-amber-800 ring-1 ring-amber-400';
+  else if (!done)                  classes = 'bg-amber-100 text-amber-700';
+
+  return (
+    <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold inline-flex items-center gap-0.5', classes)}>
+      {done && '✓'} {label}
+      {attemptNo > 1 && <span className="font-bold">v{attemptNo}</span>}
+      {rejections > 0 && <span className="text-red-600">·{rejections}</span>}
+    </span>
   );
 }

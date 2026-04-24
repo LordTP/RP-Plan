@@ -221,6 +221,7 @@ export const FIT_SAMPLE_STATUS_OPTIONS = [
   'P23 ADVISE UPDATE',
   'LATE',
   'RECEIVED',
+  'REJECTED',
 ];
 
 export const SAMPLE_STATUS_OPTIONS = [
@@ -230,7 +231,18 @@ export const SAMPLE_STATUS_OPTIONS = [
   'LATE',
   'RECEIVED',
   'APPROVED',
+  'REJECTED',
 ];
+
+// Map legacy sample-status field keys to the canonical sample_type used by
+// the submissions API. Null = this field isn't a sample-status field that
+// should trigger the resubmission flow.
+export const SAMPLE_STATUS_FIELD_TO_TYPE: Record<string, 'fit' | 'strike' | 'lab' | 'pps' | undefined> = {
+  fit_sample_status: 'fit',
+  strike_off_status: 'strike',
+  lab_dip_status: 'lab',
+  pps_status: 'pps',
+};
 
 export const FCL_LCL_OPTIONS = ['FCL', 'LCL', 'AIR'];
 

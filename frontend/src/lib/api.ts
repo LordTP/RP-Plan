@@ -927,4 +927,86 @@ export const approvalsApi = {
   },
 };
 
+// Sample submission endpoints — v1/v2/v3 attempt tracking per sample area.
+export type SampleType = 'fit' | 'strike' | 'lab' | 'pps';
+
+export interface RejectReason {
+  code: string;
+  label: string;
+}
+
+export interface SampleSubmission {
+  id: number;
+  component_id: number | null;
+  sample_type: SampleType;
+  attempt_no: number;
+  requested_at: string | null;
+  submitted_at: string | null;
+  resolved_at: string | null;
+  outcome: 'APPROVED' | 'REJECTED' | null;
+  reason: string | null;
+  notes: string | null;
+  photo_url: string | null;
+  actioned_by_id: number | null;
+}
+
+export interface ResubmissionsOverview {
+  empty: boolean;
+  in_rework_now: number;
+  stuck: Array<{
+    submission_id: number;
+    order_id: number;
+    po_number: string | null;
+    china_orderbook_ref: string | null;
+    component_id: number | null;
+    component_name: string | null;
+    sample_type: SampleType;
+    attempt_no: number;
+    factory: string | null;
+    days_open: number;
+    last_reason: string | null;
+    last_reason_notes: string | null;
+  }>;
+  by_factory: Array<{ factory: string; submissions: number; rejections: number; ftr_pct: number }>;
+  by_type: Array<{ sample_type: SampleType; submissions: number; rejections: number; ftr_pct: number }>;
+}
+
+export const submissionsApi = {
+  getRejectReasons: async (): Promise<{ reasons: RejectReason[] }> => {
+    const response = await api.get('/api/submissions/reject-reasons');
+    return response.data;
+  },
+
+  reject: async (body: {
+    order_id: number;
+    component_id: number | null;
+    sample_type: SampleType;
+    reason: string;
+    notes?: string;
+    photo_url?: string;
+  }): Promise<{ ok: boolean; new_attempt_no: number; rejected_attempt_no: number }> => {
+    const response = await api.post('/api/submissions/reject', body);
+    return response.data;
+  },
+
+  approve: async (body: {
+    order_id: number;
+    component_id: number | null;
+    sample_type: SampleType;
+  }): Promise<{ ok: boolean; attempt_no: number }> => {
+    const response = await api.post('/api/submissions/approve', body);
+    return response.data;
+  },
+
+  getForOrder: async (orderId: number): Promise<{ submissions: SampleSubmission[] }> => {
+    const response = await api.get(`/api/submissions/order/${orderId}`);
+    return response.data;
+  },
+
+  getOverview: async (): Promise<ResubmissionsOverview> => {
+    const response = await api.get('/api/resubmissions/overview');
+    return response.data;
+  },
+};
+
 export default api;
