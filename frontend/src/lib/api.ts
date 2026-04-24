@@ -289,6 +289,22 @@ export const componentsApi = {
     return response.data;
   },
 
+  getComponentNames: async (): Promise<{ names: { name: string; count: number }[] }> => {
+    const response = await api.get('/api/components/names');
+    return response.data;
+  },
+
+  mergeComponentNames: async (
+    fromNames: string[],
+    toName: string,
+  ): Promise<{ success: boolean; renamed_count: number; to_name: string }> => {
+    const response = await api.post('/api/components/merge', {
+      from_names: fromNames,
+      to_name: toName,
+    });
+    return response.data;
+  },
+
   bulkUpdateComponents: async (
     componentIds: number[],
     field: string,

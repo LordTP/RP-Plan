@@ -1364,6 +1364,10 @@ export function ComponentsSection({
   const [isAdding, setIsAdding] = useState(false);
   const [stylesOnPO, setStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
   const [selectedStyleIds, setSelectedStyleIds] = useState<Set<number>>(new Set());
+  // Names from the whole system, loaded once when the add form opens, used
+  // for autocomplete so users pick existing names instead of creating variants.
+  const [knownNames, setKnownNames] = useState<{ name: string; count: number }[]>([]);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
 
   const loadComponents = useCallback(async () => {
     try {
@@ -1389,6 +1393,36 @@ export function ComponentsSection({
         .catch(console.error);
     }
   }, [showAddForm, poNumber]);
+
+  // Fetch the global list of component names once the user opens the add form,
+  // so autocomplete has something to show from the first keystroke.
+  useEffect(() => {
+    if (showAddForm && knownNames.length === 0) {
+      componentsApi.getComponentNames()
+        .then(res => setKnownNames(res.names))
+        .catch(console.error);
+    }
+  }, [showAddForm, knownNames.length]);
+
+  // Filter suggestions as the user types (case-insensitive, exclude exact match)
+  const nameSuggestions = useMemo(() => {
+    const q = newName.trim().toLowerCase();
+    if (!q) return knownNames.slice(0, 8);
+    const matches = knownNames.filter(n =>
+      n.name.toLowerCase().includes(q) && n.name.toLowerCase() !== q
+    );
+    return matches.slice(0, 8);
+  }, [newName, knownNames]);
+
+  // Detect casing/whitespace-only collision with existing name → show a nudge
+  const existingExactMatch = useMemo(() => {
+    const normalized = newName.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!normalized) return null;
+    return knownNames.find(n => {
+      const existingNorm = n.name.trim().toLowerCase().replace(/\s+/g, ' ');
+      return existingNorm === normalized && n.name.trim() !== newName.trim();
+    }) || null;
+  }, [newName, knownNames]);
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
@@ -1483,15 +1517,50 @@ export function ComponentsSection({
       {/* Add Form */}
       {showAddForm && (
         <div className="mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && addMode === 'single') handleAdd(); if (e.key === 'Escape') setShowAddForm(false); }}
-            placeholder="Component name (e.g. Main Fabric)"
-            autoFocus
-            className="w-full text-xs border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => { setNewName(e.target.value); setShowNameSuggestions(true); }}
+              onFocus={() => setShowNameSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { setShowNameSuggestions(false); setShowAddForm(false); }
+                else if (e.key === 'Enter' && addMode === 'single') { setShowNameSuggestions(false); handleAdd(); }
+              }}
+              placeholder="Component name (e.g. Main Fabric)"
+              autoFocus
+              className="w-full text-xs border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+            {showNameSuggestions && nameSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto">
+                <p className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">Existing names</p>
+                {nameSuggestions.map(s => (
+                  <button
+                    key={s.name}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setNewName(s.name); setShowNameSuggestions(false); }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-primary-50 transition-colors"
+                  >
+                    <span className="font-medium text-gray-800 truncate">{s.name}</span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{s.count} {s.count === 1 ? 'use' : 'uses'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {existingExactMatch && (
+            <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 flex items-center justify-between gap-2">
+              <span>Looks like <strong>"{existingExactMatch.name}"</strong> already exists — pick it to avoid duplicates.</span>
+              <button
+                type="button"
+                onClick={() => setNewName(existingExactMatch.name)}
+                className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+              >
+                Use it →
+              </button>
+            </div>
+          )}
           <div className="space-y-1">
             <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
               <input type="radio" name="addMode" checked={addMode === 'single'} onChange={() => setAddMode('single')} className="text-primary-600 focus:ring-primary-500" />

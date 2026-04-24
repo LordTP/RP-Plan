@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -18,6 +19,58 @@ from sample_helpers import (
 
 
 router = APIRouter()
+
+
+@router.get("/api/components/names")
+async def get_component_names(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List every distinct component name in the system with a count of how
+    many component rows use it. Powers the autocomplete on the add-component
+    form so users reuse existing names instead of creating variants."""
+    rows = db.query(
+        OrderComponent.name,
+        func.count(OrderComponent.id).label('count')
+    ).filter(
+        OrderComponent.name.isnot(None),
+        OrderComponent.name != ''
+    ).group_by(OrderComponent.name).order_by(func.count(OrderComponent.id).desc()).all()
+    return {"names": [{"name": name, "count": count} for name, count in rows]}
+
+
+@router.post("/api/components/merge")
+async def merge_component_names(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Rename every OrderComponent whose `name` is in `from_names` to `to_name`.
+    Used to collapse casing/spacing duplicates flagged by the data-quality
+    callout. Atomic — one transaction."""
+    from_names = data.get("from_names") or []
+    to_name = (data.get("to_name") or "").strip()
+
+    if not from_names or not isinstance(from_names, list):
+        raise HTTPException(status_code=400, detail="from_names must be a non-empty list")
+    if not to_name:
+        raise HTTPException(status_code=400, detail="to_name is required")
+
+    # Find components to rename (exclude those already matching the target)
+    matching = db.query(OrderComponent).filter(
+        OrderComponent.name.in_(from_names),
+        OrderComponent.name != to_name,
+    ).all()
+
+    renamed = 0
+    for comp in matching:
+        comp.name = to_name
+        comp.updated_at = datetime.utcnow()
+        renamed += 1
+
+    db.commit()
+
+    return {"success": True, "renamed_count": renamed, "to_name": to_name}
 
 
 @router.get("/api/orders/{order_id}/components", response_model=List[ComponentResponse])

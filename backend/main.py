@@ -150,6 +150,14 @@ async def startup_event():
             conn.execute(text("ALTER TABLE date_change_history ADD COLUMN component_name VARCHAR(100)"))
         print("✓ Added component_name column to date_change_history table")
 
+    # Migration: normalize users.role to lowercase values on SQLite. Older local
+    # DBs stored the enum NAME ("ADMIN"), while we now use values_callable to
+    # store the VALUE ("admin"). Postgres in prod was already lowercase — this
+    # is a no-op there.
+    if engine.dialect.name == 'sqlite':
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE users SET role = LOWER(role) WHERE role != LOWER(role)"))
+
     # Seed default app_settings rows
     seed_db = SessionLocal()
     try:

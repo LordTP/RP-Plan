@@ -75,6 +75,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   }>>>({});
 
   const isSupplier = user?.role === 'supplier';
+  const isDesigner = user?.role === 'sourcelab_designer';
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
 
   // Drag-to-scroll state
@@ -204,6 +205,11 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     } else if (isSupplier) {
       // Fallback to hardcoded defaults if settings not loaded yet
       columns = columns.filter((col) => !col.supplierHidden);
+    }
+
+    // Designers don't see pricing
+    if (isDesigner) {
+      columns = columns.filter((col) => col.key !== 'trade_price' && col.key !== 'total_order_value');
     }
 
     // Insert tracking reference column after status for shipped tab

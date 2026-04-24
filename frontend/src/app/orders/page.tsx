@@ -34,24 +34,6 @@ export default function OrdersPage() {
 }
 
 function OrdersGuard() {
-  const { user } = useStore();
-
-  if (user?.role === 'sourcelab_designer') {
-    return (
-      <AppShell title="Orders">
-        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <X className="w-8 h-8 text-red-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-            <p className="text-gray-500">Designer accounts do not have access to the Orders page.</p>
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
   return <OrdersContent />;
 }
 

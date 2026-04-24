@@ -45,6 +45,7 @@ function orderMatchesQuery(order: Order, q: string): boolean {
     order.colour,
     order.description,
     order.customer_po_number,
+    order.china_orderbook_ref,
   ];
   return fields.some((v) => (v || '').toString().toLowerCase().includes(q));
 }
@@ -122,12 +123,23 @@ function DesignComponentsContent() {
 
     for (const { name, instances } of rawGroups) {
       const nameMatches = q ? name.toLowerCase().includes(q) : true;
-      const visibleInstances = q && !nameMatches
+      let visibleInstances = q && !nameMatches
         ? instances.filter(({ order }) => orderMatchesQuery(order, q))
         : instances;
 
-      // If searching and nothing matches for this group, skip it
-      if (q && visibleInstances.length === 0) continue;
+      // In Pending mode, drop any instance that's fully done (all 3 samples done)
+      if (sort === 'pending') {
+        visibleInstances = visibleInstances.filter(({ component }) => {
+          const f = isSampleDone(component.fit_sample_status, component.fit_sample_approved);
+          const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
+          const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
+          return !(f && s && l);
+        });
+      }
+
+      // If searching and nothing matches for this group, skip it.
+      // If Pending mode and nothing pending, also skip (filters out fully-done groups).
+      if ((q || sort === 'pending') && visibleInstances.length === 0) continue;
 
       let fitDone = 0, soDone = 0, ldDone = 0, pending = 0;
       for (const { component } of visibleInstances) {
@@ -181,22 +193,38 @@ function DesignComponentsContent() {
 
   // Data quality: find component names that differ only by casing/whitespace.
   const dupeClusters = useMemo(() => {
-    const byNorm = new Map<string, string[]>();
+    const byNorm = new Map<string, Map<string, number>>();
     for (const g of rawGroups) {
       const norm = normalizeComponentName(g.name);
       if (!norm) continue;
-      if (!byNorm.has(norm)) byNorm.set(norm, []);
-      byNorm.get(norm)!.push(g.name);
+      if (!byNorm.has(norm)) byNorm.set(norm, new Map());
+      const variantCounts = byNorm.get(norm)!;
+      variantCounts.set(g.name, (variantCounts.get(g.name) || 0) + g.instances.length);
     }
-    const clusters: { normalized: string; variants: string[] }[] = [];
-    for (const [norm, variants] of Array.from(byNorm.entries())) {
-      const uniqueVariants = Array.from(new Set(variants));
-      if (uniqueVariants.length > 1) {
-        clusters.push({ normalized: norm, variants: uniqueVariants });
+    const clusters: { normalized: string; variants: { name: string; count: number }[] }[] = [];
+    for (const [norm, variantCounts] of Array.from(byNorm.entries())) {
+      if (variantCounts.size > 1) {
+        const variants = Array.from(variantCounts.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count);
+        clusters.push({ normalized: norm, variants });
       }
     }
     return clusters;
   }, [rawGroups]);
+
+  const handleMerge = async (fromNames: string[], toName: string) => {
+    try {
+      const res = await componentsApi.mergeComponentNames(fromNames, toName);
+      toast.success(`Merged ${res.renamed_count} components into "${toName}"`);
+      // Reload orders so the groups/clusters update
+      const r = await ordersApi.getOrders(1, 500, {});
+      setOrders(r.orders);
+      if (fromNames.includes(selectedName || '')) setSelectedName(toName);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Merge failed');
+    }
+  };
 
   // Summary stats for the selected component (computed on the visible instances so search-aware)
   const summary = useMemo(() => {
@@ -358,7 +386,7 @@ function DesignComponentsContent() {
               </div>
               {/* Data quality callout */}
               {dupeClusters.length > 0 && (
-                <DataQualityCallout clusters={dupeClusters} />
+                <DataQualityCallout clusters={dupeClusters} onMerge={handleMerge} />
               )}
             </div>
 
@@ -508,7 +536,12 @@ function DesignComponentsContent() {
                                 <div className="font-semibold text-gray-900">{order.style_code || '—'}</div>
                                 {order.colour && <div className="text-[10px] text-gray-400">{order.colour}</div>}
                               </td>
-                              <td className="px-3 py-2.5 text-gray-600">{order.po_number}</td>
+                              <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">
+                                {order.po_number}
+                                {order.china_orderbook_ref && (
+                                  <span className="text-gray-400 font-normal"> — {order.china_orderbook_ref}</span>
+                                )}
+                              </td>
                               <td className="px-3 py-2.5 text-gray-600 truncate max-w-[160px]">{order.customer || '—'}</td>
                               <td className="px-3 py-2.5 text-gray-600 truncate max-w-[120px]">{order.factory || '—'}</td>
                               <td className="px-3 py-2.5 text-gray-500 text-[10px] uppercase tracking-wider">{order.season || '—'}</td>
@@ -741,10 +774,18 @@ function BulkConfirmModal({
 }
 
 
-function DataQualityCallout({ clusters }: { clusters: { normalized: string; variants: string[] }[] }) {
+type DupeCluster = { normalized: string; variants: { name: string; count: number }[] };
+
+function DataQualityCallout({
+  clusters,
+  onMerge,
+}: {
+  clusters: DupeCluster[];
+  onMerge: (fromNames: string[], toName: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border-t border-gray-100 bg-amber-50/40">
+    <div className="border-t border-gray-100 bg-amber-50/40 flex-shrink-0">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-amber-50 transition-colors"
@@ -756,20 +797,98 @@ function DataQualityCallout({ clusters }: { clusters: { normalized: string; vari
         <ChevronDown className={cn('w-3 h-3 text-amber-600 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2 max-h-60 overflow-y-auto">
+        <div className="px-3 pb-3 space-y-2 max-h-80 overflow-y-auto">
           {clusters.map((c) => (
-            <div key={c.normalized} className="bg-white border border-amber-200 rounded-md px-2.5 py-1.5">
-              <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-0.5">Same name, different casing/spacing</p>
-              <div className="space-y-0.5">
-                {c.variants.map((v) => (
-                  <div key={v} className="text-[11px] text-gray-700 font-mono truncate">"{v}"</div>
-                ))}
-              </div>
-            </div>
+            <DupeClusterCard key={c.normalized} cluster={c} onMerge={onMerge} />
           ))}
-          <p className="text-[10px] text-amber-700 leading-relaxed pt-1">
-            Tip: edit the component names on their styles so they match exactly.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DupeClusterCard({
+  cluster,
+  onMerge,
+}: {
+  cluster: DupeCluster;
+  onMerge: (fromNames: string[], toName: string) => Promise<void>;
+}) {
+  const [merging, setMerging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Default: keep the variant with the most usage
+  const [keepName, setKeepName] = useState(cluster.variants[0]?.name || '');
+  const othersCount = cluster.variants
+    .filter((v) => v.name !== keepName)
+    .reduce((s, v) => s + v.count, 0);
+
+  const handleConfirm = async () => {
+    const fromNames = cluster.variants.filter((v) => v.name !== keepName).map((v) => v.name);
+    if (fromNames.length === 0) return;
+    setMerging(true);
+    try {
+      await onMerge(fromNames, keepName);
+      setPickerOpen(false);
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-amber-200 rounded-md px-2.5 py-2">
+      <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-1">Same name, different casing/spacing</p>
+      <div className="space-y-0.5 mb-2">
+        {cluster.variants.map((v) => (
+          <div key={v.name} className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="text-gray-700 font-mono truncate">"{v.name}"</span>
+            <span className="text-[10px] text-gray-400 flex-shrink-0">{v.count}</span>
+          </div>
+        ))}
+      </div>
+      {!pickerOpen ? (
+        <button
+          onClick={() => setPickerOpen(true)}
+          className="w-full text-[10px] font-semibold text-amber-700 hover:text-amber-900 hover:bg-amber-50 border border-amber-300 rounded px-2 py-1 transition-colors"
+        >
+          Merge these into one →
+        </button>
+      ) : (
+        <div className="space-y-1.5 pt-1 border-t border-amber-100">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Keep which name?</p>
+          <div className="space-y-0.5">
+            {cluster.variants.map((v) => (
+              <label key={v.name} className="flex items-center gap-1.5 text-[11px] cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                <input
+                  type="radio"
+                  name={`keep-${cluster.normalized}`}
+                  checked={keepName === v.name}
+                  onChange={() => setKeepName(v.name)}
+                  className="w-3 h-3"
+                />
+                <span className="font-mono text-gray-700 truncate flex-1">"{v.name}"</span>
+                <span className="text-[9px] text-gray-400">{v.count}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[10px] text-amber-700 pt-0.5">
+            {othersCount} component{othersCount !== 1 ? 's' : ''} will be renamed.
           </p>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setPickerOpen(false)}
+              disabled={merging}
+              className="flex-1 text-[10px] text-gray-600 hover:bg-gray-100 rounded px-2 py-1 border border-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={merging || othersCount === 0}
+              className="flex-1 text-[10px] font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded px-2 py-1 disabled:opacity-50"
+            >
+              {merging ? 'Merging...' : 'Confirm merge'}
+            </button>
+          </div>
         </div>
       )}
     </div>

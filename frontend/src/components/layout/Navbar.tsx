@@ -30,7 +30,7 @@ import { ChevronDown, Check } from 'lucide-react';
 // Note: Design dropdown is rendered separately after this map. It appears between Orders/Factory and Tracking.
 const navItemsBefore = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
-  { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier'] },
+  { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier', 'sourcelab_designer'] },
 ];
 const navItemsAfter = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },

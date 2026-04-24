@@ -223,7 +223,8 @@ function OrdersV2Content() {
         o.style_code?.toLowerCase().includes(q) ||
         o.factory?.toLowerCase().includes(q) ||
         o.description?.toLowerCase().includes(q) ||
-        o.colour?.toLowerCase().includes(q)
+        o.colour?.toLowerCase().includes(q) ||
+        o.china_orderbook_ref?.toLowerCase().includes(q)
       );
     }
 
@@ -569,6 +570,9 @@ function POCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
             <span className="text-base font-bold text-gray-900">{group.po_number}</span>
+            {group.styles[0]?.china_orderbook_ref && (
+              <span className="text-xs text-gray-500 font-medium">— {group.styles[0].china_orderbook_ref}</span>
+            )}
             <span className={cn(
               'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
               statusStyle.bg, statusStyle.text
