@@ -40,12 +40,19 @@ class RejectRequest(BaseModel):
     reason: str = Field(..., min_length=1, description="Reason code from SAMPLE_REJECT_REASONS")
     notes: Optional[str] = None
     photo_url: Optional[str] = None
+    # Multi-style apply scope. 'single' = just this (order, component) tuple.
+    # 'all_on_po' = find every sibling component with the same name on the same PO and reject each.
+    # 'selected' = only the orders listed in apply_to_order_ids (names matched).
+    apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
+    apply_to_order_ids: Optional[list[int]] = None
 
 
 class ApproveRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None
     sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
+    apply_to_order_ids: Optional[list[int]] = None
 
 
 def _validate_target(db: Session, order_id: int, component_id: Optional[int], sample_type: str):
@@ -102,6 +109,52 @@ def _set_target_state(record, sample_type: str, status=None, received=None, appr
     if approved is not None: setattr(record, cols['approved'], approved)
 
 
+def _resolve_targets(
+    db: Session,
+    primary_order_id: int,
+    primary_component_id: Optional[int],
+    sample_type: str,
+    apply_scope: str,
+    apply_to_order_ids: Optional[list[int]],
+) -> list[tuple[PurchaseOrder, Optional[OrderComponent]]]:
+    """Expand a single (order, component) target into a list of (order, component)
+    tuples based on the apply scope. Siblings are matched by component name on
+    the same PO. For order-level samples (component_id is None), we expand by
+    matching the same PO number regardless of component."""
+    primary_order, primary_component = _validate_target(db, primary_order_id, primary_component_id, sample_type)
+    primary = (primary_order, primary_component)
+
+    if apply_scope == 'single':
+        return [primary]
+
+    # For order-level samples (no component on the primary), sibling expansion
+    # means "the same sample_type on every other order sharing this PO number".
+    if primary_component is None:
+        sibling_orders = db.query(PurchaseOrder).filter(
+            PurchaseOrder.po_number == primary_order.po_number,
+            PurchaseOrder.id != primary_order.id,
+        )
+        if apply_scope == 'selected':
+            ids = apply_to_order_ids or []
+            sibling_orders = sibling_orders.filter(PurchaseOrder.id.in_(ids))
+        siblings = [(o, None) for o in sibling_orders.all()]
+        return [primary, *siblings]
+
+    # Component-level: find every OrderComponent with the same name on the same PO.
+    sibling_components = db.query(OrderComponent, PurchaseOrder).join(
+        PurchaseOrder, OrderComponent.order_id == PurchaseOrder.id
+    ).filter(
+        PurchaseOrder.po_number == primary_order.po_number,
+        OrderComponent.name == primary_component.name,
+        OrderComponent.id != primary_component.id,
+    )
+    if apply_scope == 'selected':
+        ids = apply_to_order_ids or []
+        sibling_components = sibling_components.filter(OrderComponent.order_id.in_(ids))
+    siblings = [(o, c) for c, o in sibling_components.all()]
+    return [primary, *siblings]
+
+
 def _latest_submission(db: Session, order_id: int, component_id: Optional[int], sample_type: str) -> Optional[SampleSubmission]:
     q = db.query(SampleSubmission).filter(
         SampleSubmission.order_id == order_id,
@@ -111,10 +164,135 @@ def _latest_submission(db: Session, order_id: int, component_id: Optional[int], 
     return q.order_by(SampleSubmission.attempt_no.desc()).first()
 
 
+@router.get("/api/submissions/siblings")
+async def list_siblings(
+    order_id: int,
+    sample_type: Literal['fit', 'strike', 'lab', 'pps'],
+    component_id: Optional[int] = None,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db),
+):
+    """Preview which other styles on the same PO would be affected by
+    apply_scope='all_on_po' for this (order, component, sample_type) tuple.
+    Used by the reject modal to show "this will apply to N styles" with a picker."""
+    primary_order, primary_component = _validate_target(db, order_id, component_id, sample_type)
+
+    siblings = []
+    if primary_component is None:
+        # Order-level: siblings are other orders on the same PO number.
+        rows = db.query(PurchaseOrder).filter(
+            PurchaseOrder.po_number == primary_order.po_number,
+            PurchaseOrder.id != primary_order.id,
+        ).all()
+        for o in rows:
+            siblings.append({
+                "order_id": o.id,
+                "component_id": None,
+                "style_code": o.style_code,
+                "description": o.description,
+                "colour": o.colour,
+            })
+    else:
+        rows = db.query(OrderComponent, PurchaseOrder).join(
+            PurchaseOrder, OrderComponent.order_id == PurchaseOrder.id
+        ).filter(
+            PurchaseOrder.po_number == primary_order.po_number,
+            OrderComponent.name == primary_component.name,
+            OrderComponent.id != primary_component.id,
+        ).all()
+        for c, o in rows:
+            siblings.append({
+                "order_id": o.id,
+                "component_id": c.id,
+                "style_code": o.style_code,
+                "description": o.description,
+                "colour": o.colour,
+            })
+    return {
+        "po_number": primary_order.po_number,
+        "component_name": primary_component.name if primary_component else None,
+        "siblings": siblings,
+    }
+
+
 @router.get("/api/submissions/reject-reasons")
 async def list_reject_reasons(current_user: User = Depends(get_current_internal_user)):
     """The reason taxonomy for rejections — code + human label."""
     return {"reasons": [{"code": code, "label": label} for code, label in SAMPLE_REJECT_REASONS]}
+
+
+def _reject_one_target(
+    db: Session,
+    order: PurchaseOrder,
+    component: Optional[OrderComponent],
+    sample_type: str,
+    reason: str,
+    notes: Optional[str],
+    photo_url: Optional[str],
+    actioned_by_id: int,
+    now: datetime,
+) -> int:
+    """Reject the current attempt on a single (order, component) pair and open
+    the next attempt. Returns the new attempt number. Caller is responsible for
+    committing the transaction once all targets are processed."""
+    target = component if component is not None else order
+    state = _read_target_state(target, sample_type)
+    component_id = component.id if component else None
+
+    latest = _latest_submission(db, order.id, component_id, sample_type)
+
+    if latest is None:
+        db.add(SampleSubmission(
+            order_id=order.id,
+            component_id=component_id,
+            sample_type=sample_type,
+            attempt_no=1,
+            requested_at=order.order_sent_to_factory_date,
+            submitted_at=state['received'],
+            resolved_at=now,
+            outcome='REJECTED',
+            reason=reason,
+            notes=notes,
+            photo_url=photo_url,
+            actioned_by_id=actioned_by_id,
+        ))
+        next_attempt = 2
+    elif latest.outcome is None:
+        latest.outcome = 'REJECTED'
+        latest.resolved_at = now
+        latest.reason = reason
+        latest.notes = notes
+        latest.photo_url = photo_url
+        latest.actioned_by_id = actioned_by_id
+        if latest.submitted_at is None and state['received'] is not None:
+            latest.submitted_at = state['received']
+        next_attempt = latest.attempt_no + 1
+    else:
+        next_attempt = latest.attempt_no + 1
+
+    db.add(SampleSubmission(
+        order_id=order.id,
+        component_id=component_id,
+        sample_type=sample_type,
+        attempt_no=next_attempt,
+        requested_at=now,
+        outcome=None,
+        actioned_by_id=actioned_by_id,
+    ))
+
+    _set_target_state(target, sample_type, status='OUTSTANDING', received=None, approved=None)
+
+    db.add(DateChangeHistory(
+        po_id=order.id,
+        user_id=actioned_by_id,
+        field_name=_column_names(sample_type)['status'],
+        old_value=str(state['status'] or ''),
+        new_value=f"REJECTED → v{next_attempt} OUTSTANDING",
+        source='Sourcelab',
+        component_name=component.name if component else None,
+    ))
+
+    return next_attempt
 
 
 @router.post("/api/submissions/reject")
@@ -123,89 +301,66 @@ async def reject_sample(
     current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db),
 ):
-    """Reject the current attempt and open the next one.
-
-    Creates a v1 row first if this is the first-ever rejection (backfilling from
-    the legacy status/date columns), then writes the REJECTED row and a fresh
-    open row at attempt_no+1. Resets the legacy columns to the new open attempt's
-    OUTSTANDING state.
-    """
+    """Reject the current attempt and open the next one. When apply_scope is
+    'all_on_po' or 'selected', the same rejection is applied to every sibling
+    component (same name, same PO — or same PO for order-level samples) in one
+    transaction, so multi-style rejections land consistently."""
     if body.reason not in [code for code, _ in SAMPLE_REJECT_REASONS]:
         raise HTTPException(400, f"Unknown reason '{body.reason}'")
 
-    order, component = _validate_target(db, body.order_id, body.component_id, body.sample_type)
-    target = component if component is not None else order
-    state = _read_target_state(target, body.sample_type)
+    targets = _resolve_targets(
+        db, body.order_id, body.component_id, body.sample_type,
+        body.apply_scope, body.apply_to_order_ids,
+    )
     now = datetime.utcnow()
 
-    latest = _latest_submission(db, body.order_id, body.component_id, body.sample_type)
-
-    if latest is None:
-        # First-ever rejection — backfill a v1 row reflecting the current legacy state.
-        rejected_row = SampleSubmission(
-            order_id=body.order_id,
-            component_id=body.component_id,
-            sample_type=body.sample_type,
-            attempt_no=1,
-            requested_at=order.order_sent_to_factory_date,
-            submitted_at=state['received'],
-            resolved_at=now,
-            outcome='REJECTED',
-            reason=body.reason,
-            notes=body.notes,
-            photo_url=body.photo_url,
-            actioned_by_id=current_user.id,
+    primary_attempt_no = None
+    applied_to = []
+    for order, component in targets:
+        new_attempt = _reject_one_target(
+            db, order, component, body.sample_type,
+            body.reason, body.notes, body.photo_url,
+            current_user.id, now,
         )
-        db.add(rejected_row)
-        next_attempt = 2
-    elif latest.outcome is None:
-        # There's an open submission for the current attempt — close it as rejected.
-        latest.outcome = 'REJECTED'
-        latest.resolved_at = now
-        latest.reason = body.reason
-        latest.notes = body.notes
-        latest.photo_url = body.photo_url
-        latest.actioned_by_id = current_user.id
-        # Carry the submitted_at forward from the legacy column if not already set on the row.
-        if latest.submitted_at is None and state['received'] is not None:
-            latest.submitted_at = state['received']
-        next_attempt = latest.attempt_no + 1
-    else:
-        # Latest is already closed. Someone re-rejected after an approval(?) — open a new attempt.
-        next_attempt = latest.attempt_no + 1
-
-    # Open the next attempt.
-    new_open = SampleSubmission(
-        order_id=body.order_id,
-        component_id=body.component_id,
-        sample_type=body.sample_type,
-        attempt_no=next_attempt,
-        requested_at=now,
-        outcome=None,
-        actioned_by_id=current_user.id,
-    )
-    db.add(new_open)
-
-    # Reset the legacy status columns to reflect the new open attempt.
-    _set_target_state(target, body.sample_type, status='OUTSTANDING', received=None, approved=None)
-
-    # Log in the existing change history so it shows up in the comments/history view.
-    db.add(DateChangeHistory(
-        po_id=body.order_id,
-        user_id=current_user.id,
-        field_name=_column_names(body.sample_type)['status'],
-        old_value=str(state['status'] or ''),
-        new_value=f"REJECTED → v{next_attempt} OUTSTANDING",
-        source='Sourcelab',
-        component_name=component.name if component else None,
-    ))
+        if order.id == body.order_id and (component.id if component else None) == body.component_id:
+            primary_attempt_no = new_attempt
+        applied_to.append({
+            "order_id": order.id,
+            "component_id": component.id if component else None,
+            "new_attempt_no": new_attempt,
+        })
 
     db.commit()
     return {
         "ok": True,
-        "new_attempt_no": next_attempt,
-        "rejected_attempt_no": next_attempt - 1,
+        "new_attempt_no": primary_attempt_no,
+        "rejected_attempt_no": (primary_attempt_no or 2) - 1,
+        "applied_to_count": len(applied_to),
+        "applied_to": applied_to,
     }
+
+
+def _approve_one_target(
+    db: Session,
+    order: PurchaseOrder,
+    component: Optional[OrderComponent],
+    sample_type: str,
+    actioned_by_id: int,
+    now: datetime,
+) -> int:
+    target = component if component is not None else order
+    component_id = component.id if component else None
+    latest = _latest_submission(db, order.id, component_id, sample_type)
+    if latest is not None and latest.outcome is None:
+        latest.outcome = 'APPROVED'
+        latest.resolved_at = now
+        latest.actioned_by_id = actioned_by_id
+        if latest.submitted_at is None:
+            state = _read_target_state(target, sample_type)
+            if state['received'] is not None:
+                latest.submitted_at = state['received']
+    _set_target_state(target, sample_type, status='APPROVED', approved=now)
+    return latest.attempt_no if latest else 1
 
 
 @router.post("/api/submissions/approve")
@@ -214,26 +369,67 @@ async def approve_sample(
     current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db),
 ):
-    """Approve the current attempt. If an open submission row exists, close it
-    as APPROVED; otherwise just update the legacy approved_date column. Either
-    way, the legacy status column flips to APPROVED."""
-    order, component = _validate_target(db, body.order_id, body.component_id, body.sample_type)
-    target = component if component is not None else order
+    """Approve the current attempt. Supports the same apply_scope as reject,
+    so approving Lab Dip on Main Fabric can close out every matching sibling
+    on the PO in one shot."""
+    targets = _resolve_targets(
+        db, body.order_id, body.component_id, body.sample_type,
+        body.apply_scope, body.apply_to_order_ids,
+    )
     now = datetime.utcnow()
 
-    latest = _latest_submission(db, body.order_id, body.component_id, body.sample_type)
-    if latest is not None and latest.outcome is None:
-        latest.outcome = 'APPROVED'
-        latest.resolved_at = now
-        latest.actioned_by_id = current_user.id
-        if latest.submitted_at is None:
-            state = _read_target_state(target, body.sample_type)
-            if state['received'] is not None:
-                latest.submitted_at = state['received']
+    primary_attempt_no = None
+    applied_to_count = 0
+    for order, component in targets:
+        attempt = _approve_one_target(db, order, component, body.sample_type, current_user.id, now)
+        if order.id == body.order_id and (component.id if component else None) == body.component_id:
+            primary_attempt_no = attempt
+        applied_to_count += 1
 
-    _set_target_state(target, body.sample_type, status='APPROVED', approved=now)
     db.commit()
-    return {"ok": True, "attempt_no": latest.attempt_no if latest else 1}
+    return {"ok": True, "attempt_no": primary_attempt_no or 1, "applied_to_count": applied_to_count}
+
+
+class MarkReceivedRequest(BaseModel):
+    order_id: int
+    component_id: Optional[int] = None
+    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    received_at: Optional[str] = None  # ISO date string; defaults to today if omitted
+    apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
+    apply_to_order_ids: Optional[list[int]] = None
+
+
+@router.post("/api/submissions/mark-received")
+async def mark_received(
+    body: MarkReceivedRequest,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db),
+):
+    """Set the received date + status=RECEIVED on the current open attempt.
+    Convenience endpoint for the stuck-list inline actions so you can close
+    out a factory submission without leaving the dashboard."""
+    targets = _resolve_targets(
+        db, body.order_id, body.component_id, body.sample_type,
+        body.apply_scope, body.apply_to_order_ids,
+    )
+    if body.received_at:
+        try:
+            received_dt = datetime.fromisoformat(body.received_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(400, f"Invalid received_at '{body.received_at}'")
+    else:
+        received_dt = datetime.utcnow()
+
+    for order, component in targets:
+        target = component if component is not None else order
+        _set_target_state(target, body.sample_type, status='RECEIVED', received=received_dt)
+        # If there's an open submission for this tuple, stamp its submitted_at.
+        latest = _latest_submission(db, order.id, component.id if component else None, body.sample_type)
+        if latest is not None and latest.outcome is None and latest.submitted_at is None:
+            latest.submitted_at = received_dt
+
+    db.commit()
+    return {"ok": True, "applied_to_count": len(targets)}
 
 
 @router.get("/api/submissions/order/{order_id}")

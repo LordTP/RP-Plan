@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCcw, Loader2, AlertTriangle, Package, Factory, Layers } from 'lucide-react';
+import { RefreshCcw, Loader2, AlertTriangle, Package, Factory, Layers, Check, Inbox, X as XIcon } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { submissionsApi, type ResubmissionsOverview, type SampleType } from '@/lib/api';
+import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
@@ -35,16 +37,72 @@ function ResubmissionsContent() {
   const router = useRouter();
   const [data, setData] = useState<ResubmissionsOverview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [rejectModal, setRejectModal] = useState<{
+    orderId: number;
+    componentId: number | null;
+    componentName: string | null;
+    sampleType: SampleType;
+    currentAttemptNo: number;
+  } | null>(null);
+  const [pendingRowIds, setPendingRowIds] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     let cancelled = false;
     setIsLoading(true);
     submissionsApi.getOverview()
       .then(res => { if (!cancelled) setData(res); })
-      .catch(() => { /* toast handled by caller if needed */ })
+      .catch(() => { /* silent */ })
       .finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const handleMarkReceived = async (row: ResubmissionsOverview['stuck'][number]) => {
+    setPendingRowIds(prev => new Set(prev).add(row.submission_id));
+    try {
+      await submissionsApi.markReceived({
+        order_id: row.order_id,
+        component_id: row.component_id,
+        sample_type: row.sample_type,
+        apply_scope: 'single',
+      });
+      toast.success('Marked received');
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to mark received');
+    } finally {
+      setPendingRowIds(prev => { const next = new Set(prev); next.delete(row.submission_id); return next; });
+    }
+  };
+
+  const handleApprove = async (row: ResubmissionsOverview['stuck'][number]) => {
+    setPendingRowIds(prev => new Set(prev).add(row.submission_id));
+    try {
+      const result = await submissionsApi.approve({
+        order_id: row.order_id,
+        component_id: row.component_id,
+        sample_type: row.sample_type,
+        apply_scope: 'single',
+      });
+      toast.success(`Approved v${result.attempt_no}`);
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to approve');
+    } finally {
+      setPendingRowIds(prev => { const next = new Set(prev); next.delete(row.submission_id); return next; });
+    }
+  };
+
+  const handleRejectAgain = (row: ResubmissionsOverview['stuck'][number]) => {
+    setRejectModal({
+      orderId: row.order_id,
+      componentId: row.component_id,
+      componentName: row.component_name,
+      sampleType: row.sample_type,
+      currentAttemptNo: row.attempt_no,
+    });
+  };
 
   if (user && user.role === 'supplier') {
     return (
@@ -89,13 +147,32 @@ function ResubmissionsContent() {
             ) : data?.empty ? (
               <EmptyState />
             ) : data ? (
-              <PopulatedDashboard data={data} onOpenOrder={(orderId) => router.push(`/orders-v2?order=${orderId}`)} />
+              <PopulatedDashboard
+                data={data}
+                pendingRowIds={pendingRowIds}
+                onOpenOrder={(orderId) => router.push(`/orders-v2?order=${orderId}`)}
+                onMarkReceived={handleMarkReceived}
+                onApprove={handleApprove}
+                onRejectAgain={handleRejectAgain}
+              />
             ) : (
               <div className="text-sm text-gray-500">Failed to load resubmissions data.</div>
             )}
           </div>
         </div>
       </div>
+
+      {rejectModal && (
+        <RejectSampleModal
+          orderId={rejectModal.orderId}
+          componentId={rejectModal.componentId}
+          componentName={rejectModal.componentName}
+          sampleType={rejectModal.sampleType}
+          currentAttemptNo={rejectModal.currentAttemptNo}
+          onClose={() => setRejectModal(null)}
+          onRejected={() => { setRejectModal(null); refresh(); }}
+        />
+      )}
     </AppShell>
   );
 }
@@ -117,10 +194,18 @@ function EmptyState() {
 
 function PopulatedDashboard({
   data,
+  pendingRowIds,
   onOpenOrder,
+  onMarkReceived,
+  onApprove,
+  onRejectAgain,
 }: {
   data: ResubmissionsOverview;
+  pendingRowIds: Set<number>;
   onOpenOrder: (orderId: number) => void;
+  onMarkReceived: (row: ResubmissionsOverview['stuck'][number]) => void;
+  onApprove: (row: ResubmissionsOverview['stuck'][number]) => void;
+  onRejectAgain: (row: ResubmissionsOverview['stuck'][number]) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -168,26 +253,29 @@ function PopulatedDashboard({
                   <th className="text-left px-3 py-2 font-semibold">Area</th>
                   <th className="text-left px-3 py-2 font-semibold">Factory</th>
                   <th className="text-center px-3 py-2 font-semibold">v</th>
-                  <th className="text-right px-3 py-2 font-semibold">Days open</th>
+                  <th className="text-right px-3 py-2 font-semibold">Days</th>
                   <th className="text-left px-3 py-2 font-semibold">Last reason</th>
+                  <th className="text-right px-3 py-2 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {data.stuck.map(row => {
                   const stuck = row.attempt_no >= 3;
+                  const pending = pendingRowIds.has(row.submission_id);
                   return (
                     <tr
                       key={row.submission_id}
-                      className={cn('hover:bg-gray-50 cursor-pointer', stuck && 'bg-red-50/30')}
-                      onClick={() => onOpenOrder(row.order_id)}
+                      className={cn('hover:bg-gray-50', stuck && 'bg-red-50/30')}
                     >
                       <td className="px-3 py-2 font-mono text-[11px] text-gray-700">
-                        {row.po_number}
-                        {row.china_orderbook_ref && <span className="text-gray-400"> — {row.china_orderbook_ref}</span>}
+                        <button onClick={() => onOpenOrder(row.order_id)} className="hover:underline">
+                          {row.po_number}
+                          {row.china_orderbook_ref && <span className="text-gray-400"> — {row.china_orderbook_ref}</span>}
+                        </button>
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-800">{row.component_name || <span className="text-gray-400 italic">order-level</span>}</td>
                       <td className="px-3 py-2 text-gray-600">{SAMPLE_LABEL[row.sample_type]}</td>
-                      <td className="px-3 py-2 text-gray-600 truncate max-w-[160px]">{row.factory || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{row.factory || '—'}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={cn(
                           'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-bold border',
@@ -199,13 +287,38 @@ function PopulatedDashboard({
                       <td className={cn('px-3 py-2 text-right font-semibold', stuck ? 'text-red-700' : 'text-gray-700')}>
                         {row.days_open}
                       </td>
-                      <td className="px-3 py-2 text-gray-600 text-xs max-w-[260px] truncate">
+                      <td className="px-3 py-2 text-gray-600 text-xs max-w-[220px] truncate">
                         {row.last_reason ? (
                           <span>
                             <span className="font-semibold text-gray-700">{row.last_reason}</span>
                             {row.last_reason_notes && <span className="text-gray-500"> — {row.last_reason_notes}</span>}
                           </span>
                         ) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <InlineBtn
+                            title="Mark received"
+                            icon={<Inbox className="w-3 h-3" />}
+                            onClick={() => onMarkReceived(row)}
+                            pending={pending}
+                            tone="neutral"
+                          />
+                          <InlineBtn
+                            title="Approve this attempt"
+                            icon={<Check className="w-3 h-3" />}
+                            onClick={() => onApprove(row)}
+                            pending={pending}
+                            tone="success"
+                          />
+                          <InlineBtn
+                            title="Reject again (open v+1)"
+                            icon={<XIcon className="w-3 h-3" />}
+                            onClick={() => onRejectAgain(row)}
+                            pending={pending}
+                            tone="danger"
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -305,6 +418,40 @@ function StatTile({
       <div className={cn('text-3xl font-bold mt-1', valueTone)}>{value}</div>
       <div className="text-[11px] text-gray-500 mt-1">{hint}</div>
     </div>
+  );
+}
+
+function InlineBtn({
+  title,
+  icon,
+  onClick,
+  pending,
+  tone,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  pending: boolean;
+  tone: 'neutral' | 'success' | 'danger';
+}) {
+  const toneClasses =
+    tone === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' :
+    tone === 'danger'  ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' :
+                         'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100';
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={pending}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors',
+        toneClasses,
+        pending && 'opacity-50 cursor-not-allowed'
+      )}
+    >
+      {pending ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
+    </button>
   );
 }
 

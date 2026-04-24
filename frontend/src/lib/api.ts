@@ -977,6 +977,30 @@ export const submissionsApi = {
     return response.data;
   },
 
+  getSiblings: async (params: {
+    order_id: number;
+    component_id: number | null;
+    sample_type: SampleType;
+  }): Promise<{
+    po_number: string;
+    component_name: string | null;
+    siblings: Array<{
+      order_id: number;
+      component_id: number | null;
+      style_code: string | null;
+      description: string | null;
+      colour: string | null;
+    }>;
+  }> => {
+    const query: Record<string, string> = {
+      order_id: String(params.order_id),
+      sample_type: params.sample_type,
+    };
+    if (params.component_id != null) query.component_id = String(params.component_id);
+    const response = await api.get('/api/submissions/siblings', { params: query });
+    return response.data;
+  },
+
   reject: async (body: {
     order_id: number;
     component_id: number | null;
@@ -984,7 +1008,9 @@ export const submissionsApi = {
     reason: string;
     notes?: string;
     photo_url?: string;
-  }): Promise<{ ok: boolean; new_attempt_no: number; rejected_attempt_no: number }> => {
+    apply_scope?: 'single' | 'all_on_po' | 'selected';
+    apply_to_order_ids?: number[];
+  }): Promise<{ ok: boolean; new_attempt_no: number; rejected_attempt_no: number; applied_to_count: number; applied_to: Array<{ order_id: number; component_id: number | null; new_attempt_no: number }> }> => {
     const response = await api.post('/api/submissions/reject', body);
     return response.data;
   },
@@ -993,8 +1019,22 @@ export const submissionsApi = {
     order_id: number;
     component_id: number | null;
     sample_type: SampleType;
-  }): Promise<{ ok: boolean; attempt_no: number }> => {
+    apply_scope?: 'single' | 'all_on_po' | 'selected';
+    apply_to_order_ids?: number[];
+  }): Promise<{ ok: boolean; attempt_no: number; applied_to_count: number }> => {
     const response = await api.post('/api/submissions/approve', body);
+    return response.data;
+  },
+
+  markReceived: async (body: {
+    order_id: number;
+    component_id: number | null;
+    sample_type: SampleType;
+    received_at?: string; // ISO date
+    apply_scope?: 'single' | 'all_on_po' | 'selected';
+    apply_to_order_ids?: number[];
+  }): Promise<{ ok: boolean; applied_to_count: number }> => {
+    const response = await api.post('/api/submissions/mark-received', body);
     return response.data;
   },
 
