@@ -286,11 +286,11 @@ function DesignComponentsContent() {
     <AppShell title="Components">
       <div className="p-6">
         <div
-          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden"
+          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
           style={{ height: 'calc(100vh - 100px)' }}
         >
           {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Layers className="w-5 h-5 text-violet-600" />
@@ -338,7 +338,7 @@ function DesignComponentsContent() {
           </div>
 
           {/* Body */}
-          <div className="grid grid-cols-[320px_1fr]" style={{ height: 'calc(100% - 65px)' }}>
+          <div className="grid grid-cols-[320px_1fr] flex-1 min-h-0">
             {/* Sidebar */}
             <div className="border-r border-gray-100 bg-gray-50/60 flex flex-col overflow-hidden">
               <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50">
