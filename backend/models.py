@@ -329,6 +329,65 @@ class ImportBatch(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class SampleSubmission(Base):
+    """One attempt (v1, v2, v3...) at a sample for a given (order, component, sample_type) tuple.
+
+    Rows are created LAZILY on the first rejection:
+    - Before any rejection: no submission row; the legacy sample status/date columns on
+      PurchaseOrder / OrderComponent are authoritative and this sample is implicitly v1.
+    - On first rejection: we backfill a v1 row mirroring the column state, close it as
+      REJECTED, and insert a v2 row with outcome=NULL (open). attempt_no increments
+      on every subsequent rejection.
+    - On approval with an open submission row: we close that row as APPROVED.
+
+    This keeps the legacy columns working for everything that never gets rejected (first-time-right),
+    while capturing the full attempt history when rework happens.
+    """
+    __tablename__ = "sample_submissions"
+    __table_args__ = (
+        UniqueConstraint('order_id', 'component_id', 'sample_type', 'attempt_no',
+                         name='uq_sample_submission_attempt'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    # NULL for order-level samples (PPS always; plus fit/strike/lab on orders without components).
+    component_id = Column(Integer, ForeignKey("order_components.id", ondelete="CASCADE"), nullable=True, index=True)
+    sample_type = Column(String(20), nullable=False)  # 'fit' | 'strike' | 'lab' | 'pps'
+    attempt_no = Column(Integer, nullable=False, default=1)
+
+    requested_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+    # outcome is null while this attempt is open; 'APPROVED' or 'REJECTED' once closed.
+    outcome = Column(String(20), nullable=True)
+    # Structured reason taxonomy (e.g. 'COLOUR', 'PLACEMENT', 'STITCH', 'MATERIAL', 'SPEC', 'PRINT', 'OTHER').
+    reason = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    photo_url = Column(String(500), nullable=True)
+
+    actioned_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# Reason taxonomy for rejections. Kept in code so it's easy to extend or reorder.
+SAMPLE_REJECT_REASONS = [
+    ('COLOUR', 'Colour / shade off'),
+    ('PLACEMENT', 'Placement wrong'),
+    ('STITCH', 'Stitch / construction'),
+    ('MATERIAL', 'Material / hand feel'),
+    ('SPEC', 'Spec mismatch'),
+    ('PRINT', 'Print quality'),
+    ('OTHER', 'Other'),
+]
+
+# Canonical sample type keys used in the sample_submissions table and API.
+SAMPLE_TYPES = ('fit', 'strike', 'lab', 'pps')
+
+
 class PendingDateChange(Base):
     """Tracks date changes from suppliers awaiting approval"""
     __tablename__ = "pending_date_changes"

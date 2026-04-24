@@ -65,6 +65,7 @@ from routers import excel as excel_router
 from routers import stats as stats_router
 from routers import analytics as analytics_router
 from routers import orders as orders_router
+from routers import submissions as submissions_router
 app.include_router(users_router.router)
 app.include_router(components_router.router)
 app.include_router(tracking_router.router)
@@ -75,6 +76,7 @@ app.include_router(excel_router.router)
 app.include_router(stats_router.router)
 app.include_router(analytics_router.router)
 app.include_router(orders_router.router)
+app.include_router(submissions_router.router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
