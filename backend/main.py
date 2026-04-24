@@ -150,13 +150,26 @@ async def startup_event():
             conn.execute(text("ALTER TABLE date_change_history ADD COLUMN component_name VARCHAR(100)"))
         print("✓ Added component_name column to date_change_history table")
 
-    # Migration: normalize users.role to lowercase values on SQLite. Older local
-    # DBs stored the enum NAME ("ADMIN"), while we now use values_callable to
-    # store the VALUE ("admin"). Postgres in prod was already lowercase — this
-    # is a no-op there.
+    # Migration: ensure users.role is stored as the enum NAME (uppercase), which is
+    # SQLAlchemy's default when Column(Enum(UserRole)) has no values_callable.
+    # A previous deploy briefly used lowercase values; this normalises any drift.
     if engine.dialect.name == 'sqlite':
         with engine.begin() as conn:
-            conn.execute(text("UPDATE users SET role = LOWER(role) WHERE role != LOWER(role)"))
+            conn.execute(text("UPDATE users SET role = UPPER(role) WHERE role != UPPER(role)"))
+
+    # Migration: add SOURCELAB_DESIGNER to the Postgres userrole enum if it's not
+    # already there. The enum type was originally created with only
+    # INTERNAL/SUPPLIER/ADMIN, so without this Postgres rejects the new value.
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction on older Postgres
+    # versions, so use autocommit isolation.
+    if engine.dialect.name == 'postgresql':
+        try:
+            with engine.connect() as conn:
+                conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+                conn.execute(text("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'SOURCELAB_DESIGNER'"))
+            print("✓ Ensured SOURCELAB_DESIGNER exists on userrole enum")
+        except Exception as e:
+            print(f"⚠ userrole enum migration skipped: {e}")
 
     # Seed default app_settings rows
     seed_db = SessionLocal()

@@ -25,14 +25,7 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     full_name = Column(String(100), nullable=True)  # Display name, shown in UI instead of username when set
     hashed_password = Column(String(255), nullable=False)
-    role = Column(
-        # Store the Python enum's lowercase VALUE ("sourcelab_designer") rather
-        # than its NAME ("SOURCELAB_DESIGNER") — the Postgres enum type was
-        # created with lowercase values and SQLAlchemy's default uses names.
-        Enum(UserRole, values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        default=UserRole.SUPPLIER,
-    )
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.SUPPLIER)
     factory_name = Column(String(100), nullable=True)  # For supplier users
     is_active = Column(Boolean, default=True)
     mentionable = Column(Boolean, default=True)  # Admin can hide a user from the @mention autocomplete
