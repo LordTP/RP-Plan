@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Resubmission Flow — Storyboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; }
+  .tick-v1 { background: #10b981; }
+  .tick-v2 { background: #f59e0b; }
+  .tick-v3 { background: #ef4444; }
+  .tick-open { background: #3b82f6; }
+  .step-num {
+    width: 32px; height: 32px;
+    border-radius: 9999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #111827; color: white;
+    font-weight: 600; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .arrow-down {
+    width: 2px; height: 32px;
+    background: #d1d5db;
+    margin: 0 auto;
+    position: relative;
+  }
+  .arrow-down::after {
+    content: ''; position: absolute; bottom: 0; left: -4px;
+    border: 5px solid transparent; border-top-color: #d1d5db;
+  }
+  .screen-frame {
+    border: 1px solid #e5e7eb; border-radius: 10px; background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+  .caption {
+    background: #fffbeb; border-left: 3px solid #f59e0b;
+    padding: 10px 14px; font-size: 13px; color: #78350f;
+  }
+  .data-note {
+    background: #eff6ff; border-left: 3px solid #3b82f6;
+    padding: 10px 14px; font-size: 12px; color: #1e3a8a;
+    font-family: 'SF Mono', Menlo, monospace;
+  }
+</style>
+</head>
+<body class="bg-gray-100 text-gray-900">
+
+<div class="max-w-5xl mx-auto px-8 py-10">
+
+  <div class="mb-10">
+    <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">Design flow · Mockup</div>
+    <h1 class="text-3xl font-semibold">Resubmission flow — end-to-end</h1>
+    <p class="text-sm text-gray-600 mt-2 max-w-2xl">Walk through what happens when a designer rejects a component, what the factory sees, what gets recorded, and how it bubbles up to the dashboard. Each step shows the screen + what changes under the hood.</p>
+  </div>
+
+  <!-- Mental model -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+    <h2 class="font-semibold text-sm uppercase tracking-wide text-gray-500 mb-3">Mental model</h2>
+    <div class="grid grid-cols-4 gap-4 text-sm">
+      <div>
+        <div class="font-semibold mb-1">Component</div>
+        <div class="text-gray-600">The logical thing being made — e.g. "Main woven label". Has many sample areas.</div>
+      </div>
+      <div>
+        <div class="font-semibold mb-1">Sample area</div>
+        <div class="text-gray-600">Fit Sample / Strike Off / Lab Dip inside a component. <strong>Each has its own clock.</strong> PPS is always order-level.</div>
+      </div>
+      <div>
+        <div class="font-semibold mb-1">Attempt (submission)</div>
+        <div class="text-gray-600">One pass through the cycle for a sample area — v1, v2, v3. This is what we measure.</div>
+      </div>
+      <div>
+        <div class="font-semibold mb-1">Rejection</div>
+        <div class="text-gray-600">Flipping a sample area to <span class="font-medium text-red-700">REJECTED</span> closes its current attempt and opens v+1 at <span class="font-medium">OUTSTANDING</span>. Other areas on the same component are untouched.</div>
+      </div>
+    </div>
+    <div class="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-600">
+      <strong class="text-gray-800">Worked example:</strong> "Main woven label" has Fit Sample (v1 approved), Strike Off (v1 approved), Lab Dip (v1 rejected → v2 outstanding). The component isn't "in rework" as a whole — <em>Lab Dip on Main woven label</em> is.
+    </div>
+  </div>
+
+  <!-- Status flow diagram -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5 mb-10">
+    <h2 class="font-semibold text-sm uppercase tracking-wide text-gray-500 mb-3">Status flow <span class="normal-case text-gray-400 font-normal ml-1">— per attempt</span></h2>
+    <div class="flex items-center gap-3 text-xs">
+      <div class="px-3 py-1.5 rounded-md border border-gray-300 bg-white font-medium text-gray-700">OUTSTANDING</div>
+      <div class="text-gray-400">→</div>
+      <div class="px-3 py-1.5 rounded-md border border-blue-300 bg-blue-50 font-medium text-blue-700">RECEIVED</div>
+      <div class="text-gray-400">→</div>
+      <div class="px-3 py-1.5 rounded-md border border-emerald-300 bg-emerald-50 font-medium text-emerald-700">APPROVED</div>
+      <span class="text-gray-500 ml-1 italic">attempt closes, component done</span>
+    </div>
+    <div class="flex items-center gap-3 text-xs mt-3">
+      <div class="px-3 py-1.5 rounded-md border border-gray-200 bg-gray-50 text-gray-400">OUTSTANDING</div>
+      <div class="text-gray-400">or</div>
+      <div class="px-3 py-1.5 rounded-md border border-blue-200 bg-blue-50/50 text-blue-500">RECEIVED</div>
+      <div class="text-gray-400">→</div>
+      <div class="px-3 py-1.5 rounded-md border border-red-400 bg-red-50 font-semibold text-red-700">REJECTED</div>
+      <span class="text-gray-500 ml-1 italic">attempt closes, v+1 auto-opens at <strong class="text-gray-700">OUTSTANDING</strong></span>
+    </div>
+    <div class="flex items-center gap-3 text-xs mt-3 text-gray-500">
+      <div class="px-3 py-1.5 rounded-md border border-gray-200 bg-gray-50">NOT REQUIRED</div>
+      <span class="italic">opts the component out entirely — no attempts, no warnings</span>
+    </div>
+    <div class="mt-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
+      <span class="font-medium text-gray-700">P23 ADVISE UPDATE</span> and <span class="font-medium text-gray-700">LATE</span> still work as today — they're intermediate flags, not terminals. Only <strong>APPROVED</strong> and <strong>REJECTED</strong> close an attempt.
+    </div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">1</div>
+    <div>
+      <h3 class="font-semibold text-lg">Designer reviews the sample</h3>
+      <p class="text-sm text-gray-600">On the Orders-V2 detail panel, they open the existing status dropdown. Alongside the current values (NOT REQUIRED, OUTSTANDING, RECEIVED, APPROVED, etc.) sits <strong class="text-red-700">REJECTED</strong> — already in the dropdown today; we just make it do more.</p>
+    </div>
+  </div>
+  <div class="screen-frame mb-2 ml-12">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Orders V2 › PO-4421 — CO-7801</span>
+      <span class="ml-auto">Detail panel</span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-semibold text-sm">Main woven label <span class="text-gray-400 font-normal">· expanded</span></div>
+          <div class="text-xs text-gray-500">Woven Label · Shenzhen Apparel Co</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">2 approved</span>
+          <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">1 in review</span>
+        </div>
+      </div>
+
+      <!-- Per-sample-area rows -->
+      <div class="space-y-2">
+        <!-- Fit Sample -->
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border border-gray-200 bg-white">
+          <div class="col-span-2 text-xs font-medium text-gray-700">Fit Sample</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1 ✓</span></div>
+          <div class="col-span-3"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></div>
+          <div class="col-span-2 text-xs text-gray-500">received 18 Apr</div>
+          <div class="col-span-3 text-xs text-gray-400">—</div>
+        </div>
+        <!-- Strike Off -->
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border border-gray-200 bg-white">
+          <div class="col-span-2 text-xs font-medium text-gray-700">Strike Off</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1 ✓</span></div>
+          <div class="col-span-3"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></div>
+          <div class="col-span-2 text-xs text-gray-500">received 16 Apr</div>
+          <div class="col-span-3 text-xs text-gray-400">—</div>
+        </div>
+        <!-- Lab Dip — the one being reviewed -->
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border-2 border-blue-400 bg-blue-50/40 relative">
+          <div class="col-span-2 text-xs font-semibold text-gray-900">Lab Dip</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-300 font-medium">v1</span></div>
+          <div class="col-span-3">
+            <!-- Fake "open" dropdown -->
+            <div class="relative">
+              <button class="w-full text-xs px-2 py-1 rounded-md border border-blue-500 bg-white text-blue-700 font-medium flex items-center justify-between gap-2 shadow-sm">
+                RECEIVED <span class="text-gray-400">▾</span>
+              </button>
+              <div class="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg min-w-[200px] z-10 overflow-hidden">
+                <div class="px-3 py-1.5 text-[10px] text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">Set status</div>
+                <div class="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer text-gray-600">NOT REQUIRED</div>
+                <div class="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer text-gray-600">OUTSTANDING</div>
+                <div class="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer text-gray-600">P23 ADVISE UPDATE</div>
+                <div class="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer text-amber-700">LATE</div>
+                <div class="px-3 py-2 text-xs bg-blue-50 cursor-pointer text-blue-700 font-medium">RECEIVED <span class="text-gray-400 ml-1">· current</span></div>
+                <div class="px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer text-emerald-700">APPROVED</div>
+                <div class="px-3 py-2 text-xs hover:bg-red-100 cursor-pointer text-red-700 font-semibold bg-red-50 flex items-center gap-2 border-t border-red-100">
+                  REJECTED
+                  <span class="ml-auto text-[10px] bg-white border border-red-200 text-red-600 px-1.5 rounded">opens v2 →</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-span-2 text-xs text-gray-600">received 20 Apr</div>
+          <div class="col-span-3 text-xs text-gray-500">8 days on v1</div>
+        </div>
+      </div>
+      <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+        <span>Each row is its own clock. Dropdown appears per row, not per component.</span>
+        <span>Only internal designers can set REJECTED / APPROVED</span>
+      </div>
+    </div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">Nothing new in the UI — REJECTED is already a status option. The change is that picking it now triggers the resubmission flow (below) instead of just silently setting a status.</div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 2 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">2</div>
+    <div>
+      <h3 class="font-semibold text-lg">Selecting REJECTED pops a capture modal</h3>
+      <p class="text-sm text-gray-600">Instead of the status change saving silently, it opens this modal: pick a structured reason (so we can chart it), optionally add a note + photo, confirm.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="bg-gray-900/40 p-8">
+      <div class="bg-white rounded-lg shadow-xl max-w-md mx-auto">
+        <div class="px-5 py-4 border-b border-gray-200">
+          <div class="text-xs uppercase tracking-wide text-red-700 mb-0.5">Reject Lab Dip · v1</div>
+          <div class="font-semibold">Main woven label</div>
+          <div class="text-xs text-gray-500">PO-4421 — CO-7801 · Shenzhen Apparel Co</div>
+          <div class="text-[11px] text-gray-400 mt-1 italic">Only the Lab Dip row is affected — Fit Sample and Strike Off on this component keep their current state.</div>
+        </div>
+        <div class="px-5 py-4 space-y-4">
+          <div>
+            <label class="text-xs font-medium text-gray-700 mb-1 block">Reason</label>
+            <select class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+              <option>— choose —</option>
+              <option>Colour / shade off</option>
+              <option selected>Colour / shade off</option>
+              <option>Placement wrong</option>
+              <option>Stitch / construction</option>
+              <option>Material / hand feel</option>
+              <option>Spec mismatch</option>
+              <option>Print quality</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 mb-1 block">Note to factory <span class="text-gray-400 font-normal">(optional but helpful)</span></label>
+            <textarea rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="What exactly is wrong and what do you want them to change?">Colour match still off — Pantone 18-4247 reference swatch being posted Monday. Please hold until you have it in hand.</textarea>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-700 mb-1 block">Photo of the issue <span class="text-gray-400 font-normal">(optional)</span></label>
+            <div class="border-2 border-dashed border-gray-300 rounded-md p-3 text-center text-xs text-gray-500">
+              IMG_4421_colour_off.jpg · 1.2MB <button class="text-red-600 ml-2">remove</button>
+            </div>
+          </div>
+          <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-800">
+            <strong>This closes v1 and opens v2.</strong> Factory will be notified by email and see this reason on their dashboard. The v1 timeline stays visible in history.
+          </div>
+        </div>
+        <div class="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2 bg-gray-50 rounded-b-lg">
+          <button class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-700">Cancel</button>
+          <button class="text-xs px-3 py-1.5 rounded bg-red-600 text-white font-medium">Reject &amp; open v2</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="ml-12 mb-4">
+    <div class="caption">Structured <strong>reason</strong> lets us chart "colour issues vs placement issues" later. Free-text note is for nuance the taxonomy can't capture.</div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="data-note">
+      UPDATE component_submissions SET outcome='REJECTED', resolved_at=NOW(), reason='COLOUR', notes=... WHERE id=&lt;v1&gt;<br>
+      INSERT component_submissions (component_id, attempt_no=2, submitted_at=NULL, requested_at=NOW())<br>
+      UPDATE components SET current_status='REQUESTED', requested_date=NOW() WHERE id=...
+    </div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 3 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">3</div>
+    <div>
+      <h3 class="font-semibold text-lg">Component row updates immediately</h3>
+      <p class="text-sm text-gray-600">Same detail panel now shows v2 requested, a rejection chip with the reason, and a collapsed v1 history row.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Orders V2 › PO-4421 — CO-7801</span>
+      <span class="ml-auto">Detail panel</span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-semibold text-sm">Main woven label</div>
+          <div class="text-xs text-gray-500">Woven Label · Shenzhen Apparel Co</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">2 approved</span>
+          <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">1 in rework</span>
+        </div>
+      </div>
+
+      <div class="space-y-2 mb-3">
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border border-gray-200 bg-white">
+          <div class="col-span-2 text-xs font-medium text-gray-700">Fit Sample</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1 ✓</span></div>
+          <div class="col-span-3"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></div>
+          <div class="col-span-5 text-xs text-gray-400 italic">unchanged</div>
+        </div>
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border border-gray-200 bg-white">
+          <div class="col-span-2 text-xs font-medium text-gray-700">Strike Off</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1 ✓</span></div>
+          <div class="col-span-3"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></div>
+          <div class="col-span-5 text-xs text-gray-400 italic">unchanged</div>
+        </div>
+        <div class="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded border-2 border-amber-400 bg-amber-50/40">
+          <div class="col-span-2 text-xs font-semibold text-gray-900">Lab Dip</div>
+          <div class="col-span-2"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-semibold">v2 ⟳</span></div>
+          <div class="col-span-3"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium">OUTSTANDING</span></div>
+          <div class="col-span-5 text-xs text-amber-800">requested just now · waiting on factory</div>
+        </div>
+      </div>
+
+      <div class="bg-red-50 border border-red-200 rounded-md p-3 mb-3">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="text-xs uppercase tracking-wide text-red-700 font-semibold mb-1">Lab Dip · v1 rejected</div>
+            <div class="text-sm text-red-900 font-medium">Colour / shade off</div>
+            <div class="text-xs text-red-800 mt-1">Colour match still off — Pantone 18-4247 reference swatch being posted Monday. Please hold until you have it in hand.</div>
+            <div class="text-xs text-red-700 mt-2">by Thomas P · just now · v1 took 12 days</div>
+          </div>
+          <div class="w-16 h-16 bg-red-200 rounded border border-red-300 flex items-center justify-center text-xs text-red-700">photo</div>
+        </div>
+      </div>
+      <details class="text-xs">
+        <summary class="text-gray-600 cursor-pointer hover:text-gray-900">Lab Dip v1 history (12 days · requested 12 Apr → rejected 24 Apr)</summary>
+        <div class="mt-2 pl-3 border-l-2 border-gray-200 space-y-1 text-gray-600">
+          <div>12 Apr · requested by Thomas P</div>
+          <div>20 Apr · submitted by factory</div>
+          <div>24 Apr · <span class="text-red-700">rejected — colour off</span></div>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">The v1 history is never destroyed — it's collapsed behind a disclosure so the current attempt gets the attention but nothing is lost.</div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 3b: V2 order page at-a-glance -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num" style="background:#4338ca">3b</div>
+    <div>
+      <h3 class="font-semibold text-lg">How it looks at a glance on the V2 order page</h3>
+      <p class="text-sm text-gray-600">When a style is collapsed (not in detail mode), each component gets a compact row showing <strong>one chip per sample area</strong> — tick = approved, rev number = current attempt, pulsing dot = in rework. You see the whole picture without expanding.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Orders V2 · PO-4421</span>
+      <span class="ml-auto">Collapsed style row view</span>
+    </div>
+    <div class="p-0">
+      <!-- Style row -->
+      <div class="px-4 py-3 border-b border-gray-200 bg-white">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-semibold text-sm">CO-7801 · Hoodie — Womens Black</div>
+            <div class="text-xs text-gray-500">Customer requested 12 May · 420 units</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">3 components</span>
+            <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">1 in rework</span>
+          </div>
+        </div>
+      </div>
+      <!-- Components compact list -->
+      <div class="bg-gray-50/40 divide-y divide-gray-100">
+        <!-- Main woven label (THE one we rejected) -->
+        <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-white cursor-pointer">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium">Main woven label</div>
+            <div class="text-[11px] text-gray-500">Woven Label</div>
+          </div>
+          <!-- Sample area chips -->
+          <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-700 font-medium" title="Fit Sample approved on v1">
+              <span class="text-gray-500">Fit</span>
+              <span>✓</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-700 font-medium" title="Strike Off approved on v1">
+              <span class="text-gray-500">Strike</span>
+              <span>✓</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 border-2 border-amber-400 text-[10px] text-amber-800 font-semibold" title="Lab Dip on v2 — 1 prior rejection">
+              <span class="text-gray-600">Lab</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+              <span>v2</span>
+              <span class="text-red-600 ml-0.5">·1</span>
+            </div>
+          </div>
+        </div>
+        <!-- Main fabric — nothing rejected -->
+        <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-white cursor-pointer">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium">Main fabric</div>
+            <div class="text-[11px] text-gray-500">Fabric</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-700 font-medium">
+              <span class="text-gray-500">Fit</span><span>✓</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 border border-gray-200 text-[10px] text-gray-500 font-medium">
+              <span>Strike</span><span>—</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-700 font-medium">
+              <span class="text-gray-500">Lab</span><span>✓</span>
+            </div>
+          </div>
+        </div>
+        <!-- Neck rib — deeper rework -->
+        <div class="px-4 py-2.5 flex items-center gap-3 hover:bg-white cursor-pointer bg-red-50/30">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium">Neck rib</div>
+            <div class="text-[11px] text-gray-500">Trim</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] text-blue-700 font-medium">
+              <span class="text-gray-500">Fit</span><span>v1</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 border border-gray-200 text-[10px] text-gray-500 font-medium">
+              <span>Strike</span><span>—</span>
+            </div>
+            <div class="flex items-center gap-1 px-2 py-0.5 rounded bg-red-50 border-2 border-red-400 text-[10px] text-red-800 font-semibold" title="Lab Dip on v3 — 2 prior rejections, stuck">
+              <span class="text-gray-600">Lab</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+              <span>v3</span>
+              <span class="text-red-700 ml-0.5">·2</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend for the chips -->
+  <div class="ml-12 mb-2 text-xs flex flex-wrap gap-4 bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <span class="font-medium text-gray-700">Chip language:</span>
+    <span class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-700 font-medium">Lab ✓</span>
+      approved on this attempt
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] text-blue-700 font-medium">Fit v1</span>
+      in progress, first attempt
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border-2 border-amber-400 text-[10px] text-amber-800 font-semibold">Lab v2<span class="text-red-600">·1</span></span>
+      in rework, <strong>·N</strong> = prior rejections
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 border-2 border-red-400 text-[10px] text-red-800 font-semibold">Lab v3<span class="text-red-700">·2</span></span>
+      stuck (3+ attempts)
+    </span>
+    <span class="flex items-center gap-1.5">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 border border-gray-200 text-[10px] text-gray-500 font-medium">Strike —</span>
+      NOT REQUIRED on this component
+    </span>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">A designer scanning a PO can immediately see <em>which sample area on which component</em> is holding the style up. Hover shows detail, click opens the component detail panel (steps 1–3).</div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 3c: Table view, one row per attempt -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num" style="background:#4338ca">3c</div>
+    <div>
+      <h3 class="font-semibold text-lg">Table view — one row per attempt, rejected rows stay</h3>
+      <p class="text-sm text-gray-600">In the Components / Orders table view, every attempt gets its own row. When v1 is rejected, it <strong>doesn't disappear</strong> — it stays with a REJECTED chip, and v2 appears as a new row below it. So the table is effectively a running log of everything that happened.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Design › Components (table view)</span>
+      <span class="ml-auto">Filter: PO-4421</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">Component</th>
+            <th class="text-left px-4 py-2 font-medium">Sample area</th>
+            <th class="text-center px-4 py-2 font-medium">Attempt</th>
+            <th class="text-left px-4 py-2 font-medium">Status</th>
+            <th class="text-left px-4 py-2 font-medium">Requested</th>
+            <th class="text-left px-4 py-2 font-medium">Resolved</th>
+            <th class="text-right px-4 py-2 font-medium">Days</th>
+            <th class="text-left px-4 py-2 font-medium">Reason / note</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <!-- Grouped component: Main woven label -->
+          <tr class="bg-gray-50/70">
+            <td colspan="8" class="px-4 py-1.5 text-xs font-semibold text-gray-700">Main woven label</td>
+          </tr>
+          <!-- Fit sample, single row, approved -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Fit Sample</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">12 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-600">18 Apr</td>
+            <td class="px-4 py-2 text-right text-xs text-gray-600">6</td>
+            <td class="px-4 py-2 text-xs text-gray-400">—</td>
+          </tr>
+          <!-- Strike off, single row, approved -->
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Strike Off</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">v1</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">APPROVED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">12 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-600">16 Apr</td>
+            <td class="px-4 py-2 text-right text-xs text-gray-600">4</td>
+            <td class="px-4 py-2 text-xs text-gray-400">—</td>
+          </tr>
+          <!-- Lab Dip v1 — REJECTED, stays in the table -->
+          <tr class="hover:bg-gray-50 bg-red-50/30">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Lab Dip</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-semibold">v1</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium">REJECTED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">12 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-600">24 Apr</td>
+            <td class="px-4 py-2 text-right text-xs text-gray-600">12</td>
+            <td class="px-4 py-2 text-xs text-red-800">Colour / shade off — Pantone 18-4247</td>
+          </tr>
+          <!-- Lab Dip v2 — OUTSTANDING, new row -->
+          <tr class="hover:bg-gray-50 bg-amber-50/30">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Lab Dip</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-semibold">v2</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium">OUTSTANDING</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">24 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-400">—</td>
+            <td class="px-4 py-2 text-right text-xs font-medium text-amber-700">0</td>
+            <td class="px-4 py-2 text-xs text-gray-500 italic">awaiting factory</td>
+          </tr>
+
+          <!-- Neck rib — deeper rework example -->
+          <tr class="bg-gray-50/70">
+            <td colspan="8" class="px-4 py-1.5 text-xs font-semibold text-gray-700">Neck rib</td>
+          </tr>
+          <tr class="hover:bg-gray-50 bg-red-50/30">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Lab Dip</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-semibold">v1</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium">REJECTED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">12 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-600">18 Apr</td>
+            <td class="px-4 py-2 text-right text-xs text-gray-600">6</td>
+            <td class="px-4 py-2 text-xs text-red-800">Shade too warm</td>
+          </tr>
+          <tr class="hover:bg-gray-50 bg-red-50/30">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Lab Dip</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-semibold">v2</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium">REJECTED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">18 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-600">22 Apr</td>
+            <td class="px-4 py-2 text-right text-xs text-gray-600">4</td>
+            <td class="px-4 py-2 text-xs text-red-800">Still warm, slightly better</td>
+          </tr>
+          <tr class="hover:bg-gray-50 bg-red-50/40">
+            <td class="px-4 py-2 text-gray-400 text-xs pl-6">↳</td>
+            <td class="px-4 py-2">Lab Dip</td>
+            <td class="px-4 py-2 text-center"><span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-800 border-2 border-red-400 font-bold">v3</span></td>
+            <td class="px-4 py-2"><span class="inline-flex items-center text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">RECEIVED</span></td>
+            <td class="px-4 py-2 text-xs text-gray-600">22 Apr</td>
+            <td class="px-4 py-2 text-xs text-gray-400">—</td>
+            <td class="px-4 py-2 text-right text-xs font-medium text-red-700">2</td>
+            <td class="px-4 py-2 text-xs text-gray-500 italic">designer reviewing now</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="px-4 py-2 border-t border-gray-200 bg-gray-50/60 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-3 text-gray-600">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" checked class="rounded border-gray-300">
+          <span>Show rejected history</span>
+        </label>
+        <span class="text-gray-400">·</span>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" class="rounded border-gray-300">
+          <span>Current attempt only</span>
+        </label>
+      </div>
+      <div class="text-gray-500">7 rows · 2 components · 1 in rework</div>
+    </div>
+  </div>
+  <div class="ml-12 mb-4">
+    <div class="caption">Every attempt is its own row — rejected attempts stay visible as historical rows so you can scan a component's full story without drilling in. A toggle at the bottom collapses to "current attempt only" if you just want the live view.</div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="data-note">
+      Each row = one row in <strong>sample_submissions</strong>. No rows are ever deleted; status just updates on the current-attempt row until it's closed.
+    </div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 4 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">4</div>
+    <div>
+      <h3 class="font-semibold text-lg">Factory sees the rejection on their view</h3>
+      <p class="text-sm text-gray-600">Supplier login shows an amber banner with the reason + photo + what to do next. Email goes out too (if that automation is on).</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Factory view · Shenzhen Apparel Co</span>
+      <span class="ml-auto">Logged in as: supplier</span>
+    </div>
+    <div class="p-4">
+      <div class="bg-amber-50 border-l-4 border-amber-500 rounded-md p-3 mb-3">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center text-amber-700 font-semibold">!</div>
+          <div class="flex-1">
+            <div class="font-semibold text-sm text-amber-900">Main woven label — needs resubmission (v2)</div>
+            <div class="text-xs text-amber-800 mt-1">Designer rejected v1 on 24 Apr. Reason: <strong>Colour / shade off</strong></div>
+            <div class="text-sm text-amber-900 mt-2 bg-white/60 rounded px-3 py-2 border border-amber-200">Colour match still off — Pantone 18-4247 reference swatch being posted Monday. Please hold until you have it in hand.</div>
+            <div class="flex items-center gap-3 mt-2">
+              <div class="w-20 h-20 bg-amber-200 rounded border border-amber-300 flex items-center justify-center text-xs text-amber-700">issue photo</div>
+              <div class="text-xs text-amber-700">
+                <div>New requested: <strong>24 Apr</strong></div>
+                <div>Target: <strong>2 May</strong> (8 business days)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-xs text-gray-500">When ready, upload the new sample and mark v2 as submitted.</div>
+    </div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">Supplier sees the new clock (v2 target date) and the rejection context — no ambiguity about what went wrong or what's expected.</div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 5 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">5</div>
+    <div>
+      <h3 class="font-semibold text-lg">Factory submits v2 → designer reviews again</h3>
+      <p class="text-sm text-gray-600">Same review UI as step 1 but now v2, with v1's rejection visible as context.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Orders V2 › PO-4421 — CO-7801</span>
+      <span class="ml-auto">Detail panel</span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-semibold text-sm">Main woven label</div>
+          <div class="text-xs text-gray-500">Woven Label · Shenzhen Apparel Co</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">v2 · submitted</span>
+          <span class="text-xs text-gray-500">submitted 1 day ago</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-2 text-xs mb-3">
+        <div><div class="text-gray-500">Requested</div><div class="font-medium">24 Apr</div></div>
+        <div><div class="text-gray-500">Submitted</div><div class="font-medium">29 Apr</div></div>
+        <div><div class="text-gray-500">Days on v2</div><div class="font-medium">5</div></div>
+        <div><div class="text-gray-500">Attempt</div><div class="font-medium">2 of —</div></div>
+      </div>
+      <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-3 text-xs text-gray-600">
+        <strong class="text-gray-800">Context from v1:</strong> rejected 24 Apr for <em>Colour / shade off</em> — "Pantone 18-4247 reference swatch posted Monday."
+      </div>
+      <div class="flex items-center gap-2 pt-3 border-t border-gray-100">
+        <button class="text-xs px-3 py-1.5 rounded bg-emerald-600 text-white font-medium">Approve</button>
+        <button class="text-xs px-3 py-1.5 rounded bg-red-600 text-white font-medium">Reject (→ v3)</button>
+      </div>
+    </div>
+  </div>
+  <div class="ml-12 mb-4">
+    <div class="caption">If rejected again, we repeat the flow — attempt number increments, the stuck-in-rework flag kicks in at 3+.</div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="data-note">
+      On approve: UPDATE component_submissions SET outcome='APPROVED', resolved_at=NOW() WHERE id=&lt;v2&gt;<br>
+      UPDATE components SET current_status='APPROVED', approved_date=NOW() WHERE id=...
+    </div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 6 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">6</div>
+    <div>
+      <h3 class="font-semibold text-lg">Component detail — full attempt timeline</h3>
+      <p class="text-sm text-gray-600">Click any row in the stuck list (or the component on an order) to see every attempt side-by-side.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Component detail · Main woven label · PO-4421</span>
+    </div>
+    <div class="p-5">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">approved on v2</span>
+        <span class="text-xs text-gray-500">total time: 17 days across 2 attempts</span>
+      </div>
+
+      <!-- Attempt bars -->
+      <div class="space-y-3">
+        <!-- v1 -->
+        <div class="flex items-start gap-3">
+          <div class="w-14 flex-shrink-0">
+            <div class="text-xs font-semibold text-gray-700">v1</div>
+            <div class="text-xs text-red-700">rejected</div>
+          </div>
+          <div class="flex-1">
+            <div class="bg-red-100 border border-red-200 rounded px-3 py-2">
+              <div class="flex items-center justify-between mb-1">
+                <div class="text-xs text-red-900 font-medium">12 Apr → 24 Apr · 12 days</div>
+                <div class="text-xs text-red-700">Colour / shade off</div>
+              </div>
+              <div class="text-xs text-red-800">Colour match still off — Pantone 18-4247 reference swatch being posted Monday.</div>
+              <div class="flex items-center gap-2 mt-2">
+                <div class="w-12 h-12 bg-red-200 rounded border border-red-300 flex items-center justify-center text-[10px] text-red-700">v1 sample</div>
+                <div class="w-12 h-12 bg-red-200 rounded border border-red-300 flex items-center justify-center text-[10px] text-red-700">issue photo</div>
+                <div class="text-xs text-red-700 ml-2">
+                  <div>requested by Thomas P · 12 Apr</div>
+                  <div>submitted by factory · 20 Apr</div>
+                  <div>rejected by Thomas P · 24 Apr</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- gap -->
+        <div class="flex items-center gap-3">
+          <div class="w-14 flex-shrink-0"></div>
+          <div class="text-[11px] text-gray-400 italic">0 day gap before v2 opened</div>
+        </div>
+
+        <!-- v2 -->
+        <div class="flex items-start gap-3">
+          <div class="w-14 flex-shrink-0">
+            <div class="text-xs font-semibold text-gray-700">v2</div>
+            <div class="text-xs text-emerald-700">approved</div>
+          </div>
+          <div class="flex-1">
+            <div class="bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+              <div class="flex items-center justify-between mb-1">
+                <div class="text-xs text-emerald-900 font-medium">24 Apr → 29 Apr · 5 days</div>
+                <div class="text-xs text-emerald-700">APPROVED</div>
+              </div>
+              <div class="flex items-center gap-2 mt-2">
+                <div class="w-12 h-12 bg-emerald-200 rounded border border-emerald-300 flex items-center justify-center text-[10px] text-emerald-700">v2 sample</div>
+                <div class="text-xs text-emerald-700 ml-2">
+                  <div>requested · 24 Apr</div>
+                  <div>submitted · 29 Apr</div>
+                  <div>approved by Thomas P · 29 Apr</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- comments -->
+      <div class="mt-5 pt-4 border-t border-gray-100">
+        <div class="text-xs uppercase tracking-wide text-gray-500 mb-2">Comments</div>
+        <div class="text-xs text-gray-600 space-y-1">
+          <div>Thomas P · 18 Apr · "@sophie have a look at this when you can, something feels off"</div>
+          <div>Sophie C · 18 Apr · "agreed, looks a shade warmer than the swatch"</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">This is the <strong>deep drill-down</strong> — useful for postmortems ("why did this one take 3 rounds?") and for factory performance reviews.</div>
+  </div>
+  <div class="arrow-down mb-6"></div>
+
+  <!-- STEP 7 -->
+  <div class="flex items-start gap-4 mb-4">
+    <div class="step-num">7</div>
+    <div>
+      <h3 class="font-semibold text-lg">Design Overview — teaser strip</h3>
+      <p class="text-sm text-gray-600">Lightweight summary sits at the top of the existing Design Overview page. Clicking through opens the full Resubmissions page.</p>
+    </div>
+  </div>
+  <div class="screen-frame ml-12 mb-2">
+    <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs text-gray-500">
+      <span class="font-mono">Design Overview</span>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold">Resubmissions</h3>
+        <a href="#" class="text-xs text-blue-600 hover:underline">view full dashboard →</a>
+      </div>
+      <div class="grid grid-cols-4 gap-3 mb-3">
+        <div class="bg-gray-50 rounded px-3 py-2">
+          <div class="text-[10px] uppercase text-gray-500">In rework</div>
+          <div class="text-xl font-semibold">12</div>
+        </div>
+        <div class="bg-gray-50 rounded px-3 py-2">
+          <div class="text-[10px] uppercase text-gray-500">Avg v1 cycle</div>
+          <div class="text-xl font-semibold">8.2<span class="text-sm text-gray-500 font-normal ml-1">d</span></div>
+        </div>
+        <div class="bg-gray-50 rounded px-3 py-2">
+          <div class="text-[10px] uppercase text-gray-500">Avg v2+ cycle</div>
+          <div class="text-xl font-semibold">5.4<span class="text-sm text-gray-500 font-normal ml-1">d</span></div>
+        </div>
+        <div class="bg-gray-50 rounded px-3 py-2">
+          <div class="text-[10px] uppercase text-gray-500">First-time-right</div>
+          <div class="text-xl font-semibold">64<span class="text-sm text-gray-500 font-normal">%</span></div>
+        </div>
+      </div>
+      <div class="text-xs text-gray-500 mb-1">Top 3 stuck</div>
+      <div class="divide-y divide-gray-100 border border-gray-200 rounded">
+        <div class="px-3 py-2 flex items-center gap-3 text-xs hover:bg-gray-50">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-medium">v4</span>
+          <span class="font-medium flex-1">Main woven label</span>
+          <span class="text-gray-500">Shenzhen Apparel Co</span>
+          <span class="text-red-700 font-semibold">14d open</span>
+        </div>
+        <div class="px-3 py-2 flex items-center gap-3 text-xs hover:bg-gray-50">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-medium">v3</span>
+          <span class="font-medium flex-1">Front chest print</span>
+          <span class="text-gray-500">Guangzhou Print Works</span>
+          <span class="text-red-700 font-semibold">11d open</span>
+        </div>
+        <div class="px-3 py-2 flex items-center gap-3 text-xs hover:bg-gray-50">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-medium">v3</span>
+          <span class="font-medium flex-1">Hang tag string</span>
+          <span class="text-gray-500">Dongguan Trims Ltd</span>
+          <span class="text-red-700 font-semibold">9d open</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="ml-12 mb-10">
+    <div class="caption">Goal of this strip is <strong>pulse-check</strong> — "do I need to worry about this today?" — then click through for the full Resubmissions page.</div>
+  </div>
+
+  <!-- Data model summary -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5 mb-8">
+    <h2 class="font-semibold text-sm uppercase tracking-wide text-gray-500 mb-3">Data model — what actually gets stored</h2>
+    <div class="space-y-4 text-sm">
+      <div>
+        <div class="font-semibold text-gray-800">components</div>
+        <div class="text-xs text-gray-600 font-mono">id, name, type, factory_name, current_status, requested_date, approved_date, …</div>
+        <div class="text-xs text-gray-500 mt-1">Unchanged — these are the "logical" component rows you already have.</div>
+      </div>
+      <div>
+        <div class="font-semibold text-gray-800">sample_submissions <span class="text-xs font-normal text-emerald-700 ml-1">(new)</span></div>
+        <div class="text-xs text-gray-600 font-mono">id, order_id, component_id (nullable), sample_type [FIT | STRIKE | LAB | PPS], attempt_no, requested_at, submitted_at, resolved_at, outcome [APPROVED | REJECTED], reason, notes, photo_url, actioned_by_user_id</div>
+        <div class="text-xs text-gray-500 mt-1">
+          One row per (order × component × sample_type × attempt). <code>component_id</code> is null for order-level samples (PPS always, plus Fit/Strike/Lab on orders without components).
+          Unique index on (order_id, component_id, sample_type, attempt_no).
+        </div>
+      </div>
+      <div>
+        <div class="font-semibold text-gray-800">Status lives on the <em>current</em> submission row</div>
+        <div class="text-xs text-gray-600">The existing FIT_SAMPLE_STATUS / STRIKE_OFF_STATUS / LAB_DIP_STATUS / PPS_STATUS fields become "the status of the latest open attempt for this area." Historical attempts' final outcomes are preserved on their submission rows.</div>
+      </div>
+      <div>
+        <div class="font-semibold text-gray-800">Endpoints</div>
+        <div class="text-xs text-gray-600 font-mono">POST /api/samples/{submission_id}/reject   →  closes current, opens next attempt<br>POST /api/samples/{submission_id}/approve  →  closes current as approved<br>GET  /api/orders/{id}/submissions          →  timeline for one order<br>GET  /api/resubmissions/overview           →  dashboard data</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open decisions -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="font-semibold text-sm uppercase tracking-wide text-gray-500 mb-3">Open decisions before we build</h2>
+    <ol class="text-sm text-gray-700 space-y-2 list-decimal pl-5">
+      <li><strong>Reason taxonomy.</strong> I proposed: Colour / Placement / Stitch / Material / Spec / Print / Other. Keep, trim, or add?</li>
+      <li><strong>Photos.</strong> Required on rejection, or always optional? (Structured photo of the issue is <em>hugely</em> useful for the factory.)</li>
+      <li><strong>Factory email on rejection.</strong> On by default (via existing automation toggles), or silent?</li>
+      <li><strong>Does v2 reset the target date?</strong> You said yes (cycle time per attempt) — confirming.</li>
+      <li><strong>Can a factory mark "can't do it, please respec"?</strong> Or is reject only a designer action? (Today's spec: designer-only.)</li>
+      <li><strong>Stuck threshold.</strong> Flag at 3+ attempts? 2+? Or days-on-current-attempt based?</li>
+    </ol>
+  </div>
+
+</div>
+</body>
+</html>
