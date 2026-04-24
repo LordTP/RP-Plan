@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCcw, Loader2, AlertTriangle, Package, Factory, Layers, Check, Inbox, X as XIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
-import { submissionsApi, type ResubmissionsOverview, type SampleType } from '@/lib/api';
+import { submissionsApi, type ResubmissionsOverview, type SampleType, type StuckRow } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
+import { ScopeActionModal } from '@/components/samples/ScopeActionModal';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
@@ -44,7 +45,10 @@ function ResubmissionsContent() {
     sampleType: SampleType;
     currentAttemptNo: number;
   } | null>(null);
-  const [pendingRowIds, setPendingRowIds] = useState<Set<number>>(new Set());
+  const [scopeModal, setScopeModal] = useState<{
+    kind: 'approve' | 'markReceived';
+    row: StuckRow;
+  } | null>(null);
 
   const refresh = useCallback(() => {
     let cancelled = false;
@@ -58,43 +62,9 @@ function ResubmissionsContent() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleMarkReceived = async (row: ResubmissionsOverview['stuck'][number]) => {
-    setPendingRowIds(prev => new Set(prev).add(row.submission_id));
-    try {
-      await submissionsApi.markReceived({
-        order_id: row.order_id,
-        component_id: row.component_id,
-        sample_type: row.sample_type,
-        apply_scope: 'single',
-      });
-      toast.success('Marked received');
-      refresh();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to mark received');
-    } finally {
-      setPendingRowIds(prev => { const next = new Set(prev); next.delete(row.submission_id); return next; });
-    }
-  };
-
-  const handleApprove = async (row: ResubmissionsOverview['stuck'][number]) => {
-    setPendingRowIds(prev => new Set(prev).add(row.submission_id));
-    try {
-      const result = await submissionsApi.approve({
-        order_id: row.order_id,
-        component_id: row.component_id,
-        sample_type: row.sample_type,
-        apply_scope: 'single',
-      });
-      toast.success(`Approved v${result.attempt_no}`);
-      refresh();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to approve');
-    } finally {
-      setPendingRowIds(prev => { const next = new Set(prev); next.delete(row.submission_id); return next; });
-    }
-  };
-
-  const handleRejectAgain = (row: ResubmissionsOverview['stuck'][number]) => {
+  const handleMarkReceived = (row: StuckRow) => setScopeModal({ kind: 'markReceived', row });
+  const handleApprove = (row: StuckRow) => setScopeModal({ kind: 'approve', row });
+  const handleRejectAgain = (row: StuckRow) => {
     setRejectModal({
       orderId: row.order_id,
       componentId: row.component_id,
@@ -149,7 +119,6 @@ function ResubmissionsContent() {
             ) : data ? (
               <PopulatedDashboard
                 data={data}
-                pendingRowIds={pendingRowIds}
                 onOpenOrder={(orderId) => router.push(`/orders-v2?order=${orderId}`)}
                 onMarkReceived={handleMarkReceived}
                 onApprove={handleApprove}
@@ -173,6 +142,19 @@ function ResubmissionsContent() {
           onRejected={() => { setRejectModal(null); refresh(); }}
         />
       )}
+      {scopeModal && (
+        <ScopeActionModal
+          kind={scopeModal.kind}
+          orderId={scopeModal.row.order_id}
+          componentId={scopeModal.row.component_id}
+          componentName={scopeModal.row.component_name}
+          styleCode={scopeModal.row.style_code}
+          sampleType={scopeModal.row.sample_type}
+          attemptNo={scopeModal.row.attempt_no}
+          onClose={() => setScopeModal(null)}
+          onDone={() => { setScopeModal(null); refresh(); }}
+        />
+      )}
     </AppShell>
   );
 }
@@ -194,19 +176,33 @@ function EmptyState() {
 
 function PopulatedDashboard({
   data,
-  pendingRowIds,
   onOpenOrder,
   onMarkReceived,
   onApprove,
   onRejectAgain,
 }: {
   data: ResubmissionsOverview;
-  pendingRowIds: Set<number>;
   onOpenOrder: (orderId: number) => void;
-  onMarkReceived: (row: ResubmissionsOverview['stuck'][number]) => void;
-  onApprove: (row: ResubmissionsOverview['stuck'][number]) => void;
-  onRejectAgain: (row: ResubmissionsOverview['stuck'][number]) => void;
+  onMarkReceived: (row: StuckRow) => void;
+  onApprove: (row: StuckRow) => void;
+  onRejectAgain: (row: StuckRow) => void;
 }) {
+  // Group the stuck list by PO so sibling reworks cluster together. Keeps the
+  // per-row actions visible for the multi-style scope decision at click time.
+  const grouped = useMemo(() => {
+    const map = new Map<string, StuckRow[]>();
+    for (const row of data.stuck) {
+      const key = row.po_number || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(row);
+    }
+    // Sort POs by most-recent days_open descending on their worst row
+    return Array.from(map.entries()).sort(([, a], [, b]) => {
+      const maxA = Math.max(...a.map(r => r.days_open));
+      const maxB = Math.max(...b.map(r => r.days_open));
+      return maxB - maxA;
+    });
+  }, [data.stuck]);
   return (
     <div className="space-y-6">
       {/* KPI row */}
@@ -244,87 +240,96 @@ function PopulatedDashboard({
             No open rework right now.
           </div>
         ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-3 py-2 font-semibold">PO</th>
-                  <th className="text-left px-3 py-2 font-semibold">Component</th>
-                  <th className="text-left px-3 py-2 font-semibold">Area</th>
-                  <th className="text-left px-3 py-2 font-semibold">Factory</th>
-                  <th className="text-center px-3 py-2 font-semibold">v</th>
-                  <th className="text-right px-3 py-2 font-semibold">Days</th>
-                  <th className="text-left px-3 py-2 font-semibold">Last reason</th>
-                  <th className="text-right px-3 py-2 font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {data.stuck.map(row => {
-                  const stuck = row.attempt_no >= 3;
-                  const pending = pendingRowIds.has(row.submission_id);
-                  return (
-                    <tr
-                      key={row.submission_id}
-                      className={cn('hover:bg-gray-50', stuck && 'bg-red-50/30')}
+          <div className="space-y-4">
+            {grouped.map(([poNumber, rows]) => {
+              const firstRow = rows[0];
+              const worstDays = Math.max(...rows.map(r => r.days_open));
+              const anyStuck = rows.some(r => r.attempt_no >= 3);
+              return (
+                <div key={poNumber} className="border border-gray-200 rounded-lg overflow-hidden">
+                  {/* PO group header */}
+                  <div className={cn('px-3 py-2 border-b flex items-center gap-3 flex-wrap', anyStuck ? 'bg-red-50/50 border-red-200' : 'bg-gray-50 border-gray-200')}>
+                    <button
+                      onClick={() => onOpenOrder(firstRow.order_id)}
+                      className="text-xs font-mono font-semibold text-gray-800 hover:underline"
                     >
-                      <td className="px-3 py-2 font-mono text-[11px] text-gray-700">
-                        <button onClick={() => onOpenOrder(row.order_id)} className="hover:underline">
-                          {row.po_number}
-                          {row.china_orderbook_ref && <span className="text-gray-400"> — {row.china_orderbook_ref}</span>}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2 font-medium text-gray-800">{row.component_name || <span className="text-gray-400 italic">order-level</span>}</td>
-                      <td className="px-3 py-2 text-gray-600">{SAMPLE_LABEL[row.sample_type]}</td>
-                      <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{row.factory || '—'}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={cn(
-                          'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-bold border',
-                          stuck ? 'bg-red-100 text-red-700 border-red-300' : 'bg-amber-100 text-amber-800 border-amber-300'
-                        )}>
-                          v{row.attempt_no}
-                        </span>
-                      </td>
-                      <td className={cn('px-3 py-2 text-right font-semibold', stuck ? 'text-red-700' : 'text-gray-700')}>
-                        {row.days_open}
-                      </td>
-                      <td className="px-3 py-2 text-gray-600 text-xs max-w-[220px] truncate">
-                        {row.last_reason ? (
-                          <span>
-                            <span className="font-semibold text-gray-700">{row.last_reason}</span>
-                            {row.last_reason_notes && <span className="text-gray-500"> — {row.last_reason_notes}</span>}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <InlineBtn
-                            title="Mark received"
-                            icon={<Inbox className="w-3 h-3" />}
-                            onClick={() => onMarkReceived(row)}
-                            pending={pending}
-                            tone="neutral"
-                          />
-                          <InlineBtn
-                            title="Approve this attempt"
-                            icon={<Check className="w-3 h-3" />}
-                            onClick={() => onApprove(row)}
-                            pending={pending}
-                            tone="success"
-                          />
-                          <InlineBtn
-                            title="Reject again (open v+1)"
-                            icon={<XIcon className="w-3 h-3" />}
-                            onClick={() => onRejectAgain(row)}
-                            pending={pending}
-                            tone="danger"
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      PO {poNumber}
+                      {firstRow.china_orderbook_ref && <span className="text-gray-400 font-normal"> — {firstRow.china_orderbook_ref}</span>}
+                    </button>
+                    <span className="text-[11px] text-gray-500">{firstRow.factory || '—'}</span>
+                    <span className="text-[11px] text-gray-400">·</span>
+                    <span className="text-[11px] text-gray-500">{rows.length} in rework</span>
+                    <span className="ml-auto text-[11px] text-gray-500">
+                      worst <span className={cn('font-semibold', anyStuck ? 'text-red-700' : 'text-gray-700')}>{worstDays}d</span>
+                    </span>
+                  </div>
+                  {/* Row table */}
+                  <table className="w-full text-sm">
+                    <thead className="bg-white text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                      <tr>
+                        <th className="text-left px-3 py-1.5 font-semibold">Style</th>
+                        <th className="text-left px-3 py-1.5 font-semibold">Component</th>
+                        <th className="text-left px-3 py-1.5 font-semibold">Area</th>
+                        <th className="text-center px-3 py-1.5 font-semibold">v</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">Days</th>
+                        <th className="text-left px-3 py-1.5 font-semibold">Last reason</th>
+                        <th className="text-right px-3 py-1.5 font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {rows.map(row => {
+                        const isStuck = row.attempt_no >= 3;
+                        return (
+                          <tr key={row.submission_id} className={cn('hover:bg-gray-50', isStuck && 'bg-red-50/20')}>
+                            <td className="px-3 py-2 min-w-0">
+                              <button
+                                onClick={() => onOpenOrder(row.order_id)}
+                                className="text-xs text-left hover:underline min-w-0 block max-w-[220px] truncate"
+                                title={`${row.style_code || ''} ${row.description || ''} ${row.colour || ''}`.trim()}
+                              >
+                                <span className="font-mono font-semibold text-gray-800">{row.style_code || `#${row.order_id}`}</span>
+                                {row.colour && <span className="text-gray-500"> · {row.colour}</span>}
+                                {row.description && <div className="text-[10px] text-gray-400 truncate">{row.description}</div>}
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 font-medium text-gray-800 text-xs">
+                              {row.component_name || <span className="text-gray-400 italic">order-level</span>}
+                            </td>
+                            <td className="px-3 py-2 text-gray-600 text-xs">{SAMPLE_LABEL[row.sample_type]}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={cn(
+                                'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-bold border',
+                                isStuck ? 'bg-red-100 text-red-700 border-red-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                              )}>
+                                v{row.attempt_no}
+                              </span>
+                            </td>
+                            <td className={cn('px-3 py-2 text-right text-xs font-semibold', isStuck ? 'text-red-700' : 'text-gray-700')}>
+                              {row.days_open}
+                            </td>
+                            <td className="px-3 py-2 text-gray-600 text-xs max-w-[220px] truncate">
+                              {row.last_reason ? (
+                                <span>
+                                  <span className="font-semibold text-gray-700">{row.last_reason}</span>
+                                  {row.last_reason_notes && <span className="text-gray-500"> — {row.last_reason_notes}</span>}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="inline-flex items-center gap-1">
+                                <InlineBtn title="Mark received…" icon={<Inbox className="w-3 h-3" />} onClick={() => onMarkReceived(row)} tone="neutral" />
+                                <InlineBtn title="Approve…" icon={<Check className="w-3 h-3" />} onClick={() => onApprove(row)} tone="success" />
+                                <InlineBtn title="Reject again…" icon={<XIcon className="w-3 h-3" />} onClick={() => onRejectAgain(row)} tone="danger" />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -425,13 +430,11 @@ function InlineBtn({
   title,
   icon,
   onClick,
-  pending,
   tone,
 }: {
   title: string;
   icon: React.ReactNode;
   onClick: () => void;
-  pending: boolean;
   tone: 'neutral' | 'success' | 'danger';
 }) {
   const toneClasses =
@@ -442,15 +445,10 @@ function InlineBtn({
     <button
       type="button"
       title={title}
-      disabled={pending}
       onClick={onClick}
-      className={cn(
-        'inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors',
-        toneClasses,
-        pending && 'opacity-50 cursor-not-allowed'
-      )}
+      className={cn('inline-flex items-center justify-center w-6 h-6 rounded-md border transition-colors', toneClasses)}
     >
-      {pending ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
+      {icon}
     </button>
   );
 }

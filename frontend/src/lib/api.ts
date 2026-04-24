@@ -950,23 +950,28 @@ export interface SampleSubmission {
   actioned_by_id: number | null;
 }
 
+export interface StuckRow {
+  submission_id: number;
+  order_id: number;
+  po_number: string | null;
+  china_orderbook_ref: string | null;
+  style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  component_id: number | null;
+  component_name: string | null;
+  sample_type: SampleType;
+  attempt_no: number;
+  factory: string | null;
+  days_open: number;
+  last_reason: string | null;
+  last_reason_notes: string | null;
+}
+
 export interface ResubmissionsOverview {
   empty: boolean;
   in_rework_now: number;
-  stuck: Array<{
-    submission_id: number;
-    order_id: number;
-    po_number: string | null;
-    china_orderbook_ref: string | null;
-    component_id: number | null;
-    component_name: string | null;
-    sample_type: SampleType;
-    attempt_no: number;
-    factory: string | null;
-    days_open: number;
-    last_reason: string | null;
-    last_reason_notes: string | null;
-  }>;
+  stuck: StuckRow[];
   by_factory: Array<{ factory: string; submissions: number; rejections: number; ftr_pct: number }>;
   by_type: Array<{ sample_type: SampleType; submissions: number; rejections: number; ftr_pct: number }>;
 }
