@@ -119,6 +119,10 @@ export interface Order {
   lab_dip_rejection_count?: number;
   pps_attempt_no?: number;
   pps_rejection_count?: number;
+  fit_sample_last_rejection?: LastRejection | null;
+  strike_off_last_rejection?: LastRejection | null;
+  lab_dip_last_rejection?: LastRejection | null;
+  pps_last_rejection?: LastRejection | null;
   // Metadata
   created_at: string;
   updated_at: string;
@@ -167,6 +171,19 @@ export interface OrderComponent {
   strike_off_rejection_count?: number;
   lab_dip_attempt_no?: number;
   lab_dip_rejection_count?: number;
+  // Latest rejection context per sample area — only populated when the current
+  // attempt is > 1. The factory's "what was wrong last time" reference.
+  fit_sample_last_rejection?: LastRejection | null;
+  strike_off_last_rejection?: LastRejection | null;
+  lab_dip_last_rejection?: LastRejection | null;
+}
+
+export interface LastRejection {
+  attempt_no: number;
+  reason: string | null;
+  notes: string | null;
+  rejected_at: string | null;
+  photo_url: string | null;
 }
 
 export interface DateHistory {

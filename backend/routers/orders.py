@@ -22,6 +22,7 @@ from schemas import (
     PurchaseOrderSupplierResponse,
 )
 from routers.components import decorate_orders_with_attempts
+from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
 from auth import (
     get_current_user, get_current_internal_user, get_current_full_internal_user,
     get_current_admin_user,
@@ -551,7 +552,13 @@ async def update_order(
 
                 # Update the field
                 setattr(order, key, value)
-    
+
+                # Keep sample_submissions in sync — APPROVED via the legacy path
+                # closes the open submission row; REJECTED via the legacy path
+                # backfills v1+v2 with reason='OTHER'. No-op for any other value.
+                if key in STATUS_FIELD_TO_SAMPLE_TYPE:
+                    sync_submission_on_status_change(db, order, None, key, value, current_user.id)
+
     # Auto-calculate total_quantity from size columns
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
                    'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',

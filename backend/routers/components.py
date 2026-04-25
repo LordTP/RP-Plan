@@ -2,7 +2,7 @@
 bulk update + apply-to-PO actions. All status/date changes also write to
 DateChangeHistory so the activity feed picks them up."""
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from sqlalchemy import case, func
@@ -52,15 +52,60 @@ def _attempt_summary_for_components(
     return {(int(c), s): (int(m), int(r or 0)) for c, s, m, r in rows}
 
 
-def _decorate_component_attempts(component_dict: dict, summary: Dict[Tuple[int, str], Tuple[int, int]]) -> dict:
-    """Mutate a component dict (or pydantic-friendly object) with the per-area
-    attempt + rejection fields. Defaults to v1 / 0 when no submission exists."""
+def _last_rejection_by_key(
+    db: Session,
+    order_ids: List[int],
+    component_ids: List[int],
+) -> Dict[Tuple[int, Optional[int], str], dict]:
+    """Find the most recent REJECTED submission per (order_id, component_id, sample_type).
+    Used to surface "why was this rejected last time" context to factories.
+    Returns an empty map if no inputs."""
+    if not order_ids and not component_ids:
+        return {}
+    q = db.query(SampleSubmission).filter(SampleSubmission.outcome == 'REJECTED')
+    if component_ids and order_ids:
+        # Match either component-level rejections OR order-level rejections on these orders.
+        from sqlalchemy import or_
+        q = q.filter(or_(
+            SampleSubmission.component_id.in_(component_ids),
+            SampleSubmission.order_id.in_(order_ids),
+        ))
+    elif component_ids:
+        q = q.filter(SampleSubmission.component_id.in_(component_ids))
+    else:
+        q = q.filter(SampleSubmission.order_id.in_(order_ids))
+    rows = q.order_by(SampleSubmission.attempt_no.asc()).all()
+    out: Dict[Tuple[int, Optional[int], str], dict] = {}
+    for r in rows:
+        # Latest wins — keep overwriting, end up with highest attempt_no per key.
+        out[(r.order_id, r.component_id, r.sample_type)] = {
+            'attempt_no': r.attempt_no,
+            'reason': r.reason,
+            'notes': r.notes,
+            'rejected_at': r.resolved_at.isoformat() if r.resolved_at else None,
+            'photo_url': r.photo_url,
+        }
+    return out
+
+
+def _decorate_component_attempts(
+    component_dict: dict,
+    summary: Dict[Tuple[int, str], Tuple[int, int]],
+    last_rejections: Optional[Dict[Tuple[int, Optional[int], str], dict]] = None,
+) -> dict:
+    """Mutate a component dict with per-area attempt + rejection fields, and
+    optionally the latest-rejection context (only populated when current attempt > 1)."""
     cid = component_dict['id'] if isinstance(component_dict, dict) else component_dict.id
+    oid = component_dict.get('order_id') if isinstance(component_dict, dict) else getattr(component_dict, 'order_id', None)
     for sample_type, prefix in (('fit', 'fit_sample'), ('strike', 'strike_off'), ('lab', 'lab_dip')):
         attempt, rejections = summary.get((cid, sample_type), (1, 0))
         if isinstance(component_dict, dict):
             component_dict[f'{prefix}_attempt_no'] = attempt
             component_dict[f'{prefix}_rejection_count'] = rejections
+            if last_rejections is not None and attempt > 1 and oid is not None:
+                component_dict[f'{prefix}_last_rejection'] = last_rejections.get((oid, cid, sample_type))
+            elif last_rejections is not None:
+                component_dict[f'{prefix}_last_rejection'] = None
     return component_dict
 
 
@@ -96,14 +141,22 @@ def decorate_orders_with_attempts(db: Session, order_dicts: List[dict]) -> List[
             nested_component_ids.append(c['id'])
     comp_summary = _attempt_summary_for_components(db, nested_component_ids)
 
+    # Latest rejection per key, for both component-level and order-level rows.
+    last_rejections = _last_rejection_by_key(db, order_ids, nested_component_ids)
+
     for d in order_dicts:
         oid = d['id']
         for sample_type, prefix in (('fit', 'fit_sample'), ('strike', 'strike_off'), ('lab', 'lab_dip'), ('pps', 'pps')):
             attempt, rejections = order_summary.get((oid, sample_type), (1, 0))
             d[f'{prefix}_attempt_no'] = attempt
             d[f'{prefix}_rejection_count'] = rejections
+            # Order-level rejection context (component_id is NULL on the row).
+            if attempt > 1:
+                d[f'{prefix}_last_rejection'] = last_rejections.get((oid, None, sample_type))
+            else:
+                d[f'{prefix}_last_rejection'] = None
         for c in d.get('components', []) or []:
-            _decorate_component_attempts(c, comp_summary)
+            _decorate_component_attempts(c, comp_summary, last_rejections)
     return order_dicts
 
 
@@ -171,11 +224,13 @@ async def get_order_components(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     components = db.query(OrderComponent).filter(OrderComponent.order_id == order_id).order_by(OrderComponent.created_at).all()
-    summary = _attempt_summary_for_components(db, [c.id for c in components])
+    component_ids = [c.id for c in components]
+    summary = _attempt_summary_for_components(db, component_ids)
+    last_rejections = _last_rejection_by_key(db, [order_id], component_ids)
     result = []
     for c in components:
         d = ComponentResponse.model_validate(c).model_dump()
-        _decorate_component_attempts(d, summary)
+        _decorate_component_attempts(d, summary, last_rejections)
         result.append(d)
     return result
 
@@ -217,6 +272,10 @@ async def update_component(
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
+    # Imported here to avoid a circular import at module load.
+    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
+
     # Log each field change to DateChangeHistory so the activity feed picks it up
     for key, value in update_data.items():
         if key == 'name':
@@ -233,12 +292,19 @@ async def update_component(
                 component_name=component.name,
             ))
         setattr(component, key, value)
+        # Keep sample_submissions in sync when a sample status flips through this path.
+        if order is not None and key in STATUS_FIELD_TO_SAMPLE_TYPE and role_str != 'supplier':
+            sync_submission_on_status_change(db, order, component, key, value, current_user.id)
+
     component.updated_at = datetime.utcnow()
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
     reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.commit()
     db.refresh(component)
-    return component
+    summary = _attempt_summary_for_components(db, [component.id])
+    d = ComponentResponse.model_validate(component).model_dump()
+    _decorate_component_attempts(d, summary)
+    return d
 
 
 @router.post("/api/components/bulk-update")
@@ -303,6 +369,13 @@ async def bulk_update_components(
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
+    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+
+    # Pre-fetch the orders for these components so the submission sync can run
+    # without hitting the DB once per row.
+    order_ids = list({c.order_id for c in rows})
+    orders_by_id = {o.id: o for o in db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()}
+
     changed = []
     unchanged = []
     for comp in rows:
@@ -322,6 +395,12 @@ async def bulk_update_components(
             setattr(comp, field, value)
             comp.updated_at = datetime.utcnow()
             reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=touched_status_prefixes)
+            # Keep submissions in sync — if APPROVED and an open row exists, close it.
+            # (REJECTED via bulk goes through bulk-reject which creates submission rows
+            # itself, so we skip the legacy-path REJECTED backfill here to avoid double-processing.)
+            order = orders_by_id.get(comp.order_id)
+            if order is not None and field in STATUS_FIELD_TO_SAMPLE_TYPE and value == 'APPROVED' and role_str != 'supplier':
+                sync_submission_on_status_change(db, order, comp, field, value, current_user.id)
             changed.append(comp.id)
         else:
             unchanged.append(comp.id)

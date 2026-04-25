@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation
 """
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
 
@@ -207,6 +207,12 @@ class ComponentResponse(BaseModel):
     strike_off_rejection_count: Optional[int] = 0
     lab_dip_attempt_no: Optional[int] = 1
     lab_dip_rejection_count: Optional[int] = 0
+    # Latest rejection context per sample area — only populated when the current
+    # attempt is > 1. Surfaced to factories on their supplier views so they know
+    # WHY the previous attempt was rejected and what to fix.
+    fit_sample_last_rejection: Optional[Dict[str, Any]] = None
+    strike_off_last_rejection: Optional[Dict[str, Any]] = None
+    lab_dip_last_rejection: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -231,6 +237,10 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     lab_dip_rejection_count: Optional[int] = 0
     pps_attempt_no: Optional[int] = 1
     pps_rejection_count: Optional[int] = 0
+    fit_sample_last_rejection: Optional[Dict[str, Any]] = None
+    strike_off_last_rejection: Optional[Dict[str, Any]] = None
+    lab_dip_last_rejection: Optional[Dict[str, Any]] = None
+    pps_last_rejection: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True

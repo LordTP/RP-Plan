@@ -340,6 +340,79 @@ async def reject_sample(
     }
 
 
+# Reverse of SAMPLE_FIELD_MAP — given a status column name (e.g. "lab_dip_status")
+# return the canonical sample_type ("lab"). Used by sync_submission_on_status_change
+# so any update path that writes a sample status column auto-closes the matching
+# open submission instead of leaving a dangling v+1 forever.
+STATUS_FIELD_TO_SAMPLE_TYPE = {fm['status']: st for st, fm in SAMPLE_FIELD_MAP.items()}
+
+
+def sync_submission_on_status_change(
+    db: Session,
+    order: PurchaseOrder,
+    component: Optional[OrderComponent],
+    field_name: str,
+    new_value: Optional[str],
+    actioned_by_id: int,
+) -> None:
+    """Keep sample_submissions in sync when a sample status column is written
+    through any of the legacy update paths (PUT /api/orders/{id},
+    PUT /api/components/{id}, POST /api/components/bulk-update, Excel import).
+
+    On APPROVED: close any open submission row for this (order, component, sample_type).
+    On REJECTED: if no open submission exists, backfill v1 REJECTED + v2 open with
+    reason='OTHER' since the legacy path doesn't capture a structured reason.
+    Other status values are no-ops — they don't open or close attempts.
+
+    Call this AFTER the column has been updated. The caller is responsible for
+    committing the transaction."""
+    if new_value not in ('APPROVED', 'REJECTED'):
+        return
+    sample_type = STATUS_FIELD_TO_SAMPLE_TYPE.get(field_name)
+    if not sample_type:
+        return
+    component_id = component.id if component else None
+    now = datetime.utcnow()
+
+    if new_value == 'APPROVED':
+        latest = _latest_submission(db, order.id, component_id, sample_type)
+        if latest is not None and latest.outcome is None:
+            latest.outcome = 'APPROVED'
+            latest.resolved_at = now
+            latest.actioned_by_id = actioned_by_id
+        return
+
+    # REJECTED via a non-modal path — treat as unstructured rejection.
+    # If we already have an open row at the right attempt, just close it.
+    # Otherwise reuse the full reject helper to backfill v1 + open v2.
+    latest = _latest_submission(db, order.id, component_id, sample_type)
+    if latest is not None and latest.outcome is None:
+        latest.outcome = 'REJECTED'
+        latest.resolved_at = now
+        latest.reason = 'OTHER'
+        latest.actioned_by_id = actioned_by_id
+        next_attempt = latest.attempt_no + 1
+        db.add(SampleSubmission(
+            order_id=order.id,
+            component_id=component_id,
+            sample_type=sample_type,
+            attempt_no=next_attempt,
+            requested_at=now,
+            outcome=None,
+            actioned_by_id=actioned_by_id,
+        ))
+        # Reset the legacy columns to OUTSTANDING for the new attempt.
+        target = component if component is not None else order
+        _set_target_state(target, sample_type, status='OUTSTANDING', received=None, approved=None)
+    else:
+        # No prior submissions — backfill via the proper helper.
+        _reject_one_target(
+            db, order, component, sample_type,
+            reason='OTHER', notes='Rejected via direct status update — no reason captured',
+            photo_url=None, actioned_by_id=actioned_by_id, now=now,
+        )
+
+
 def _approve_one_target(
     db: Session,
     order: PurchaseOrder,
