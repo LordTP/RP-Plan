@@ -8,9 +8,27 @@ import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, Col
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import { ComponentSampleHover } from './ComponentSampleHover';
+import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import type { SampleKind } from '@/lib/sampleStatus';
 import type { ColumnDef, Order } from '@/types';
 import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN } from '@/types';
+
+// Status columns that participate in the resubmission flow. The map gives
+// the field-name prefix used to look up the order-level rollup ("v2 ·1") info.
+const SAMPLE_STATUS_COLS_TO_PREFIX: Record<string, 'fit_sample' | 'strike_off' | 'lab_dip' | 'pps'> = {
+  fit_sample_status: 'fit_sample',
+  strike_off_status: 'strike_off',
+  lab_dip_status: 'lab_dip',
+  pps_status: 'pps',
+};
+
+function getOrderAttemptInfo(order: Order, colKey: string): { attemptNo: number; rejectionCount: number } | null {
+  const prefix = SAMPLE_STATUS_COLS_TO_PREFIX[colKey];
+  if (!prefix) return null;
+  const attemptNo = (order as any)[`${prefix}_attempt_no`] as number | undefined;
+  const rejectionCount = (order as any)[`${prefix}_rejection_count`] as number | undefined;
+  return { attemptNo: attemptNo ?? 1, rejectionCount: rejectionCount ?? 0 };
+}
 
 // Map per-component column keys to (kind, field) for the hover summary renderer.
 const COMPONENT_COLUMN_MAP: Record<string, { kind: SampleKind; field: 'status' | 'received' | 'approved' }> = {
@@ -629,33 +647,49 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                           )}
                         </div>
                       ) : isDashboard ? (
-                        <div className="px-1 py-1 truncate text-[10px]">
-                          {formatCellValue(order[column.key as keyof Order], column)}
+                        <div className="px-1 py-1 truncate text-[10px] flex items-center gap-1">
+                          <span className="truncate">{formatCellValue(order[column.key as keyof Order], column)}</span>
+                          {(() => {
+                            const info = getOrderAttemptInfo(order, column.key);
+                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" /> : null;
+                          })()}
                         </div>
                       ) : COMPONENT_COLUMN_MAP[column.key] && order.components && order.components.length > 0 ? (
-                        <div className="px-1 py-1">
+                        <div className="px-1 py-1 flex items-center gap-1">
                           <ComponentSampleHover
                             components={order.components}
                             kind={COMPONENT_COLUMN_MAP[column.key].kind}
                             field={COMPONENT_COLUMN_MAP[column.key].field}
                           />
+                          {(() => {
+                            const info = getOrderAttemptInfo(order, column.key);
+                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" /> : null;
+                          })()}
                         </div>
                       ) : (
-                        <EditableCell
-                          value={order[column.key as keyof Order]}
-                          column={column}
-                          order={order}
-                          isEditable={column.editable}
-                          isSupplierEditable={isSupplierEditable(column.key, order)}
-                          userRole={user?.role || 'supplier'}
-                          onSave={handleSave}
-                          onBulkSave={() => {
-                            toast.success('Bulk update successful');
-                            window.location.reload();
-                          }}
-                          isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
-                          pendingChange={pendingChanges[order.id]?.[column.key]}
-                        />
+                        <div className="flex items-center gap-1">
+                          <div className="flex-1 min-w-0">
+                            <EditableCell
+                              value={order[column.key as keyof Order]}
+                              column={column}
+                              order={order}
+                              isEditable={column.editable}
+                              isSupplierEditable={isSupplierEditable(column.key, order)}
+                              userRole={user?.role || 'supplier'}
+                              onSave={handleSave}
+                              onBulkSave={() => {
+                                toast.success('Bulk update successful');
+                                window.location.reload();
+                              }}
+                              isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
+                              pendingChange={pendingChanges[order.id]?.[column.key]}
+                            />
+                          </div>
+                          {(() => {
+                            const info = getOrderAttemptInfo(order, column.key);
+                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" className="mr-1 flex-shrink-0" /> : null;
+                          })()}
+                        </div>
                       )}
                     </td>
                     );

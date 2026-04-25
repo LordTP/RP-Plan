@@ -2,14 +2,14 @@
 bulk update + apply-to-PO actions. All status/date changes also write to
 DateChangeHistory so the activity feed picks them up."""
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, PurchaseOrder, OrderComponent, DateChangeHistory
+from models import User, PurchaseOrder, OrderComponent, DateChangeHistory, SampleSubmission
 from schemas import ComponentCreate, ComponentUpdate, ComponentResponse
 from auth import get_current_user
 from sample_helpers import (
@@ -19,6 +19,92 @@ from sample_helpers import (
 
 
 router = APIRouter()
+
+
+# Map sample_type code in sample_submissions to the field-name prefix on the
+# legacy column model. Used when decorating components/orders with attempt info.
+SAMPLE_TYPE_TO_PREFIX = {
+    'fit': 'fit_sample',
+    'strike': 'strike_off',
+    'lab': 'lab_dip',
+    'pps': 'pps',
+}
+
+
+def _attempt_summary_for_components(
+    db: Session, component_ids: List[int]
+) -> Dict[Tuple[int, str], Tuple[int, int]]:
+    """For each (component_id, sample_type) with at least one submission row,
+    return (max_attempt_no, rejection_count). Components/sample_types absent
+    from the result map are implicit v1 with 0 rejections."""
+    if not component_ids:
+        return {}
+    rows = db.query(
+        SampleSubmission.component_id,
+        SampleSubmission.sample_type,
+        func.max(SampleSubmission.attempt_no).label('max_attempt'),
+        func.sum(case((SampleSubmission.outcome == 'REJECTED', 1), else_=0)).label('rejections'),
+    ).filter(
+        SampleSubmission.component_id.in_(component_ids),
+    ).group_by(
+        SampleSubmission.component_id, SampleSubmission.sample_type,
+    ).all()
+    return {(int(c), s): (int(m), int(r or 0)) for c, s, m, r in rows}
+
+
+def _decorate_component_attempts(component_dict: dict, summary: Dict[Tuple[int, str], Tuple[int, int]]) -> dict:
+    """Mutate a component dict (or pydantic-friendly object) with the per-area
+    attempt + rejection fields. Defaults to v1 / 0 when no submission exists."""
+    cid = component_dict['id'] if isinstance(component_dict, dict) else component_dict.id
+    for sample_type, prefix in (('fit', 'fit_sample'), ('strike', 'strike_off'), ('lab', 'lab_dip')):
+        attempt, rejections = summary.get((cid, sample_type), (1, 0))
+        if isinstance(component_dict, dict):
+            component_dict[f'{prefix}_attempt_no'] = attempt
+            component_dict[f'{prefix}_rejection_count'] = rejections
+    return component_dict
+
+
+def decorate_orders_with_attempts(db: Session, order_dicts: List[dict]) -> List[dict]:
+    """Roll up per-sample-area attempt info onto each order dict in-place,
+    then also decorate any nested components dicts. Used by the orders list
+    endpoint so any UI showing order-level sample status (the spreadsheet
+    table, factory pages, etc.) automatically gets v2 awareness without
+    each surface knowing about the submissions table."""
+    if not order_dicts:
+        return order_dicts
+    order_ids = [d['id'] for d in order_dicts]
+
+    # Single aggregate query across BOTH order-level (component_id IS NULL) and
+    # component-level submissions on these orders. We then roll up per
+    # (order_id, sample_type) by taking max attempt and summing rejections.
+    rows = db.query(
+        SampleSubmission.order_id,
+        SampleSubmission.sample_type,
+        func.max(SampleSubmission.attempt_no).label('max_attempt'),
+        func.sum(case((SampleSubmission.outcome == 'REJECTED', 1), else_=0)).label('rejections'),
+    ).filter(
+        SampleSubmission.order_id.in_(order_ids),
+    ).group_by(
+        SampleSubmission.order_id, SampleSubmission.sample_type,
+    ).all()
+    order_summary = {(int(oid), st): (int(m), int(r or 0)) for oid, st, m, r in rows}
+
+    # Component-level summary so we can also decorate the nested components.
+    nested_component_ids = []
+    for d in order_dicts:
+        for c in d.get('components', []) or []:
+            nested_component_ids.append(c['id'])
+    comp_summary = _attempt_summary_for_components(db, nested_component_ids)
+
+    for d in order_dicts:
+        oid = d['id']
+        for sample_type, prefix in (('fit', 'fit_sample'), ('strike', 'strike_off'), ('lab', 'lab_dip'), ('pps', 'pps')):
+            attempt, rejections = order_summary.get((oid, sample_type), (1, 0))
+            d[f'{prefix}_attempt_no'] = attempt
+            d[f'{prefix}_rejection_count'] = rejections
+        for c in d.get('components', []) or []:
+            _decorate_component_attempts(c, comp_summary)
+    return order_dicts
 
 
 @router.get("/api/components/names")
@@ -79,12 +165,19 @@ async def get_order_components(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all components for an order"""
+    """Get all components for an order, decorated with per-sample-area attempt
+    metadata (current attempt number + prior rejection count)."""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     components = db.query(OrderComponent).filter(OrderComponent.order_id == order_id).order_by(OrderComponent.created_at).all()
-    return components
+    summary = _attempt_summary_for_components(db, [c.id for c in components])
+    result = []
+    for c in components:
+        d = ComponentResponse.model_validate(c).model_dump()
+        _decorate_component_attempts(d, summary)
+        result.append(d)
+    return result
 
 
 @router.post("/api/orders/{order_id}/components", response_model=ComponentResponse, status_code=status.HTTP_201_CREATED)

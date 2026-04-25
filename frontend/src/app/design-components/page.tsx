@@ -8,6 +8,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { ordersApi, componentsApi, submissionsApi, type RejectReason, type SampleType } from '@/lib/api';
 import { SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { isSampleDone, businessDaysBetween, businessDaysUntil, relativeTimeShort } from '@/lib/sampleStatus';
@@ -548,9 +549,24 @@ function DesignComponentsContent() {
                               <td className="px-3 py-2.5 text-gray-500 text-[10px] uppercase tracking-wider">{order.season || '—'}</td>
                               <td className="px-3 py-2.5"><ExFacBadge days={daysToExFac} /></td>
                               <td className="px-3 py-2.5 text-gray-500">{relativeTimeShort(component.updated_at)}</td>
-                              <td className="px-2 py-2.5 text-center"><Dot done={fit} /></td>
-                              <td className="px-2 py-2.5 text-center"><Dot done={so} /></td>
-                              <td className="px-2 py-2.5 text-center"><Dot done={ld} /></td>
+                              <td className="px-2 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <Dot done={fit} />
+                                  <AttemptBadge attemptNo={component.fit_sample_attempt_no} rejectionCount={component.fit_sample_rejection_count} size="xs" />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <Dot done={so} />
+                                  <AttemptBadge attemptNo={component.strike_off_attempt_no} rejectionCount={component.strike_off_rejection_count} size="xs" />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <Dot done={ld} />
+                                  <AttemptBadge attemptNo={component.lab_dip_attempt_no} rejectionCount={component.lab_dip_rejection_count} size="xs" />
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}

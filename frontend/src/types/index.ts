@@ -107,6 +107,18 @@ export interface Order {
   unread_comment_count?: number;
   // Components (per-style sample tracking)
   components?: OrderComponent[];
+  // Resubmission rollup per sample area. For orders with components this is the
+  // max attempt across this order's components for that sample type; for orders
+  // without components it reflects the order-level submission directly. PPS is
+  // always order-level. Defaults to v1 / 0 when no rejection has happened.
+  fit_sample_attempt_no?: number;
+  fit_sample_rejection_count?: number;
+  strike_off_attempt_no?: number;
+  strike_off_rejection_count?: number;
+  lab_dip_attempt_no?: number;
+  lab_dip_rejection_count?: number;
+  pps_attempt_no?: number;
+  pps_rejection_count?: number;
   // Metadata
   created_at: string;
   updated_at: string;
@@ -147,6 +159,14 @@ export interface OrderComponent {
   lab_dip_approved?: string | null;
   created_at: string;
   updated_at: string;
+  // Resubmission rollup — current attempt and prior rejection count per area.
+  // Defaults to 1 / 0 when nothing's been rejected.
+  fit_sample_attempt_no?: number;
+  fit_sample_rejection_count?: number;
+  strike_off_attempt_no?: number;
+  strike_off_rejection_count?: number;
+  lab_dip_attempt_no?: number;
+  lab_dip_rejection_count?: number;
 }
 
 export interface DateHistory {

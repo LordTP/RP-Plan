@@ -21,6 +21,7 @@ from schemas import (
     PurchaseOrderCreate, PurchaseOrderResponse,
     PurchaseOrderSupplierResponse,
 )
+from routers.components import decorate_orders_with_attempts
 from auth import (
     get_current_user, get_current_internal_user, get_current_full_internal_user,
     get_current_admin_user,
@@ -124,7 +125,8 @@ async def get_orders(
     
     # Return different response based on user role
     if current_user.role == UserRole.SUPPLIER:
-        # Suppliers get limited fields (Sheet 2 equivalent)
+        # Suppliers get limited fields (Sheet 2 equivalent) — no resubmission
+        # decoration since suppliers don't see the rework UI.
         return {
             "total": total,
             "page": page,
@@ -132,12 +134,15 @@ async def get_orders(
             "orders": [PurchaseOrderSupplierResponse.from_orm(o) for o in orders]
         }
     else:
-        # Internal users get all fields (Sheet 1 equivalent)
+        # Internal users get all fields (Sheet 1 equivalent) plus per-sample-area
+        # attempt rollup so the orders table can show v2 indicators inline.
+        order_dicts = [PurchaseOrderResponse.from_orm(o).model_dump() for o in orders]
+        decorate_orders_with_attempts(db, order_dicts)
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "orders": [PurchaseOrderResponse.from_orm(o) for o in orders]
+            "orders": order_dicts,
         }
 
 
@@ -242,7 +247,9 @@ async def get_order(
     if current_user.role == UserRole.SUPPLIER:
         return PurchaseOrderSupplierResponse.from_orm(order)
     else:
-        return PurchaseOrderResponse.from_orm(order)
+        d = PurchaseOrderResponse.from_orm(order).model_dump()
+        decorate_orders_with_attempts(db, [d])
+        return d
 
 
 @router.post("/api/orders", response_model=PurchaseOrderResponse, status_code=status.HTTP_201_CREATED)

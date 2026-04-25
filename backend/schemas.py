@@ -198,6 +198,15 @@ class ComponentResponse(BaseModel):
     lab_dip_approved: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # Resubmission metadata — current attempt number and prior rejection count
+    # per sample area. Default to 1/0 when no submissions exist (i.e. component
+    # has never been rejected, implicit v1).
+    fit_sample_attempt_no: Optional[int] = 1
+    fit_sample_rejection_count: Optional[int] = 0
+    strike_off_attempt_no: Optional[int] = 1
+    strike_off_rejection_count: Optional[int] = 0
+    lab_dip_attempt_no: Optional[int] = 1
+    lab_dip_rejection_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
@@ -210,6 +219,18 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     comment_count: Optional[int] = 0
     unread_comment_count: Optional[int] = 0
     components: List[ComponentResponse] = []
+    # Resubmission rollup per sample area. For orders WITH components this is
+    # the max attempt across that order's components for that sample type;
+    # for orders WITHOUT components it reflects the order-level submission.
+    # PPS is always order-level. Defaults to v1 / 0 when no rejection has happened.
+    fit_sample_attempt_no: Optional[int] = 1
+    fit_sample_rejection_count: Optional[int] = 0
+    strike_off_attempt_no: Optional[int] = 1
+    strike_off_rejection_count: Optional[int] = 0
+    lab_dip_attempt_no: Optional[int] = 1
+    lab_dip_rejection_count: Optional[int] = 0
+    pps_attempt_no: Optional[int] = 1
+    pps_rejection_count: Optional[int] = 0
 
     class Config:
         from_attributes = True

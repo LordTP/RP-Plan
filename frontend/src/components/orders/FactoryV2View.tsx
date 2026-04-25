@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
+import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -1287,7 +1288,7 @@ function DetailPanel({
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Fit Sample</p>
                   {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
-                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} />}
+                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
                   {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
                   {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
                 </div>
@@ -1295,7 +1296,7 @@ function DetailPanel({
               {!hasComponents && (hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Strike Off</p>
-                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('strike_off_status', v)} />}
+                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('strike_off_status', v)} extra={<AttemptBadge attemptNo={order.strike_off_attempt_no} rejectionCount={order.strike_off_rejection_count} size="xs" />} />}
                   {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} />}
                   {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} />}
                 </div>
@@ -1303,7 +1304,7 @@ function DetailPanel({
               {!hasComponents && (hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Lab Dip</p>
-                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} />}
+                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} extra={<AttemptBadge attemptNo={order.lab_dip_attempt_no} rejectionCount={order.lab_dip_rejection_count} size="xs" />} />}
                   {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} />}
                   {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} />}
                 </div>
@@ -1311,7 +1312,7 @@ function DetailPanel({
               {(hasCol('pps_status') || hasCol('pps_received')) && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">PPS</p>
-                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} />}
+                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} extra={<AttemptBadge attemptNo={order.pps_attempt_no} rejectionCount={order.pps_rejection_count} size="xs" />} />}
                   {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} />}
                   {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
                   {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} />}
@@ -1756,7 +1757,10 @@ export function ComponentsSection({
                     {/* Fit Sample */}
                     {visibleFields.some(f => f.key.startsWith('fit_')) && (
                       <div>
-                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1">Fit Sample</p>
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1.5">
+                          Fit Sample
+                          <AttemptBadge attemptNo={comp.fit_sample_attempt_no} rejectionCount={comp.fit_sample_rejection_count} size="xs" />
+                        </p>
                         {visibleFields.filter(f => f.key.startsWith('fit_')).map(field => (
                           <ComponentFieldRow key={field.key} label={field.label.replace('Fit ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
                         ))}
@@ -1765,7 +1769,10 @@ export function ComponentsSection({
                     {/* Strike Off */}
                     {visibleFields.some(f => f.key.startsWith('strike_off_')) && (
                       <div>
-                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1">Strike Off</p>
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1.5">
+                          Strike Off
+                          <AttemptBadge attemptNo={comp.strike_off_attempt_no} rejectionCount={comp.strike_off_rejection_count} size="xs" />
+                        </p>
                         {visibleFields.filter(f => f.key.startsWith('strike_off_')).map(field => (
                           <ComponentFieldRow key={field.key} label={field.label.replace('Strike Off ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
                         ))}
@@ -1774,7 +1781,10 @@ export function ComponentsSection({
                     {/* Lab Dip */}
                     {visibleFields.some(f => f.key.startsWith('lab_dip_')) && (
                       <div className="pt-3">
-                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Lab Dip</p>
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          Lab Dip
+                          <AttemptBadge attemptNo={comp.lab_dip_attempt_no} rejectionCount={comp.lab_dip_rejection_count} size="xs" />
+                        </p>
                         {visibleFields.filter(f => f.key.startsWith('lab_dip_')).map(field => (
                           <ComponentFieldRow key={field.key} label={field.label.replace('Lab Dip ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
                         ))}
