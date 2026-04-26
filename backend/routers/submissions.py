@@ -282,12 +282,22 @@ def _reject_one_target(
 
     _set_target_state(target, sample_type, status='OUTSTANDING', received=None, approved=None)
 
+    # Resolve the human-readable reason label once so the change history entry
+    # tells the full story without forcing a join in the UI.
+    reason_label = next((lbl for code, lbl in SAMPLE_REJECT_REASONS if code == reason), reason)
+    note_snippet = ''
+    if notes:
+        clipped = notes.strip()
+        if len(clipped) > 100:
+            clipped = clipped[:100].rstrip() + '…'
+        note_snippet = f' — "{clipped}"'
+    history_text = f'v{next_attempt - 1} REJECTED ({reason_label}){note_snippet} — opened v{next_attempt} OUTSTANDING'
     db.add(DateChangeHistory(
         po_id=order.id,
         user_id=actioned_by_id,
         field_name=_column_names(sample_type)['status'],
         old_value=str(state['status'] or ''),
-        new_value=f"REJECTED → v{next_attempt} OUTSTANDING",
+        new_value=history_text,
         source='Sourcelab',
         component_name=component.name if component else None,
     ))
@@ -423,17 +433,29 @@ def _approve_one_target(
 ) -> int:
     target = component if component is not None else order
     component_id = component.id if component else None
+    state_before = _read_target_state(target, sample_type)
     latest = _latest_submission(db, order.id, component_id, sample_type)
     if latest is not None and latest.outcome is None:
         latest.outcome = 'APPROVED'
         latest.resolved_at = now
         latest.actioned_by_id = actioned_by_id
         if latest.submitted_at is None:
-            state = _read_target_state(target, sample_type)
-            if state['received'] is not None:
-                latest.submitted_at = state['received']
+            if state_before['received'] is not None:
+                latest.submitted_at = state_before['received']
     _set_target_state(target, sample_type, status='APPROVED', approved=now)
-    return latest.attempt_no if latest else 1
+    attempt_no = latest.attempt_no if latest else 1
+    # Log to change history so dashboard-driven approvals also appear in the
+    # activity feed, not just legacy column edits.
+    db.add(DateChangeHistory(
+        po_id=order.id,
+        user_id=actioned_by_id,
+        field_name=_column_names(sample_type)['status'],
+        old_value=str(state_before['status'] or ''),
+        new_value=f'v{attempt_no} APPROVED',
+        source='Sourcelab',
+        component_name=component.name if component else None,
+    ))
+    return attempt_no
 
 
 @router.post("/api/submissions/approve")

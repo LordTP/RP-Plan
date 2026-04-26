@@ -9,9 +9,11 @@ import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import { ComponentSampleHover } from './ComponentSampleHover';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
+import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import type { SampleKind } from '@/lib/sampleStatus';
 import type { ColumnDef, Order } from '@/types';
-import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN } from '@/types';
+import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import type { SampleType } from '@/lib/api';
 
 // Status columns that participate in the resubmission flow. The map gives
 // the field-name prefix used to look up the order-level rollup ("v2 ·1") info.
@@ -91,6 +93,13 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     submitted_by: string;
     submitted_at: string | null;
   }>>>({});
+  // Reject modal state — only used when REJECTED is picked on an order-level
+  // sample status from the spreadsheet view.
+  const [rejectModal, setRejectModal] = useState<{
+    orderId: number;
+    sampleType: SampleType;
+    currentAttemptNo: number;
+  } | null>(null);
 
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -294,6 +303,26 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const hasSizeColumns = firstSizeColIndex >= 0 && lastSizeColIndex >= 0 && genderColIndex >= 0;
 
   const handleSave = async (orderId: number, field: string, value: any, changeReason?: string) => {
+    // Intercept REJECTED on a sample status field — open the reject modal so
+    // we capture a structured reason/note, same flow as the V2 detail panel.
+    // Orders with components route the user to V2 detail because the modal
+    // can't know which component they meant to reject.
+    const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[field];
+    if (value === 'REJECTED' && sampleType) {
+      const order = orders.find(o => o.id === orderId);
+      if (order && (order.components?.length ?? 0) > 0) {
+        toast.error('This order has components — open it in V2 detail to reject a specific component\'s sample');
+        throw new Error('redirect_to_v2');
+      }
+      const prefix = field.replace('_status', '') as 'fit_sample' | 'strike_off' | 'lab_dip' | 'pps';
+      const currentAttemptNo = (order as any)?.[`${prefix}_attempt_no`] ?? 1;
+      setRejectModal({ orderId, sampleType: sampleType as SampleType, currentAttemptNo });
+      // EditableCell expects the save to throw on cancel/redirect so it doesn't
+      // optimistically update the cell. Returning silently here would leave
+      // "REJECTED" stuck in the cell until refresh.
+      throw new Error('redirect_to_modal');
+    }
+
     try {
       const updateData: any = { [field]: value };
       if (changeReason) {
@@ -710,6 +739,28 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           </div>
         )}
       </div>
+
+      {rejectModal && (() => {
+        const order = orders.find(o => o.id === rejectModal.orderId);
+        return (
+          <RejectSampleModal
+            orderId={rejectModal.orderId}
+            componentId={null}
+            componentName={null}
+            sampleType={rejectModal.sampleType}
+            currentAttemptNo={rejectModal.currentAttemptNo}
+            onClose={() => setRejectModal(null)}
+            onRejected={async () => {
+              setRejectModal(null);
+              try {
+                const fresh = await ordersApi.getOrder(rejectModal.orderId);
+                updateOrderInList(fresh);
+                onOrderUpdate?.(fresh);
+              } catch { /* the toast inside the modal already covered the success message */ }
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
