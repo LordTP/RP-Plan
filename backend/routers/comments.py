@@ -76,6 +76,7 @@ async def get_order_comments(
             po_id=comment.po_id,
             user_id=comment.user_id,
             username=user.username if user else "Unknown",
+            full_name=user.full_name if user else None,
             comment_text=comment.comment_text,
             source=comment.source or "Sourcelab",
             read=comment.id in read_ids,
@@ -210,6 +211,7 @@ async def add_comment(
         po_id=new_comment.po_id,
         user_id=new_comment.user_id,
         username=current_user.username,
+        full_name=current_user.full_name,
         comment_text=new_comment.comment_text,
         source=new_comment.source,
         read=True,
@@ -252,6 +254,7 @@ async def get_order_history(
             source=entry.source or "Sourcelab",
             approved_by=entry.approved_by_username,
             rejection_reason=entry.rejection_reason,
+            component_name=entry.component_name,
             created_at=entry.created_at
         ))
 

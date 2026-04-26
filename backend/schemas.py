@@ -384,6 +384,7 @@ class CommentResponse(CommentBase):
     po_id: int
     user_id: int
     username: str
+    full_name: Optional[str] = None  # Display name resolved at fetch-time, falls back to username
     read: bool = False  # Whether the current user has read this comment
     read_by_internal: bool = False  # Legacy, kept for compat
     read_by_supplier: bool = False  # Legacy, kept for compat
@@ -445,6 +446,7 @@ class DateChangeResponse(BaseModel):
     source: str
     approved_by: Optional[str] = None  # Who approved/rejected (for supplier changes)
     rejection_reason: Optional[str] = None  # Reason for rejection (if rejected)
+    component_name: Optional[str] = None  # Set when the change was on a specific component
     created_at: datetime
 
     class Config:

@@ -139,6 +139,7 @@ export interface Comment {
   order_id: number;
   user_id: number;
   username: string;
+  full_name?: string | null;
   comment_text: string;
   source: string;
   read: boolean;
@@ -197,6 +198,7 @@ export interface DateHistory {
   source: string;
   approved_by: string | null;
   rejection_reason: string | null;
+  component_name?: string | null;
   created_at: string;
 }
 

@@ -788,65 +788,97 @@ function DetailPanel({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[1200px] max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
+        className="w-full max-w-[1200px] h-[88vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
       {/* Header */}
-      <div className="px-6 py-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-bold">{order.po_number}</h3>
+      <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
+              {order.po_number}
+              {order.china_orderbook_ref && <span className="text-gray-400 font-normal"> — {order.china_orderbook_ref}</span>}
+              {order.style_code && <span className="text-gray-400 font-normal"> · {order.style_code}</span>}
+            </div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-base font-bold text-gray-900 truncate">
+                {order.description || order.customer || 'Order detail'}
+              </h3>
               <span className={cn(
-                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border border-current/20',
                 statusStyle.bg, statusStyle.text
               )}>
                 <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
                 {order.status || 'Unknown'}
               </span>
               {order.is_late && (
-                <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded-full text-[10px] font-semibold">
+                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-[10px] font-semibold">
                   LATE
                 </span>
               )}
+              {order.colour && (
+                <span className="text-[11px] text-gray-500">· {order.colour}</span>
+              )}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {order.style_code && <span className="text-gray-300">{order.style_code}</span>}
-              {order.colour && <span> · {order.colour}</span>}
-              {order.description && <span className="text-gray-400"> · {order.description}</span>}
-            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { setModalTab(modalTab === 'comments' ? 'details' : 'comments'); modalContentRef.current?.scrollTo(0, 0); }}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5",
-                modalTab === 'comments'
-                  ? 'text-white bg-white/25'
-                  : 'text-white bg-white/10 hover:bg-white/20'
-              )}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              {modalTab === 'comments' ? 'Details' : 'Comments'}
-              {modalTab !== 'comments' && (order.unread_comment_count || 0) > 0 && (
-                <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                  {order.unread_comment_count}
-                </span>
-              )}
-            </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Segmented Details/Comments toggle */}
+            <div className="inline-flex rounded-md border border-gray-300 bg-gray-50 p-0.5">
+              <button
+                onClick={() => { setModalTab('details'); modalContentRef.current?.scrollTo(0, 0); }}
+                className={cn(
+                  'px-3 py-1 text-xs font-semibold rounded transition-colors',
+                  modalTab === 'details'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                Details
+              </button>
+              <button
+                onClick={() => { setModalTab('comments'); modalContentRef.current?.scrollTo(0, 0); }}
+                className={cn(
+                  'px-3 py-1 text-xs font-semibold rounded transition-colors flex items-center gap-1.5',
+                  modalTab === 'comments'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+              >
+                <MessageSquare className="w-3 h-3" />
+                Comments
+                {(order.unread_comment_count || 0) > 0 && (
+                  <span className={cn(
+                    'px-1 py-0 text-[9px] font-bold rounded-full leading-tight',
+                    modalTab === 'comments' ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
+                  )}>
+                    {order.unread_comment_count}
+                  </span>
+                )}
+              </button>
+            </div>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
               title="Close (Esc)"
             >
-              <X className="w-4 h-4 text-gray-300" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Content - 2 column layout */}
-      <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+      {/* Content - 2 column layout. Details tab scrolls; Comments tab fills
+          the modal height instead so the panel doesn't visibly grow/shrink as
+          the user toggles between tabs. */}
+      <div
+        ref={modalContentRef}
+        className={cn(
+          'flex-1 min-h-0',
+          modalTab === 'comments'
+            ? 'overflow-hidden p-6 flex'
+            : 'overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6'
+        )}
+      >
         {/* LEFT COLUMN - 2/5: Product info + Stats (hidden when comments tab active) */}
         <div className={cn('lg:col-span-2 space-y-5', modalTab === 'comments' && 'hidden')}>
 
@@ -935,10 +967,12 @@ function DetailPanel({
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
+        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'flex-1 min-h-0' : 'lg:col-span-3')}>
 
         {modalTab === 'comments' ? (
-          <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
+          <div className="flex-1 min-h-0">
+            <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
+          </div>
         ) : (
         <>
         {/* Timeline / Key Dates */}

@@ -1,138 +1,51 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { X, Send, MessageSquare, Clock, User, ArrowRight, Eye } from 'lucide-react';
-import { format, parseISO, formatDistanceToNow } from 'date-fns';
-import toast from 'react-hot-toast';
+import { useState } from 'react';
+import { X, MessageSquare, Clock } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { ordersApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Comment, DateHistory } from '@/types';
-import { MentionTextarea } from './MentionTextarea';
-import { CommentText } from './CommentText';
+import { CommentThread } from './comments/CommentThread';
+import { HistoryPanel } from './comments/HistoryPanel';
 
+/**
+ * Slide-out comments panel anchored from the /orders spreadsheet. Tabs
+ * comments / history (history hidden for suppliers). Both panes use the
+ * same CommentThread / HistoryPanel components as the V2 detail modal so
+ * the look stays consistent across surfaces.
+ */
 export function CommentSidebar() {
   const {
     selectedOrder,
-    comments,
-    setComments,
-    addComment,
-    updateOrderInList,
     isSidebarOpen,
     setSidebarOpen,
     user,
+    updateOrderInList,
   } = useStore();
 
-  const [newComment, setNewComment] = useState('');
-  const [mentionedIds, setMentionedIds] = useState<number[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [history, setHistory] = useState<DateHistory[]>([]);
   const [activeTab, setActiveTab] = useState<'comments' | 'history'>('comments');
-  const [addToAllOnPO, setAddToAllOnPO] = useState(false);
-  const commentsEndRef = useRef<HTMLDivElement>(null);
-
   const isSupplier = user?.role === 'supplier';
   const canViewHistory = !isSupplier;
 
-  useEffect(() => {
-    if (selectedOrder?.id) {
-      loadComments();
-      if (canViewHistory) {
-        loadHistory();
-      }
-    }
-  }, [selectedOrder?.id, canViewHistory]);
-
-  useEffect(() => {
-    if (selectedOrder?.id && canViewHistory && activeTab === 'history') {
-      loadHistory();
-    }
-  }, [selectedOrder?.updated_at, canViewHistory, activeTab]);
-
-  useEffect(() => {
-    commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [comments]);
-
-  const loadComments = async () => {
-    if (!selectedOrder?.id) return;
-    try {
-      const data = await ordersApi.getOrderComments(selectedOrder.id);
-      setComments(data);
-    } catch (error) {
-      console.error('Failed to load comments:', error);
-    }
-  };
-
-  const loadHistory = async () => {
-    if (!selectedOrder?.id) return;
-    try {
-      const data = await ordersApi.getOrderHistory(selectedOrder.id);
-      setHistory(data);
-    } catch (error) {
-      console.error('Failed to load history:', error);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim() || !selectedOrder?.id || !user) return;
-
-    setIsSubmitting(true);
-    try {
-      if (addToAllOnPO && selectedOrder.po_number) {
-        const result = await ordersApi.bulkAddComment(selectedOrder.po_number, newComment.trim(), mentionedIds);
-        toast.success(`Comment added to ${result.comments_added} orders`);
-        setAddToAllOnPO(false);
-      } else {
-        const source = user.role === 'supplier' ? 'supplier' : 'internal';
-        const comment = await ordersApi.addOrderComment(
-          selectedOrder.id,
-          newComment.trim(),
-          source,
-          mentionedIds,
-        );
-        addComment(comment);
-        toast.success('Comment added');
-      }
-      setNewComment('');
-      setMentionedIds([]);
-      loadComments();
-      // Update the comment count on the order in the table
-      if (selectedOrder) {
-        updateOrderInList({
-          ...selectedOrder,
-          comment_count: (selectedOrder.comment_count || 0) + 1,
-        });
-      }
-    } catch (error) {
-      toast.error('Failed to add comment. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const formatFieldName = (field: string): string => {
-    return field
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (l) => l.toUpperCase());
-  };
-
-  const isUnread = (comment: Comment): boolean => {
-    if (!user) return false;
-    return !comment.read;
-  };
-
   if (!selectedOrder) return null;
+
+  const handleCommentAdded = () => {
+    if (selectedOrder) {
+      updateOrderInList({
+        ...selectedOrder,
+        comment_count: (selectedOrder.comment_count || 0) + 1,
+      });
+    }
+  };
 
   return (
     <>
       {/* Overlay */}
       <div
         className={cn(
-          "fixed inset-0 z-40 transition-all duration-[550ms] ease-out",
+          'fixed inset-0 z-40 transition-all duration-[550ms] ease-out',
           isSidebarOpen
-            ? "bg-black/15 backdrop-blur-[1px] pointer-events-auto"
-            : "bg-transparent backdrop-blur-0 pointer-events-none"
+            ? 'bg-black/15 backdrop-blur-[1px] pointer-events-auto'
+            : 'bg-transparent backdrop-blur-0 pointer-events-none'
         )}
         onClick={() => setSidebarOpen(false)}
       />
@@ -140,335 +53,109 @@ export function CommentSidebar() {
       {/* Sidebar */}
       <div
         className={cn(
-          'sidebar w-full max-w-sm flex flex-col',
+          'sidebar w-full max-w-md flex flex-col bg-white',
           isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'
         )}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-200/60 bg-gradient-to-r from-gray-900 to-gray-800">
-          <div className="flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-gray-200 bg-white flex-shrink-0">
+          <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-white truncate">
+              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
                 {selectedOrder.po_number}
                 {selectedOrder.style_code && <span className="text-gray-400 font-normal"> · {selectedOrder.style_code}</span>}
+              </div>
+              <h2 className="text-sm font-bold text-gray-900 truncate">
+                {selectedOrder.customer || selectedOrder.description || 'Order'}
               </h2>
-              <p className="text-xs text-gray-400 truncate mt-0.5">{selectedOrder.customer} — {selectedOrder.description || selectedOrder.colour || ''}</p>
+              {(selectedOrder.description || selectedOrder.colour) && (
+                <p className="text-[11px] text-gray-500 truncate mt-0.5">
+                  {selectedOrder.description}
+                  {selectedOrder.description && selectedOrder.colour && ' · '}
+                  {selectedOrder.colour}
+                </p>
+              )}
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0 ml-2"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              aria-label="Close panel"
             >
-              <X className="w-4 h-4 text-gray-400" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-gray-50/80 px-2 pt-2 gap-1">
-          <button
-            onClick={() => setActiveTab('comments')}
-            className={cn(
-              'flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium transition-all rounded-t-lg',
-              canViewHistory ? 'flex-1' : 'w-full',
-              activeTab === 'comments'
-                ? 'text-primary-700 bg-white shadow-sm border border-gray-200/60 border-b-white -mb-px'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100/60'
-            )}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Comments
-            <span className={cn(
-              'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-              activeTab === 'comments' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
-            )}>
-              {comments.length}
-            </span>
-          </button>
-          {canViewHistory && (
-            <button
+        {canViewHistory ? (
+          <div className="flex border-b border-gray-200 bg-gray-50/40 px-2 flex-shrink-0">
+            <TabButton
+              active={activeTab === 'comments'}
+              onClick={() => setActiveTab('comments')}
+              icon={<MessageSquare className="w-3.5 h-3.5" />}
+              label="Comments"
+            />
+            <TabButton
+              active={activeTab === 'history'}
               onClick={() => setActiveTab('history')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium transition-all rounded-t-lg',
-                activeTab === 'history'
-                  ? 'text-primary-700 bg-white shadow-sm border border-gray-200/60 border-b-white -mb-px'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100/60'
-              )}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              History
-              <span className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-                activeTab === 'history' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
-              )}>
-                {history.length}
-              </span>
-            </button>
-          )}
-        </div>
-        <div className="border-b border-gray-200/60" />
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto h-[calc(100vh-220px)]">
-          {activeTab === 'comments' ? (
-            <div className="p-4 space-y-3">
-              {comments.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                    <MessageSquare className="w-6 h-6 text-gray-300" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-500">No comments yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Be the first to add a comment</p>
-                </div>
-              ) : (
-                comments.map((comment) => (
-                  <CommentBubble key={comment.id} comment={comment} unread={isUnread(comment)} />
-                ))
-              )}
-              <div ref={commentsEndRef} />
-            </div>
-          ) : (
-            <div className="p-4 space-y-2">
-              {history.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                    <Clock className="w-6 h-6 text-gray-300" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-500">No history recorded</p>
-                </div>
-              ) : (
-                history.map((item) => {
-                  const isImport = item.source === 'Excel Import';
-                  const isSupplierSource = item.source === 'Supplier';
-                  const isSupplierApproved = item.source === 'Supplier (Approved)';
-                  const isSupplierRejected = item.source === 'Supplier (Rejected)';
-
-                  let timeAgo = '';
-                  try {
-                    timeAgo = formatDistanceToNow(parseISO(item.created_at), { addSuffix: true });
-                  } catch { /* */ }
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "rounded-xl px-4 py-3 text-xs border transition-colors",
-                        isImport ? "bg-purple-50/80 border-purple-100"
-                          : isSupplierRejected ? "bg-red-50/80 border-red-100"
-                          : (isSupplierSource || isSupplierApproved) ? "bg-orange-50/80 border-orange-100"
-                          : "bg-gray-50/80 border-gray-100"
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-900">
-                            {formatFieldName(item.field_name)}
-                          </span>
-                          <span
-                            className={cn(
-                              "text-[10px] px-2 py-0.5 rounded-full font-semibold",
-                              isImport
-                                ? "bg-purple-100 text-purple-700"
-                                : isSupplierApproved
-                                ? "bg-green-100 text-green-700"
-                                : isSupplierRejected
-                                ? "bg-red-100 text-red-700"
-                                : isSupplierSource
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-blue-100 text-blue-700"
-                            )}
-                          >
-                            {item.source || 'Sourcelab'}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-gray-400" title={format(parseISO(item.created_at), 'dd/MM/yyyy HH:mm')}>
-                          {timeAgo}
-                        </span>
-                      </div>
-                      <div className={cn(
-                        "flex items-center gap-2 text-xs mt-1",
-                        isSupplierRejected ? "text-red-500" : "text-gray-600"
-                      )}>
-                        <span className="line-through text-gray-400 bg-gray-100/80 px-1.5 py-0.5 rounded">
-                          {item.old_value || 'Empty'}
-                        </span>
-                        <ArrowRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
-                        <span className={cn(
-                          "font-semibold px-1.5 py-0.5 rounded",
-                          isSupplierRejected ? "line-through bg-red-100/60" : "bg-primary-50/80"
-                        )}>
-                          {item.new_value || 'Empty'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-gray-400 mt-1.5">
-                        by <span className="font-medium text-gray-500">{item.username}</span>
-                        {item.approved_by && !isSupplierRejected && (
-                          <span className="text-green-600"> · Approved by {item.approved_by}</span>
-                        )}
-                        {item.approved_by && isSupplierRejected && (
-                          <span className="text-red-500"> · Rejected by {item.approved_by}</span>
-                        )}
-                      </p>
-                      {item.rejection_reason && (
-                        <div className="mt-2 px-3 py-2 bg-red-100/80 border border-red-200 rounded-lg text-[11px] text-red-700">
-                          <strong>Reason:</strong> {item.rejection_reason}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Comment Input */}
-        {activeTab === 'comments' && (
-          <form
-            onSubmit={handleSubmit}
-            className="p-4 border-t border-gray-200/60 bg-white"
-          >
-            <div className="relative">
-              <MentionTextarea
-                value={newComment}
-                onChange={setNewComment}
-                onMentionsChange={setMentionedIds}
-                onSubmit={() => {
-                  if (newComment.trim() && !isSubmitting) {
-                    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
-                  }
-                }}
-                onEnterSubmit
-                placeholder="Write a message... type @ to mention someone"
-                disabled={isSubmitting}
-                rows={3}
-                textareaClassName="w-full px-4 py-3 pr-12 text-sm border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400 placeholder:text-gray-400 bg-gray-50/60 transition-all resize-none"
-              />
-              <button
-                type="submit"
-                disabled={!newComment.trim() || isSubmitting}
-                className="absolute right-2 bottom-2 p-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all disabled:opacity-30 shadow-sm"
-              >
-                {isSubmitting ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-            <label className="flex items-center gap-2 mt-2 px-1 text-[11px] text-gray-500 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={addToAllOnPO}
-                onChange={(e) => setAddToAllOnPO(e.target.checked)}
-                className="rounded text-primary-600 w-3 h-3 border-gray-300"
-              />
-              Add to all styles on this PO
-            </label>
-          </form>
+              icon={<Clock className="w-3.5 h-3.5" />}
+              label="History"
+            />
+          </div>
+        ) : (
+          <div className="px-5 py-2.5 border-b border-gray-200 bg-gray-50/40 flex items-center gap-2 flex-shrink-0">
+            <MessageSquare className="w-3.5 h-3.5 text-gray-500" />
+            <span className="text-xs font-semibold text-gray-700">Comments</span>
+          </div>
         )}
+
+        {/* Content — render the matching panel without its own framing since the
+            sidebar already provides chrome. */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {activeTab === 'comments' ? (
+            <CommentThread
+              key={`comments-${selectedOrder.id}`}
+              orderId={selectedOrder.id}
+              poNumber={selectedOrder.po_number}
+              framed={false}
+              onCommentAdded={handleCommentAdded}
+            />
+          ) : (
+            <HistoryPanel
+              key={`history-${selectedOrder.id}`}
+              orderId={selectedOrder.id}
+              framed={false}
+            />
+          )}
+        </div>
       </div>
     </>
   );
 }
 
-function CommentBubble({ comment, unread }: { comment: Comment; unread: boolean }) {
-  const isSourcelab = comment.source === 'Sourcelab' ||
-                      comment.source === 'SOURCELAB' ||
-                      comment.source === 'internal';
-
-  let timeAgo = '';
-  let fullDate = '';
-  try {
-    timeAgo = formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true });
-    fullDate = format(parseISO(comment.created_at), 'dd/MM/yyyy HH:mm');
-  } catch { /* */ }
-
-  const initials = comment.username.slice(0, 2).toUpperCase();
-
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
   return (
-    <div className={cn('flex gap-2.5', !isSourcelab && 'flex-row-reverse')}>
-      {/* Avatar */}
-      <div
-        className={cn(
-          'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md flex-shrink-0 mt-0.5',
-          isSourcelab
-            ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white ring-2 ring-primary-200/40'
-            : 'bg-gradient-to-br from-orange-400 to-orange-600 text-white ring-2 ring-orange-200/40'
-        )}
-      >
-        {initials}
-      </div>
-
-      {/* Bubble */}
-      <div className={cn('flex-1 min-w-0 max-w-[85%]', !isSourcelab && 'flex flex-col items-end')}>
-        {/* Name + time */}
-        <div className={cn('flex items-center gap-2 mb-1', !isSourcelab && 'flex-row-reverse')}>
-          <span className="text-[11px] font-semibold text-gray-900">{comment.username}</span>
-          <span className={cn(
-            'text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider',
-            isSourcelab ? 'bg-primary-100 text-primary-600' : 'bg-orange-100 text-orange-600'
-          )}>
-            {isSourcelab ? 'SL' : 'Supplier'}
-          </span>
-          <span className="text-[10px] text-gray-400" title={fullDate}>{timeAgo}</span>
-        </div>
-
-        {/* Message */}
-        <div
-          className={cn(
-            'relative px-3.5 py-2.5 rounded-2xl shadow-sm transition-all',
-            isSourcelab
-              ? 'bg-white border border-gray-200/80 rounded-tl-md'
-              : 'bg-orange-50 border border-orange-200/60 rounded-tr-md',
-            unread && 'ring-2 ring-primary-300/50'
-          )}
-        >
-          {unread && (
-            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-primary-500 rounded-full ring-2 ring-white animate-pulse" />
-          )}
-          <p className="text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">
-            <CommentText text={comment.comment_text} />
-          </p>
-        </div>
-
-        {/* Read receipts */}
-        {comment.read_by_users && comment.read_by_users.length > 0 && (
-          <div className={cn('mt-1', !isSourcelab && 'self-end')}>
-            <ReadReceipts readers={comment.read_by_users} align={isSourcelab ? 'left' : 'right'} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReadReceipts({ readers, align = 'left' }: { readers: { username: string; full_name?: string | null; read_at: string }[]; align?: 'left' | 'right' }) {
-  const [showPopup, setShowPopup] = useState(false);
-
-  return (
-    <div className={cn('relative mt-1', align === 'right' ? 'text-right' : '')}>
-      <button
-        onMouseEnter={() => setShowPopup(true)}
-        onMouseLeave={() => setShowPopup(false)}
-        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
-      >
-        <Eye className="w-3 h-3" />
-        <span>Seen by {readers.length}</span>
-      </button>
-      {showPopup && (
-        <div className={cn('absolute bottom-full mb-1 bg-gray-900 text-white rounded-lg px-3 py-2 shadow-lg z-50 min-w-[160px]', align === 'right' ? 'right-0' : 'left-0')}>
-          <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Read by</p>
-          {readers.map((r, i) => (
-            <div key={i} className="flex items-center justify-between gap-3 py-0.5">
-              <span className="text-[11px] font-medium">{r.full_name || r.username}</span>
-              <span className="text-[9px] text-gray-500">
-                {(() => { try { return formatDistanceToNow(parseISO(r.read_at), { addSuffix: true }); } catch { return ''; } })()}
-              </span>
-            </div>
-          ))}
-          <div className={cn('absolute top-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-gray-900', align === 'right' ? 'right-4' : 'left-4')} />
-        </div>
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold transition-colors',
+        active
+          ? 'text-primary-700 border-b-2 border-primary-600 -mb-px'
+          : 'text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
       )}
-    </div>
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

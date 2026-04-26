@@ -1100,54 +1100,59 @@ function DetailPanel({
         onClick={(e) => e.stopPropagation()}
       >
       {/* Header */}
-      <div className="px-6 py-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-bold">{order.po_number}</h3>
+      <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
+              {order.po_number}
+              {order.china_orderbook_ref && <span className="text-gray-400 font-normal"> — {order.china_orderbook_ref}</span>}
+              {order.style_code && <span className="text-gray-400 font-normal"> · {order.style_code}</span>}
+            </div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-base font-bold text-gray-900 truncate">
+                {order.description || order.customer || 'Order detail'}
+              </h3>
               <span className={cn(
-                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
-                statusStyle.bg, statusStyle.text
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border',
+                statusStyle.bg, statusStyle.text, 'border-current/20'
               )}>
                 <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
                 {order.status || 'Unknown'}
               </span>
               {order.is_late && (
-                <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded-full text-[10px] font-semibold">
+                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-[10px] font-semibold">
                   LATE
                 </span>
               )}
+              {order.colour && (
+                <span className="text-[11px] text-gray-500">· {order.colour}</span>
+              )}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {order.style_code && <span className="text-gray-300">{order.style_code}</span>}
-              {order.colour && <span> · {order.colour}</span>}
-              {order.description && <span className="text-gray-400"> · {order.description}</span>}
-            </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => { setModalTab(modalTab === 'comments' ? 'details' : 'comments'); modalContentRef.current?.scrollTo(0, 0); }}
               className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5",
+                'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 border',
                 modalTab === 'comments'
-                  ? 'text-white bg-white/25'
-                  : 'text-white bg-white/10 hover:bg-white/20'
+                  ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               )}
             >
               <MessageSquare className="w-3.5 h-3.5" />
               {modalTab === 'comments' ? 'Details' : 'Comments'}
               {modalTab !== 'comments' && (order.unread_comment_count || 0) > 0 && (
-                <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                <span className="px-1.5 py-0 bg-red-500 text-white text-[10px] font-bold rounded-full">
                   {order.unread_comment_count}
                 </span>
               )}
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
               title="Close (Esc)"
             >
-              <X className="w-4 h-4 text-gray-300" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
