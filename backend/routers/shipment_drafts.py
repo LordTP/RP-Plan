@@ -440,6 +440,79 @@ async def picker_orders(
     return {'pos': list(by_po.values())}
 
 
+# ---- Edit a confirmed shipment's shared fields and re-propagate -------------
+
+class UpdateConfirmedShippingRequest(BaseModel):
+    """Update the 5 shared shipping fields on a CONFIRMED shipment and
+    re-push them to every linked order. SKUs and quantities can't be changed
+    via this endpoint — they're frozen once confirmed. The shipment stays
+    confirmed; this is just a values correction (e.g. vessel changed)."""
+    fcl_lcl: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_etd: Optional[str] = None
+    vessel_eta_to_port: Optional[str] = None
+    tracking_reference: Optional[str] = None
+
+
+@router.post("/api/shipment-drafts/{draft_id}/update-shipping")
+async def update_confirmed_shipping(
+    draft_id: int,
+    body: UpdateConfirmedShippingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    draft = db.query(ShipmentDraft).filter(ShipmentDraft.id == draft_id).first()
+    if not draft:
+        raise HTTPException(404, "Shipment not found")
+    _ensure_access(draft, current_user)
+    if draft.status != 'confirmed':
+        raise HTTPException(400, "This endpoint only works on confirmed shipments — use the standard update endpoint for drafts.")
+
+    # Update the draft's stored values.
+    draft.fcl_lcl = (body.fcl_lcl or None) if body.fcl_lcl is not None else draft.fcl_lcl
+    draft.vessel_name = (body.vessel_name or None) if body.vessel_name is not None else draft.vessel_name
+    draft.vessel_etd = _coerce_iso_date(body.vessel_etd) if body.vessel_etd is not None else draft.vessel_etd
+    draft.vessel_eta_to_port = _coerce_iso_date(body.vessel_eta_to_port) if body.vessel_eta_to_port is not None else draft.vessel_eta_to_port
+    draft.tracking_reference = (body.tracking_reference or None) if body.tracking_reference is not None else draft.tracking_reference
+
+    # Re-push to every linked order — same logic as confirm, but no status flip.
+    role_label = 'Supplier' if current_user.role == UserRole.SUPPLIER else 'Sourcelab'
+    fields_to_apply = {
+        'fcl_lcl': draft.fcl_lcl,
+        'vessel_name': draft.vessel_name,
+        'vessel_etd': draft.vessel_etd,
+        'vessel_eta_to_port': draft.vessel_eta_to_port,
+        'tracking_reference': draft.tracking_reference,
+    }
+    links = db.query(ShipmentDraftOrder).filter(ShipmentDraftOrder.draft_id == draft.id).all()
+    for link in links:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == link.order_id).first()
+        if order is None:
+            continue
+        for field, new_value in fields_to_apply.items():
+            old_value = getattr(order, field, None)
+            if old_value != new_value:
+                db.add(DateChangeHistory(
+                    po_id=order.id,
+                    user_id=current_user.id,
+                    field_name=field,
+                    old_value=str(old_value) if old_value is not None else None,
+                    new_value=str(new_value) if new_value is not None else None,
+                    source=role_label,
+                ))
+                setattr(order, field, new_value)
+        # Re-derive estimated delivery in case vessel ETA changed.
+        vessel_eta = order.revised_vessel_eta_to_port or order.vessel_eta_to_port
+        if vessel_eta:
+            mode = (order.fcl_lcl or '').strip().upper()
+            days = 7 if mode == 'LCL' else 2 if mode == 'AIR' else 5
+            order.estimated_del_to_customer = vessel_eta + timedelta(days=days)
+
+    db.commit()
+    db.refresh(draft)
+    return _serialize_draft(db, draft, include_orders=True)
+
+
 # ---- Confirm — apply shared fields to every linked order --------------------
 
 @router.post("/api/shipment-drafts/{draft_id}/confirm")

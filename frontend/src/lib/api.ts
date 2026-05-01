@@ -1191,6 +1191,18 @@ export const shipmentDraftsApi = {
     const response = await api.post(`/api/shipment-drafts/${id}/confirm`);
     return response.data;
   },
+  // Update the 5 shipping fields on a CONFIRMED shipment + re-propagate to
+  // every linked order. SKUs/qtys can't be changed via this path.
+  updateConfirmedShipping: async (id: number, body: {
+    fcl_lcl?: string | null;
+    vessel_name?: string | null;
+    vessel_etd?: string | null;
+    vessel_eta_to_port?: string | null;
+    tracking_reference?: string | null;
+  }): Promise<ShipmentDraftDetail> => {
+    const response = await api.post(`/api/shipment-drafts/${id}/update-shipping`, body);
+    return response.data;
+  },
 };
 
 export default api;
