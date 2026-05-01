@@ -636,6 +636,7 @@ export interface RecentActivityEvent {
   customer?: string | null;
   description?: string | null;
   factory?: string | null;
+  status?: string | null;
   field_name?: string;
   old_value?: string;
   new_value?: string;

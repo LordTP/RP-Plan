@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Activity,
   Calendar,
@@ -14,23 +14,33 @@ import {
   Truck,
   Ruler,
   AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, getStatusColor } from '@/lib/utils';
 import type { RecentActivityEvent } from '@/lib/api';
 
 /**
- * Crew-style activity feed: coloured icon tile + ALL-CAPS kicker
- * + strong body text + sub-line with PO/customer context. Bulk
- * groups (same field+value across multiple styles within a 60s
- * window) collapse into one row with a chip strip of affected
- * styles.
+ * Stripe-style PO-grouped activity feed: every PO with recent activity gets
+ * its own card with header (PO number, customer, status pill, "Open" CTA)
+ * + a list of slim event rows nested inside. Bulk events (same field+value
+ * across multiple styles within 60s) collapse into a single row with a
+ * hover tooltip listing the affected SKUs.
  */
 
 export type ActivityGroup = RecentActivityEvent & {
   styles: string[];
   count: number;
 };
+
+interface POGroup {
+  po_number: string;
+  customer: string | null;
+  status: string | null;
+  factory: string | null;
+  groups: ActivityGroup[];
+  latestAt: number;
+}
 
 interface Props {
   groups: ActivityGroup[];
@@ -41,7 +51,10 @@ interface Props {
 }
 
 export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, onLoadMore }: Props) {
-  if (groups.length === 0) {
+  // Re-group the bulk-collapsed events by PO so each PO becomes a card.
+  const poGroups = useMemo(() => groupByPO(groups), [groups]);
+
+  if (poGroups.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-400 italic">
         Nothing's happened yet.
@@ -50,19 +63,13 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="divide-y divide-gray-100 max-h-[490px] overflow-y-auto">
-        {groups.map((g, idx) => (
-          <ActivityRow
-            key={`${g.type}-${g.po_number}-${idx}`}
-            group={g}
-            onPOClick={onPOClick}
-          />
-        ))}
-      </div>
+    <div className="space-y-2.5 max-h-[490px] overflow-y-auto pr-1">
+      {poGroups.map((po) => (
+        <POActivityCard key={po.po_number} po={po} onPOClick={onPOClick} />
+      ))}
 
       {hasMore && (
-        <div className="border-t border-gray-100 px-4 py-2.5 flex justify-center bg-gray-50/50">
+        <div className="flex justify-center pt-1">
           <button
             onClick={onLoadMore}
             disabled={loadingMore}
@@ -76,64 +83,94 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
   );
 }
 
-function ActivityRow({ group, onPOClick }: { group: ActivityGroup; onPOClick: (po: string, style?: string) => void }) {
+function POActivityCard({ po, onPOClick }: { po: POGroup; onPOClick: (po: string, style?: string) => void }) {
+  const totalEvents = po.groups.reduce((sum, g) => sum + g.count, 0);
+  const latestRel = relativeTime(new Date(po.latestAt).toISOString());
+  const statusClass = po.status ? getStatusColor(po.status) : '';
+
+  return (
+    <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden">
+      {/* Card header */}
+      <div className="px-3.5 py-2 flex items-center gap-2 bg-gray-50/60 border-b border-gray-100 flex-wrap">
+        <span className="font-mono text-xs font-bold text-gray-900">{po.po_number}</span>
+        {po.customer && (
+          <span className="text-[11px] text-gray-500 truncate max-w-[180px]">{po.customer}</span>
+        )}
+        {po.status && (
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-semibold', statusClass)}>
+            {po.status}
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] text-gray-400 whitespace-nowrap">
+            {totalEvents} event{totalEvents > 1 ? 's' : ''} · {latestRel}
+          </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); onPOClick(po.po_number); }}
+            className="px-2 py-0.5 rounded bg-white ring-1 ring-gray-200 hover:bg-blue-50 hover:ring-blue-200 hover:text-blue-700 text-[10px] font-semibold text-gray-600 transition-colors flex items-center gap-1"
+          >
+            Open
+            <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Event rows */}
+      <div className="divide-y divide-gray-100">
+        {po.groups.map((g, idx) => (
+          <POActivityRow key={`${g.type}-${idx}`} group={g} poNumber={po.po_number} onStyleClick={(s) => onPOClick(po.po_number, s)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function POActivityRow({ group, poNumber, onStyleClick }: {
+  group: ActivityGroup;
+  poNumber: string;
+  onStyleClick: (style: string) => void;
+}) {
   const f = formatGroup(group);
   const isBulk = group.count > 1;
   const isSupplier = (group.source || '').toLowerCase() === 'supplier';
 
   return (
-    <div className="flex gap-2.5 px-3 py-2 hover:bg-gray-50/70 transition-colors">
-      {/* Left edge category bar */}
-      <div className="w-0.5 rounded-full flex-shrink-0 self-stretch" style={{ backgroundColor: f.colour }} />
-
+    <div className="px-3.5 py-2 flex items-start gap-2.5 hover:bg-gray-50/60 transition-colors">
       {/* Icon tile */}
-      <div className={cn(
-        'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md mt-0.5',
-        f.iconBg
-      )}>
+      <div className={cn('flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md mt-0.5', f.iconBg)}>
         <f.Icon className={cn('h-3.5 w-3.5', f.iconText)} />
       </div>
 
       {/* Body */}
-      <div className="min-w-0 flex-1">
-        {/* Top row — actor · time · (badges) · PO on right */}
-        <div className="flex items-center gap-1.5 text-[10px] leading-tight">
-          <span className="font-semibold text-gray-700">{group.username}</span>
-          <span className="text-gray-300">·</span>
-          <span className="text-gray-400">{group.created_at ? relativeTime(group.created_at) : ''}</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-gray-800 leading-snug break-words">
+          <strong className="text-gray-900">{group.username}</strong>
           {isSupplier && (
-            <span className="px-1 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 ring-1 ring-orange-100">
-              Supplier
+            <span className="ml-1 px-1 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-50 text-orange-700 ring-1 ring-orange-100 align-middle">
+              supplier
             </span>
-          )}
-          {isBulk && (
-            <BulkStylesPill
-              count={group.count}
-              styles={group.styles}
-              poNumber={group.po_number}
-              onStyleClick={(s) => onPOClick(group.po_number, s)}
-            />
-          )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onPOClick(group.po_number, isBulk ? undefined : group.style_code); }}
-            className="ml-auto flex items-center gap-1 font-mono text-gray-400 hover:text-gray-700 truncate max-w-[55%]"
-            title={group.customer ? `${group.po_number} · ${group.customer}` : group.po_number}
-          >
-            <span className="font-semibold">{group.po_number}</span>
-            {group.customer && (
-              <span className="text-gray-300 font-sans truncate hidden sm:inline">· {group.customer}</span>
-            )}
-          </button>
+          )}{' '}
+          {f.verb}
+          {isBulk ? (
+            <>
+              {' '}
+              <BulkStylesPill
+                count={group.count}
+                styles={group.styles}
+                poNumber={poNumber}
+                onStyleClick={onStyleClick}
+              />
+            </>
+          ) : group.style_code ? (
+            <> on <span className="font-mono text-gray-700">{group.style_code}</span></>
+          ) : null}
         </div>
-
-        {/* Body — action verb + values + (single-row style code) */}
-        <div className="text-xs text-gray-800 leading-snug break-words mt-0.5">
-          {f.body}
-          {!isBulk && group.style_code && (
-            <span className="text-gray-400 font-mono"> · {group.style_code}</span>
-          )}
-        </div>
+        {f.detail && <div className="text-[11px] text-gray-500 mt-0.5 break-words">{f.detail}</div>}
       </div>
+
+      <span className="text-[10px] text-gray-400 font-mono whitespace-nowrap mt-0.5">
+        {group.created_at ? relativeTime(group.created_at) : ''}
+      </span>
     </div>
   );
 }
@@ -146,14 +183,16 @@ function BulkStylesPill({ count, styles, poNumber, onStyleClick }: {
 }) {
   const [show, setShow] = useState(false);
   return (
-    <span className="relative" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span className="relative inline-flex" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       <button
         type="button"
         onClick={(e) => e.stopPropagation()}
-        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100 transition-colors"
+        className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[10px] font-bold bg-blue-50 text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100 transition-colors align-baseline"
       >
         {count} styles
-        <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="currentColor"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg className="w-2.5 h-2.5" viewBox="0 0 12 12">
+          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       {show && styles.length > 0 && (
         <div className="absolute top-full left-0 mt-1.5 bg-white text-gray-800 rounded-lg shadow-lg ring-1 ring-gray-200 py-2 px-2.5 z-50 min-w-[180px] max-w-[260px]">
@@ -177,16 +216,17 @@ function BulkStylesPill({ count, styles, poNumber, onStyleClick }: {
 }
 
 /* =============================================================
- * Formatter — decides icon, colour, kicker, and body for a group
+ * Formatter — returns the icon + "verb" sentence + optional
+ * detail line for a group. Sentences are written so the row
+ * reads as: "<actor> <verb> <on STYLE / on N styles>"
  * ============================================================= */
 
 interface Formatted {
   Icon: React.ComponentType<{ className?: string }>;
   iconBg: string;
   iconText: string;
-  kicker: string;
-  colour: string; // raw hex for the edge bar + kicker text
-  body: React.ReactNode;
+  verb: React.ReactNode;
+  detail: React.ReactNode | null;
 }
 
 function formatGroup(g: ActivityGroup): Formatted {
@@ -195,30 +235,35 @@ function formatGroup(g: ActivityGroup): Formatted {
       Icon: MessageSquare,
       iconBg: 'bg-purple-50',
       iconText: 'text-purple-600',
-      kicker: 'Comment',
-      colour: '#a855f7',
-      body: (
-        <span className="italic text-gray-700">"{g.comment_text || 'Added a comment'}"</span>
-      ),
+      verb: <>commented</>,
+      detail: <span className="italic text-gray-700">"{g.comment_text || 'Added a comment'}"</span>,
     };
   }
 
   const field = (g.field_name || '').toLowerCase();
   const newVal = g.new_value || '';
   const oldVal = g.old_value || '';
+  const fieldLabel = prettyField(field);
 
-  // Sample status field → tone depends on outcome
   if (isStatusField(field)) {
     return formatStatus(g, field, newVal, oldVal);
+  }
+  if (field === 'status') {
+    return {
+      Icon: Layers,
+      iconBg: 'bg-amber-50',
+      iconText: 'text-amber-600',
+      verb: <>changed <strong className="font-semibold">Status</strong> to <strong className="text-amber-700">{newVal}</strong></>,
+      detail: oldVal ? <span>from <span className="line-through">{oldVal}</span></span> : null,
+    };
   }
   if (isDateField(field)) {
     return {
       Icon: Calendar,
       iconBg: 'bg-indigo-50',
       iconText: 'text-indigo-600',
-      kicker: g.component_name ? `${g.component_name} date` : 'Date changed',
-      colour: '#6366f1',
-      body: <ChangeBody label={prettyField(field)} oldValue={stripTime(oldVal)} newValue={stripTime(newVal)} />,
+      verb: <>changed {g.component_name && <span className="text-violet-600 font-semibold">{g.component_name} · </span>}<strong className="font-semibold">{fieldLabel}</strong></>,
+      detail: <ChangeBody oldValue={stripTime(oldVal)} newValue={stripTime(newVal)} />,
     };
   }
   if (isQuantityField(field)) {
@@ -226,9 +271,8 @@ function formatGroup(g: ActivityGroup): Formatted {
       Icon: Package,
       iconBg: 'bg-teal-50',
       iconText: 'text-teal-600',
-      kicker: 'Quantity',
-      colour: '#14b8a6',
-      body: <ChangeBody label={prettyField(field)} oldValue={oldVal} newValue={newVal} />,
+      verb: <>updated <strong className="font-semibold">{fieldLabel}</strong></>,
+      detail: <ChangeBody oldValue={oldVal} newValue={newVal} />,
     };
   }
   if (isMoneyField(field)) {
@@ -236,19 +280,8 @@ function formatGroup(g: ActivityGroup): Formatted {
       Icon: DollarSign,
       iconBg: 'bg-emerald-50',
       iconText: 'text-emerald-600',
-      kicker: 'Value',
-      colour: '#10b981',
-      body: <ChangeBody label={prettyField(field)} oldValue={oldVal} newValue={newVal} />,
-    };
-  }
-  if (field === 'status') {
-    return {
-      Icon: Layers,
-      iconBg: 'bg-amber-50',
-      iconText: 'text-amber-600',
-      kicker: 'Order status',
-      colour: '#f59e0b',
-      body: <ChangeBody label="Status" oldValue={oldVal} newValue={newVal} />,
+      verb: <>updated <strong className="font-semibold">{fieldLabel}</strong></>,
+      detail: <ChangeBody oldValue={oldVal} newValue={newVal} />,
     };
   }
   if (field.includes('vessel') || field.includes('tracking') || field.includes('fcl')) {
@@ -256,19 +289,19 @@ function formatGroup(g: ActivityGroup): Formatted {
       Icon: Truck,
       iconBg: 'bg-sky-50',
       iconText: 'text-sky-600',
-      kicker: 'Shipping',
-      colour: '#0ea5e9',
-      body: <ChangeBody label={prettyField(field)} oldValue={oldVal} newValue={newVal} />,
+      verb: <>updated <strong className="font-semibold">{fieldLabel}</strong></>,
+      detail: newVal && !oldVal
+        ? <strong className="text-gray-700">{newVal}</strong>
+        : <ChangeBody oldValue={oldVal} newValue={newVal} />,
     };
   }
-  if (field === 'size_breakdown' || field.startsWith('xs_') || field.startsWith('s_') || field === 'total_quantity') {
+  if (field === 'size_breakdown' || field.startsWith('xs_') || field.startsWith('s_')) {
     return {
       Icon: Ruler,
       iconBg: 'bg-violet-50',
       iconText: 'text-violet-600',
-      kicker: 'Sizing',
-      colour: '#8b5cf6',
-      body: <ChangeBody label={prettyField(field)} oldValue={oldVal} newValue={newVal} />,
+      verb: <>updated <strong className="font-semibold">{fieldLabel}</strong></>,
+      detail: <ChangeBody oldValue={oldVal} newValue={newVal} />,
     };
   }
 
@@ -276,9 +309,8 @@ function formatGroup(g: ActivityGroup): Formatted {
     Icon: Edit2,
     iconBg: 'bg-slate-50',
     iconText: 'text-slate-600',
-    kicker: g.component_name ? `${g.component_name} updated` : 'Field updated',
-    colour: '#64748b',
-    body: <ChangeBody label={prettyField(field)} oldValue={oldVal} newValue={newVal} />,
+    verb: <>updated {g.component_name && <span className="text-violet-600 font-semibold">{g.component_name} · </span>}<strong className="font-semibold">{fieldLabel}</strong></>,
+    detail: <ChangeBody oldValue={oldVal} newValue={newVal} />,
   };
 }
 
@@ -289,16 +321,17 @@ function formatStatus(g: ActivityGroup, field: string, newVal: string, oldVal: s
     : field.includes('lab') ? 'Lab Dip'
     : field.includes('pps') ? 'PPS'
     : prettyField(field);
-  const prefix = g.component_name ? `${g.component_name} · ${sampleLabel}` : sampleLabel;
+  const labelNode = g.component_name
+    ? <><span className="text-violet-600 font-semibold">{g.component_name} · </span><strong className="font-semibold">{sampleLabel}</strong></>
+    : <strong className="font-semibold">{sampleLabel}</strong>;
 
   if (v === 'APPROVED') {
     return {
       Icon: CheckCircle2,
       iconBg: 'bg-emerald-50',
       iconText: 'text-emerald-600',
-      kicker: 'Approved',
-      colour: '#10b981',
-      body: <span><strong>{prefix}</strong> approved</span>,
+      verb: <>approved {labelNode}</>,
+      detail: null,
     };
   }
   if (v === 'REJECTED') {
@@ -306,9 +339,8 @@ function formatStatus(g: ActivityGroup, field: string, newVal: string, oldVal: s
       Icon: XCircle,
       iconBg: 'bg-red-50',
       iconText: 'text-red-600',
-      kicker: 'Rejected',
-      colour: '#ef4444',
-      body: <span><strong>{prefix}</strong> rejected</span>,
+      verb: <>rejected {labelNode}</>,
+      detail: null,
     };
   }
   if (v === 'OUTSTANDING') {
@@ -316,9 +348,8 @@ function formatStatus(g: ActivityGroup, field: string, newVal: string, oldVal: s
       Icon: AlertCircle,
       iconBg: 'bg-amber-50',
       iconText: 'text-amber-600',
-      kicker: 'Outstanding',
-      colour: '#f59e0b',
-      body: <span><strong>{prefix}</strong> marked outstanding</span>,
+      verb: <>marked {labelNode} <strong className="text-amber-700">outstanding</strong></>,
+      detail: null,
     };
   }
   if (v === 'NOT REQUIRED') {
@@ -326,29 +357,26 @@ function formatStatus(g: ActivityGroup, field: string, newVal: string, oldVal: s
       Icon: Layers,
       iconBg: 'bg-gray-100',
       iconText: 'text-gray-500',
-      kicker: 'Not required',
-      colour: '#94a3b8',
-      body: <span><strong>{prefix}</strong> marked not required</span>,
+      verb: <>marked {labelNode} <span className="text-gray-500">not required</span></>,
+      detail: null,
     };
   }
   return {
     Icon: Activity,
     iconBg: 'bg-slate-50',
     iconText: 'text-slate-600',
-    kicker: sampleLabel,
-    colour: '#64748b',
-    body: <ChangeBody label={prefix} oldValue={oldVal} newValue={newVal} />,
+    verb: <>updated {labelNode}</>,
+    detail: <ChangeBody oldValue={oldVal} newValue={newVal} />,
   };
 }
 
-function ChangeBody({ label, oldValue, newValue }: { label: string; oldValue: string; newValue: string }) {
+function ChangeBody({ oldValue, newValue }: { oldValue: string; newValue: string }) {
+  if (!oldValue && !newValue) return null;
   return (
     <span>
-      <strong>{label}</strong>
-      {oldValue && <> · <span className="text-gray-400 line-through">{oldValue}</span></>}
+      {oldValue && <span className="line-through text-gray-400">{oldValue}</span>}
       {oldValue && newValue && <span className="text-gray-300"> → </span>}
-      {!oldValue && newValue && <> · </>}
-      {newValue && <strong className="text-gray-900">{newValue}</strong>}
+      {newValue && <strong className="text-gray-700">{newValue}</strong>}
     </span>
   );
 }
@@ -376,9 +404,7 @@ function isMoneyField(field: string): boolean {
 
 function prettyField(field: string): string {
   if (!field) return '';
-  return field
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function stripTime(v: string): string {
@@ -405,7 +431,9 @@ function relativeTime(iso: string): string {
 }
 
 /* =============================================================
- * Bulk grouping helper — exported so the dashboard can call it
+ * Bulk grouping helper — collapses same-field+value writes across
+ * multiple styles within a 60s window into a single ActivityGroup
+ * (used by the dashboard before passing into this component).
  * ============================================================= */
 
 export function groupBulkActivity(events: RecentActivityEvent[]): ActivityGroup[] {
@@ -436,4 +464,31 @@ export function groupBulkActivity(events: RecentActivityEvent[]): ActivityGroup[
     }
   }
   return groups;
+}
+
+/* =============================================================
+ * PO grouping — fold the bulk-collapsed events under their PO,
+ * preserving overall newest-first order by latest event timestamp.
+ * ============================================================= */
+
+function groupByPO(activityGroups: ActivityGroup[]): POGroup[] {
+  const byPO = new Map<string, POGroup>();
+  for (const g of activityGroups) {
+    const t = g.created_at ? new Date(g.created_at).getTime() : 0;
+    const existing = byPO.get(g.po_number);
+    if (existing) {
+      existing.groups.push(g);
+      if (t > existing.latestAt) existing.latestAt = t;
+    } else {
+      byPO.set(g.po_number, {
+        po_number: g.po_number,
+        customer: g.customer ?? null,
+        status: g.status ?? null,
+        factory: g.factory ?? null,
+        groups: [g],
+        latestAt: t,
+      });
+    }
+  }
+  return Array.from(byPO.values()).sort((a, b) => b.latestAt - a.latestAt);
 }
