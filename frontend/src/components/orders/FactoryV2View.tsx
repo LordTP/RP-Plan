@@ -34,6 +34,7 @@ import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
+import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
@@ -1048,6 +1049,39 @@ function DetailPanel({
   const [modalTab, setModalTab] = useState<'details' | 'comments'>('details');
   const modalContentRef = useRef<HTMLDivElement>(null);
 
+  // Section refs + active-section state powering the sticky pill nav.
+  const productRef = useRef<HTMLElement>(null);
+  const samplingRef = useRef<HTMLElement>(null);
+  const shippingRef = useRef<HTMLElement>(null);
+  const timelineRef = useRef<HTMLElement>(null);
+  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
+  const sectionRefs = { product: productRef, sampling: samplingRef, shipping: shippingRef, timeline: timelineRef } as const;
+
+  const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
+    const el = sectionRefs[key].current;
+    const scroller = modalContentRef.current;
+    if (!el || !scroller) return;
+    scroller.scrollTo({ top: el.offsetTop - 80, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    const scroller = modalContentRef.current;
+    if (!scroller) return;
+    const onScroll = () => {
+      const top = scroller.scrollTop + 100;
+      const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
+      let current: typeof order[number] = 'product';
+      for (const key of order) {
+        const el = sectionRefs[key].current;
+        if (el && el.offsetTop <= top) current = key;
+      }
+      setActiveSection(current);
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalTab]);
+
   // Order-level submissions (component_id IS NULL). We only care about these for the
   // rejection flow on PPS (always order-level) and on fit/strike/lab for orders without components.
   const [orderSubmissions, setOrderSubmissions] = useState<SampleSubmission[]>([]);
@@ -1083,6 +1117,53 @@ function DetailPanel({
 
   const sizes = getSizeBreakdown(order);
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
+
+  // Hero strip computations (sampling progress + ex-fac countdown).
+  const sampleProgress = useMemo(() => {
+    const items: { label: string; done: boolean }[] = [];
+    if (hasComponents) {
+      if (hasCol('pps_status')) {
+        const s = (order.pps_status || '').toUpperCase();
+        items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
+      return items;
+    }
+    if (hasCol('fit_sample_status')) {
+      const s = (order.fit_sample_status || '').toUpperCase();
+      items.push({ label: 'Fit', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('strike_off_status')) {
+      const s = (order.strike_off_status || '').toUpperCase();
+      items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('lab_dip_status')) {
+      const s = (order.lab_dip_status || '').toUpperCase();
+      items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('pps_status')) {
+      const s = (order.pps_status || '').toUpperCase();
+      items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    return items;
+  }, [order, hasCol, hasComponents]);
+  const sampleDone = sampleProgress.filter(s => s.done).length;
+  const sampleTotal = sampleProgress.length;
+  const samplePending = sampleTotal - sampleDone;
+
+  const exFacDate = order.factory_confirmed_ex_factory || order.original_po_ex_factory;
+  const daysToExFac = useMemo(() => {
+    if (!exFacDate) return null;
+    try {
+      const d = new Date(exFacDate);
+      const now = new Date();
+      return Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    } catch { return null; }
+  }, [exFacDate]);
+  const exFacTone = daysToExFac == null
+    ? 'border-gray-200 bg-white'
+    : daysToExFac < 0 ? 'border-red-200 bg-red-50/30'
+    : daysToExFac < 7 ? 'border-amber-200 bg-amber-50/30'
+    : 'border-gray-200 bg-white';
 
   // Close on Escape
   useEffect(() => {
@@ -1159,225 +1240,264 @@ function DetailPanel({
         </div>
       </div>
 
-      {/* Content - 2 column layout */}
-      <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* LEFT COLUMN */}
-        <div className={cn('lg:col-span-2 space-y-5', modalTab === 'comments' && 'hidden')}>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {hasCol('total_quantity') && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatQty(order.total_quantity)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Total Qty</p>
-            </div>
-          )}
-          {hasCol('trade_price') && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatCurrency(order.trade_price)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Cost Price</p>
-            </div>
-          )}
-          {hasCol('total_order_value') && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatCurrency(order.total_order_value)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Order Value</p>
-            </div>
-          )}
+      {/* Body — Comments tab keeps its own full-height layout. Details tab uses
+          the new hero + sticky pill nav + scroll-of-sections layout. */}
+      {modalTab === 'comments' ? (
+        <div ref={modalContentRef} className="flex-1 min-h-0 overflow-hidden p-6 flex">
+          <div className="flex-1 min-h-0">
+            <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
+          </div>
         </div>
+      ) : (
+        <>
+          {/* Hero stat strip */}
+          <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, hasCol('trade_price') || hasCol('total_order_value'), !!exFacDate, hasCol('eta_to_customer'), sampleTotal > 0].filter(Boolean).length}, minmax(0, 1fr))` }}>
+            <HeroTile label="Total Qty" value={formatQty(order.total_quantity)} />
+            {hasCol('total_order_value') ? (
+              <HeroTile
+                label="Order Value"
+                value={formatCurrency(order.total_order_value)}
+                sub={hasCol('trade_price') ? `${formatCurrency(order.trade_price)} cost` : undefined}
+              />
+            ) : hasCol('trade_price') ? (
+              <HeroTile label="Cost Price" value={formatCurrency(order.trade_price)} />
+            ) : null}
+            {exFacDate && (
+              <HeroTile
+                label="Ex-Factory"
+                value={formatDate(exFacDate)}
+                sub={daysToExFac != null ? (daysToExFac < 0 ? `${Math.abs(daysToExFac)}d overdue` : `in ${daysToExFac}d`) : undefined}
+                tone={exFacTone}
+              />
+            )}
+            {hasCol('eta_to_customer') && (
+              <HeroTile
+                label="ETA Customer"
+                value={formatDate(order.eta_to_customer)}
+                sub={order.vessel_name ? `via ${order.vessel_name}` : undefined}
+              />
+            )}
+            {sampleTotal > 0 && (
+              <HeroTile
+                label="Sampling"
+                value={`${sampleDone} of ${sampleTotal}`}
+                sub={samplePending > 0 ? `${samplePending} pending` : 'all done'}
+                tone={samplePending > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/30'}
+              />
+            )}
+          </div>
 
-        {/* Size Breakdown */}
-        {sizes.length > 0 && (
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5" />
-              Size Breakdown
-            </h4>
-            <div className="space-y-1.5">
-              {sizes.map(s => (
-                <div key={s.label} className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-gray-500 w-8 text-right">{s.label}</span>
-                  <div className="flex-1 h-6 bg-gray-100 rounded-md overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-primary-400 to-primary-500 rounded-md flex items-center justify-end pr-2 transition-all duration-500"
-                      style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
-                    >
-                      <span className="text-[10px] font-bold text-white">{s.value}</span>
+          {/* Sticky pill nav */}
+          <div className="px-6 py-2 border-b border-gray-200 bg-white/95 backdrop-blur flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-2">Jump to</span>
+            <SectionPill active={activeSection === 'product'} label="Product" onClick={() => scrollToSection('product')} />
+            <SectionPill
+              active={activeSection === 'sampling'}
+              label="Sampling"
+              badge={samplePending > 0 ? `${samplePending} pending` : undefined}
+              badgeTone="amber"
+              onClick={() => scrollToSection('sampling')}
+            />
+            <SectionPill active={activeSection === 'shipping'} label="Shipping" onClick={() => scrollToSection('shipping')} />
+            <SectionPill active={activeSection === 'timeline'} label="Timeline" onClick={() => scrollToSection('timeline')} />
+          </div>
+
+          {/* Scroll body */}
+          <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
+
+            {/* Product */}
+            <section ref={productRef} className="px-6 pt-6 pb-3">
+              <SectionHeader accent="blue" label="Product" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                  {hasCol('description') && <DetailRow label="Description" value={order.description} />}
+                  {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
+                  {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} />}
+                  {hasCol('colour') && <DetailRow label="Colour" value={order.colour} />}
+                  {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
+                  {hasCol('season') && <DetailRow label="Season" value={order.season} />}
+                  {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
+                  {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
+                  {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
+                </div>
+                {sizes.length > 0 && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
+                      <SizeGuideTooltip gender={order.gender} />
+                    </div>
+                    <div className="space-y-1.5">
+                      {sizes.map(s => (
+                        <div key={s.label} className="flex items-center gap-3">
+                          <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
+                          <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
+                              style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
+                            >
+                              <span className="text-[10px] font-bold text-white">{s.value}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
+                      <span className="text-gray-500">Total units</span>
+                      <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Product Info */}
-        <div>
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Package className="w-3.5 h-3.5" />
-            Product Details
-          </h4>
-          <div className="space-y-2">
-            {hasCol('description') && <DetailRow label="Description" value={order.description} />}
-            {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
-            {hasCol('china_orderbook_ref') && <DetailRow label="China Orderbook Ref" value={order.china_orderbook_ref} />}
-            {hasCol('season') && <DetailRow label="Season" value={order.season} />}
-            {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
-            {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
-            {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
-            {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
-          </div>
-        </div>
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'lg:col-span-5' : 'lg:col-span-3')}>
-
-        {modalTab === 'comments' ? (
-          <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
-        ) : (
-        <>
-        {/* Timeline / Key Dates */}
-        <div className="order-3">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5" />
-            Timeline
-          </h4>
-          <div className="relative">
-            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
-            <div className="space-y-0">
-              {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} />}
-              {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} />}
-              {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} />}
-              {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} />}
-              {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} />}
-              {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} />}
-              {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
-              {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
-              {hasCol('original_del_date_to_customer') && <TimelineItem label="Cust Req Delivery" date={order.original_del_date_to_customer} />}
-              {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
-              {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
-              {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-              {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-              {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-              {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
-            </div>
-          </div>
-          {hasCol('customer_po_open_month') && order.customer_po_open_month && (
-            <div className="mt-3 flex items-center gap-2 text-xs">
-              <span className="text-gray-400">PO Open Month:</span>
-              <span className="font-medium text-gray-700">{order.customer_po_open_month}</span>
-            </div>
-          )}
-          {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && (
-            <div className="mt-1 flex items-center gap-2 text-xs">
-              <span className="text-gray-400">Expected UK Month:</span>
-              <span className="font-medium text-gray-700">{order.expected_dispatch_arrive_uk_month}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Components — shown before samples so component data takes priority */}
-        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
-          <div className="order-1">
-            <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
-          </div>
-        )}
-
-        {/* Samples — fit/strike off/lab dip rows hidden when components exist (data lives in components instead) */}
-        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
-          <div className="order-2">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5" />
-              Samples
-            </h4>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-0">
-              {!hasComponents && (hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Fit Sample</p>
-                  <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
-                  {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
-                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
-                  {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
-                  {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
-                  <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="fit" size="sm" />
-                </div>
-              )}
-              {!hasComponents && (hasCol('strike_off_status') || hasCol('strike_off_received')) && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Strike Off</p>
-                  <RejectionContextBanner rejection={order.strike_off_last_rejection} attemptNo={order.strike_off_attempt_no} sampleAreaLabel="Strike Off" size="sm" />
-                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('strike_off_status', v)} extra={<AttemptBadge attemptNo={order.strike_off_attempt_no} rejectionCount={order.strike_off_rejection_count} size="xs" />} />}
-                  {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} />}
-                  {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} />}
-                  <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="strike" size="sm" />
-                </div>
-              )}
-              {!hasComponents && (hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Lab Dip</p>
-                  <RejectionContextBanner rejection={order.lab_dip_last_rejection} attemptNo={order.lab_dip_attempt_no} sampleAreaLabel="Lab Dip" size="sm" />
-                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} extra={<AttemptBadge attemptNo={order.lab_dip_attempt_no} rejectionCount={order.lab_dip_rejection_count} size="xs" />} />}
-                  {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} />}
-                  {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} />}
-                  <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="lab" size="sm" />
-                </div>
-              )}
-              {(hasCol('pps_status') || hasCol('pps_received')) && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">PPS</p>
-                  <RejectionContextBanner rejection={order.pps_last_rejection} attemptNo={order.pps_attempt_no} sampleAreaLabel="PPS" size="sm" />
-                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} extra={<AttemptBadge attemptNo={order.pps_attempt_no} rejectionCount={order.pps_rejection_count} size="xs" />} />}
-                  {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} />}
-                  {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
-                  {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} />}
-                  <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="pps" size="sm" />
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-x-6 mt-1">
-              <div>
-                {hasCol('photo_sample_received') && <DetailRow label="Photo Sample Rcvd" value={formatDate(order.photo_sample_received)} />}
-                {hasCol('ex_factory_from_pp_approval') && <DetailRow label="Ex-Fac from PP Appr" value={formatDate(order.ex_factory_from_pp_approval)} />}
+                )}
               </div>
-              <div>
-                {hasCol('shipment_sample_received') && <DetailRow label="Shipment Sample Rcvd" value={formatDate(order.shipment_sample_received)} />}
+            </section>
+
+            <SectionDivider />
+
+            {/* Sampling */}
+            {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
+              <>
+                <section ref={samplingRef} className="px-6 pt-6 pb-3">
+                  <SectionHeader accent="amber" label="Sampling" badge={samplePending > 0 ? `${samplePending} pending` : undefined} badgeTone="amber" />
+
+                  {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                    <div className="mb-4">
+                      <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+                    </div>
+                  )}
+
+                  {!hasComponents && (hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                    <>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Order-level samples</div>
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
+                          <SampleCard label="Fit Sample">
+                            <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
+                            {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
+                            {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
+                            {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
+                            {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
+                            <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="fit" size="sm" />
+                          </SampleCard>
+                        )}
+                        {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
+                          <SampleCard label="Strike Off">
+                            <RejectionContextBanner rejection={order.strike_off_last_rejection} attemptNo={order.strike_off_attempt_no} sampleAreaLabel="Strike Off" size="sm" />
+                            {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('strike_off_status', v)} extra={<AttemptBadge attemptNo={order.strike_off_attempt_no} rejectionCount={order.strike_off_rejection_count} size="xs" />} />}
+                            {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} />}
+                            {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} />}
+                            <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="strike" size="sm" />
+                          </SampleCard>
+                        )}
+                        {(hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
+                          <SampleCard label="Lab Dip">
+                            <RejectionContextBanner rejection={order.lab_dip_last_rejection} attemptNo={order.lab_dip_attempt_no} sampleAreaLabel="Lab Dip" size="sm" />
+                            {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} extra={<AttemptBadge attemptNo={order.lab_dip_attempt_no} rejectionCount={order.lab_dip_rejection_count} size="xs" />} />}
+                            {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} />}
+                            {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} />}
+                            <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="lab" size="sm" />
+                          </SampleCard>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {(hasCol('pps_status') || hasCol('pps_received')) && (
+                    <>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">PPS · order-level</div>
+                      <SampleCard label="Pre-Production Sample" highlight>
+                        <RejectionContextBanner rejection={order.pps_last_rejection} attemptNo={order.pps_attempt_no} sampleAreaLabel="PPS" size="sm" />
+                        {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} extra={<AttemptBadge attemptNo={order.pps_attempt_no} rejectionCount={order.pps_rejection_count} size="xs" />} />}
+                        {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} />}
+                        {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} />}
+                        {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} />}
+                        <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="pps" size="sm" />
+                      </SampleCard>
+                    </>
+                  )}
+
+                  {(hasCol('photo_sample_received') || hasCol('shipment_sample_received') || hasCol('ex_factory_from_pp_approval')) && (
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                      {hasCol('photo_sample_received') && (
+                        <SampleCard label="Photo Sample">
+                          <DetailRow label="Received" value={formatDate(order.photo_sample_received)} />
+                        </SampleCard>
+                      )}
+                      {hasCol('shipment_sample_received') && (
+                        <SampleCard label="Shipment Sample">
+                          <DetailRow label="Received" value={formatDate(order.shipment_sample_received)} />
+                        </SampleCard>
+                      )}
+                      {hasCol('ex_factory_from_pp_approval') && (
+                        <SampleCard label="Ex-Fac from PP Approval">
+                          <DetailRow label="Date" value={formatDate(order.ex_factory_from_pp_approval)} />
+                        </SampleCard>
+                      )}
+                    </div>
+                  )}
+                </section>
+                <SectionDivider />
+              </>
+            )}
+
+            {/* Shipping */}
+            <section ref={shippingRef} className="px-6 pt-6 pb-3">
+              <SectionHeader accent="teal" label="Shipping" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Vessel</div>
+                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                    {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
+                    {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
+                    {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                    {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                    {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                    {order.tracking_reference && <DetailRow label="Tracking Ref" value={order.tracking_reference} />}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
+                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                    {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={formatDate(order.original_del_date_to_customer)} />}
+                    {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
+                    {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
+                    {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
+                    {hasCol('customer_po_open_month') && order.customer_po_open_month && <DetailRow label="Open Month" value={order.customer_po_open_month} />}
+                    {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && <DetailRow label="Expected UK Month" value={order.expected_dispatch_arrive_uk_month} />}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            </section>
 
-        {/* Shipping */}
-        {hasCol('vessel_name') && (
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Truck className="w-3.5 h-3.5" />
-              Shipping
-            </h4>
-            <div className="space-y-2">
-              {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-              {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-              {order.tracking_reference && <DetailRow label="Tracking Ref" value={order.tracking_reference} />}
-            </div>
-          </div>
-        )}
+            <SectionDivider />
 
-        {!hasCol('vessel_name') && order.tracking_reference && (
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-              <Truck className="w-3.5 h-3.5" />
-              Shipping
-            </h4>
-            <div className="bg-blue-50 rounded-xl px-4 py-3 text-sm font-medium text-blue-700">
-              {order.tracking_reference}
-            </div>
+            {/* Timeline */}
+            <section ref={timelineRef} className="px-6 pt-6 pb-6">
+              <SectionHeader accent="violet" label="Timeline" />
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="relative">
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
+                  <div className="space-y-0">
+                    {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} />}
+                    {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} />}
+                    {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} />}
+                    {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} />}
+                    {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} />}
+                    {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} />}
+                    {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                    {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
+                    {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                    {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                    {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                    {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
+                    {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
+                    {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
+                    {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} />}
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
-        )}
         </>
-        )}
-
-        </div>
-      </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
@@ -2031,16 +2151,27 @@ function ComponentFieldRow({
 
 // ─── Sub-components ────────────────────────────────────────
 
-function DetailRow({ label, value, editable, onSave, options, extra }: {
+function DetailRow({ label, value, editable, onSave, options, extra, type, rawValue }: {
   label: string;
   value: string | number | null | undefined;
   editable?: boolean;
   onSave?: (value: string) => void;
   options?: string[];
   extra?: React.ReactNode;
+  type?: 'text' | 'date';
+  rawValue?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(String(value || ''));
+  const [editValue, setEditValue] = useState('');
+
+  const startEdit = () => {
+    if (type === 'date' && rawValue) {
+      setEditValue(rawValue.split('T')[0]);
+    } else {
+      setEditValue(String(value || ''));
+    }
+    setEditing(true);
+  };
 
   const handleSave = (val?: string) => {
     onSave?.(val ?? editValue);
@@ -2048,8 +2179,8 @@ function DetailRow({ label, value, editable, onSave, options, extra }: {
   };
 
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-400 flex items-center gap-1">{label}{extra}</span>
+    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
       {editing ? (
         options ? (
           <StatusDropdown
@@ -2057,6 +2188,14 @@ function DetailRow({ label, value, editable, onSave, options, extra }: {
             options={options}
             onSave={(v) => handleSave(v)}
             onCancel={() => setEditing(false)}
+            size="sm"
+          />
+        ) : type === 'date' ? (
+          <DatePickerInput
+            value={editValue}
+            onChange={(v) => handleSave(v)}
+            onBlur={() => setEditing(false)}
+            autoFocus
             size="sm"
           />
         ) : (
@@ -2067,17 +2206,17 @@ function DetailRow({ label, value, editable, onSave, options, extra }: {
             onBlur={() => handleSave()}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
             autoFocus
-            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
+            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[180px] text-right"
           />
         )
       ) : (
         <span
           className={cn(
-            'text-xs font-medium text-gray-700 text-right max-w-[200px] truncate',
-            editable && 'cursor-pointer hover:text-primary-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-200/60'
+            'text-xs font-medium text-gray-800 text-right break-words min-w-0',
+            editable && 'cursor-pointer hover:text-primary-600'
           )}
-          onClick={() => editable && setEditing(true)}
-          title={editable ? 'Click to edit' : undefined}
+          onClick={() => { if (editable) startEdit(); }}
+          title={editable ? `${value || '—'} · click to edit` : (typeof value === 'string' ? value : undefined)}
         >
           {value || '—'}
         </span>
