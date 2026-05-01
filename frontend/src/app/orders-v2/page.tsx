@@ -138,9 +138,10 @@ function OrdersV2Content() {
   const viewParam = searchParams.get('view');
   const isFactoryView = viewParam === 'factory-product' || viewParam === 'factory-shipping';
 
-  // Deep-link params from dashboard warnings centre
+  // Deep-link params from dashboard warnings centre + activity feed
   const openStyleParam = searchParams.get('openStyle');
   const expandPOParam = searchParams.get('expandPO');
+  const styleCodeParam = searchParams.get('style_code');
 
   // Use local state for factory views, global store for main orders
   const [localOrders, setLocalOrders] = useState<Order[]>([]);
@@ -192,7 +193,7 @@ function OrdersV2Content() {
     loadOrders();
   }, []);
 
-  // Handle deep-link from dashboard warnings centre
+  // Handle deep-link from dashboard warnings centre + activity feed
   useEffect(() => {
     if (!orders.length) return;
     if (openStyleParam) {
@@ -202,6 +203,20 @@ function OrdersV2Content() {
         setExpandedPOs(prev => new Set(prev).add(found.po_number));
         setSelectedStyleId(id);
       }
+    } else if (styleCodeParam && expandPOParam) {
+      // Activity feed → click a style chip: find by (po_number, style_code) and open it
+      const found = orders.find(o => o.po_number === expandPOParam && o.style_code === styleCodeParam);
+      if (found) {
+        setExpandedPOs(prev => new Set(prev).add(found.po_number));
+        setSelectedStyleId(found.id);
+      } else {
+        // PO match without the style still expands the PO card
+        setExpandedPOs(prev => new Set(prev).add(expandPOParam));
+        setTimeout(() => {
+          const el = document.getElementById(`po-card-${expandPOParam}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
+      }
     } else if (expandPOParam) {
       setExpandedPOs(prev => new Set(prev).add(expandPOParam));
       // Scroll to the PO card
@@ -210,7 +225,7 @@ function OrdersV2Content() {
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 200);
     }
-  }, [orders.length, openStyleParam, expandPOParam]);
+  }, [orders.length, openStyleParam, expandPOParam, styleCodeParam]);
 
   // Group orders by PO number
   const poGroups = useMemo(() => {
