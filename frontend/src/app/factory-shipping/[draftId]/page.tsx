@@ -62,22 +62,22 @@ function DraftDetail() {
     return map;
   }, [draft]);
 
-  const refresh = useCallback(async () => {
+  // Initial load — shows the page spinner. Run once on mount.
+  const loadAll = useCallback(async () => {
     if (!draftId) return;
     setIsLoading(true);
     try {
-      // Fetch the draft first so we know which factory to scope the picker to
-      // (suppliers auto-scope server-side, but internal/admin must pass it).
       const d = await shipmentDraftsApi.get(draftId);
       setDraft(d);
       const p = await shipmentDraftsApi.pickerOrders(d.factory).catch((err) => {
-        // Surface 400/403 errors so we don't silently show "No orders" forever.
         const msg = err?.response?.data?.detail;
         if (msg) toast.error(`Picker: ${msg}`);
         return { pos: [] };
       });
       setPos(p.pos);
-      // Sync edit state with server values.
+      // Sync edit state with server values on initial load. Subsequent
+      // refreshes don't touch these — the user's mid-edits would otherwise
+      // get clobbered.
       setReference(d.reference);
       setName(d.name || '');
       setFclLcl(d.fcl_lcl || '');
@@ -92,7 +92,25 @@ function DraftDetail() {
     }
   }, [draftId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  // Silent refresh — used after toggle/qty/save actions. Only refetches the
+  // draft (not the picker — picker data is effectively static during a
+  // session) and never blanks the UI with the page-level spinner.
+  const refreshDraft = useCallback(async () => {
+    if (!draftId) return;
+    try {
+      const d = await shipmentDraftsApi.get(draftId);
+      setDraft(d);
+    } catch {
+      // Silent — the action that triggered this refresh already toasts errors.
+    }
+  }, [draftId]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Backwards-compat alias so existing call sites in the file (handleSave,
+  // handleConfirm) keep working. handleSave needs server values written back
+  // so we still want a draft refetch — but quietly.
+  const refresh = refreshDraft;
 
   const handleSave = async () => {
     if (!draft) return;
