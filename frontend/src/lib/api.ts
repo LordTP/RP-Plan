@@ -1065,4 +1065,132 @@ export const submissionsApi = {
   },
 };
 
+// Shipment draft endpoints — factories build a draft manifest, confirm to push
+// the 5 shared shipping fields onto every linked order.
+export type ShipmentDraftStatus = 'draft' | 'confirmed' | 'cancelled';
+
+export interface ShipmentDraftSummary {
+  id: number;
+  reference: string;
+  name: string | null;
+  factory: string;
+  status: ShipmentDraftStatus;
+  fcl_lcl: string | null;
+  vessel_name: string | null;
+  vessel_etd: string | null;
+  vessel_eta_to_port: string | null;
+  tracking_reference: string | null;
+  created_by_id: number;
+  confirmed_by_id: number | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  order_count: number;
+  unit_count: number;
+  created_by: { username: string | null; full_name: string | null } | null;
+  confirmed_by: { username: string; full_name: string | null } | null;
+}
+
+export interface ShipmentDraftOrderRow {
+  link_id: number;
+  order_id: number;
+  po_number: string | null;
+  china_orderbook_ref: string | null;
+  style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  customer: string | null;
+  total_quantity: number | null;
+  quantity: number | null;
+}
+
+export interface ShipmentDraftDetail extends ShipmentDraftSummary {
+  orders: ShipmentDraftOrderRow[];
+}
+
+export interface PickerStyle {
+  order_id: number;
+  style_code: string | null;
+  customer_style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  total_quantity: number | null;
+  in_drafts: Array<{
+    draft_id: number;
+    reference: string;
+    name: string | null;
+    status: ShipmentDraftStatus;
+    quantity: number | null;
+  }>;
+}
+
+export interface PickerPO {
+  po_number: string;
+  china_orderbook_ref: string | null;
+  customer: string | null;
+  styles: PickerStyle[];
+}
+
+export const shipmentDraftsApi = {
+  list: async (status?: ShipmentDraftStatus): Promise<{ drafts: ShipmentDraftSummary[] }> => {
+    const params = status ? { params: { status } } : undefined;
+    const response = await api.get('/api/shipment-drafts', params);
+    return response.data;
+  },
+  get: async (id: number): Promise<ShipmentDraftDetail> => {
+    const response = await api.get(`/api/shipment-drafts/${id}`);
+    return response.data;
+  },
+  create: async (body: {
+    factory: string;
+    name?: string | null;
+    fcl_lcl?: string | null;
+    vessel_name?: string | null;
+    vessel_etd?: string | null;
+    vessel_eta_to_port?: string | null;
+    tracking_reference?: string | null;
+    order_ids?: number[];
+  }): Promise<ShipmentDraftDetail> => {
+    const response = await api.post('/api/shipment-drafts', body);
+    return response.data;
+  },
+  update: async (id: number, body: Partial<{
+    reference: string;
+    name: string | null;
+    fcl_lcl: string | null;
+    vessel_name: string | null;
+    vessel_etd: string | null;
+    vessel_eta_to_port: string | null;
+    tracking_reference: string | null;
+  }>): Promise<ShipmentDraftDetail> => {
+    const response = await api.put(`/api/shipment-drafts/${id}`, body);
+    return response.data;
+  },
+  remove: async (id: number): Promise<{ ok: boolean }> => {
+    const response = await api.delete(`/api/shipment-drafts/${id}`);
+    return response.data;
+  },
+  addOrders: async (id: number, orderIds: number[]): Promise<{ ok: boolean; added: number }> => {
+    const response = await api.post(`/api/shipment-drafts/${id}/orders`, { order_ids: orderIds });
+    return response.data;
+  },
+  removeOrder: async (id: number, orderId: number): Promise<{ ok: boolean }> => {
+    const response = await api.delete(`/api/shipment-drafts/${id}/orders/${orderId}`);
+    return response.data;
+  },
+  updateOrderQuantity: async (id: number, orderId: number, quantity: number | null): Promise<{ ok: boolean; quantity: number | null }> => {
+    const response = await api.put(`/api/shipment-drafts/${id}/orders/${orderId}`, { quantity });
+    return response.data;
+  },
+  pickerOrders: async (factory?: string): Promise<{ pos: PickerPO[] }> => {
+    const params = factory ? { params: { factory } } : undefined;
+    const response = await api.get('/api/shipment-drafts/picker/orders', params);
+    return response.data;
+  },
+  confirm: async (id: number): Promise<ShipmentDraftDetail> => {
+    const response = await api.post(`/api/shipment-drafts/${id}/confirm`);
+    return response.data;
+  },
+};
+
 export default api;

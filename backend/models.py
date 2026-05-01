@@ -388,6 +388,75 @@ SAMPLE_REJECT_REASONS = [
 SAMPLE_TYPES = ('fit', 'strike', 'lab', 'pps')
 
 
+class ShipmentDraft(Base):
+    """A factory's draft (or confirmed) shipment manifest.
+
+    Factories build a draft by picking SKUs from their PO list and filling in
+    the 5 shared shipping fields (FCL/LCL, vessel name, ETD, ETA, tracking #).
+    "Confirm" copies those fields onto every linked order row in one go and
+    locks the draft. Multiple drafts can exist concurrently; an SKU can sit
+    in more than one draft at the same time, but the UI flags the case where
+    it's already been confirmed in a prior shipment so the user knows the
+    confirm will overwrite previously-applied values.
+
+    Bypasses the supplier-approval pending-change flow that single-row date
+    edits go through — the draft is itself the approval surface for the
+    factory's shipping data.
+    """
+    __tablename__ = "shipment_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Auto-generated reference like DRAFT-2026-04-25-001 (per-day counter).
+    # Editable by the user, no uniqueness constraint since users may want to
+    # rename freely. The numeric counter is just a default seed.
+    reference = Column(String(100), nullable=False, index=True)
+    # Optional friendly name like "Container ABC123" or "SS26 air freight batch".
+    name = Column(String(255), nullable=True)
+    factory = Column(String(100), nullable=False, index=True)
+    # 'draft' | 'confirmed' | 'cancelled'
+    status = Column(String(20), nullable=False, default='draft', index=True)
+
+    # Shared shipping fields applied to every linked order on confirm.
+    fcl_lcl = Column(String(20), nullable=True)
+    vessel_name = Column(String(100), nullable=True)
+    vessel_etd = Column(DateTime, nullable=True)
+    vessel_eta_to_port = Column(DateTime, nullable=True)
+    tracking_reference = Column(String(100), nullable=True)
+
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    confirmed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    orders = relationship("ShipmentDraftOrder", back_populates="draft", cascade="all, delete-orphan")
+
+
+class ShipmentDraftOrder(Base):
+    """Many-to-many link between a draft and the orders it ships, plus the
+    quantity of each SKU in this specific shipment. Defaults to the full PO
+    line quantity but is editable so factories can declare partial shipments
+    (only storage for now — no other surface uses this yet)."""
+    __tablename__ = "shipment_draft_orders"
+    __table_args__ = (
+        UniqueConstraint('draft_id', 'order_id', name='uq_shipment_draft_order'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    draft_id = Column(Integer, ForeignKey("shipment_drafts.id", ondelete="CASCADE"), nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    # How much of this SKU is in this shipment. Defaults to the order's total_quantity
+    # at time of add; the user can override to support partial shipments.
+    quantity = Column(Integer, nullable=True)
+
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    draft = relationship("ShipmentDraft", back_populates="orders")
+
+
 class PendingDateChange(Base):
     """Tracks date changes from suppliers awaiting approval"""
     __tablename__ = "pending_date_changes"
