@@ -66,11 +66,16 @@ function DraftDetail() {
     if (!draftId) return;
     setIsLoading(true);
     try {
-      const [d, p] = await Promise.all([
-        shipmentDraftsApi.get(draftId),
-        shipmentDraftsApi.pickerOrders().catch(() => ({ pos: [] })),
-      ]);
+      // Fetch the draft first so we know which factory to scope the picker to
+      // (suppliers auto-scope server-side, but internal/admin must pass it).
+      const d = await shipmentDraftsApi.get(draftId);
       setDraft(d);
+      const p = await shipmentDraftsApi.pickerOrders(d.factory).catch((err) => {
+        // Surface 400/403 errors so we don't silently show "No orders" forever.
+        const msg = err?.response?.data?.detail;
+        if (msg) toast.error(`Picker: ${msg}`);
+        return { pos: [] };
+      });
       setPos(p.pos);
       // Sync edit state with server values.
       setReference(d.reference);
@@ -427,6 +432,7 @@ function DraftDetail() {
       {showConfirmModal && draft && (
         <ConfirmShipmentModal
           draft={draft}
+          pos={pos}
           editedFields={{
             reference,
             name: name || null,
@@ -631,57 +637,70 @@ function StyleRow({
 
   return (
     <div className={cn(
-      'px-3 pl-9 py-1.5 flex items-center gap-2 text-xs',
+      'px-3 pl-9 py-1.5 text-xs',
       isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'
     )}>
-      <input
-        type="checkbox"
-        checked={isSelected}
-        onChange={onToggle}
-        className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-      />
-      <div className="flex-1 min-w-0 flex items-center gap-2">
-        <span className="font-mono text-[11px] text-gray-700 flex-shrink-0">{style.style_code || `#${style.order_id}`}</span>
-        <span className="text-gray-500 truncate flex-1">{style.description || '—'}</span>
-        {style.colour && <span className="text-gray-400 truncate max-w-[80px]">{style.colour}</span>}
-      </div>
-      {/* Warnings about other drafts/confirmed shipments */}
-      {inConfirmed && (
-        <span title={`Already confirmed in ${inConfirmed.reference}. Confirming this draft will overwrite that shipment's values for this SKU.`}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200">
-          <AlertTriangle className="w-2.5 h-2.5" />
-          {inConfirmed.reference}
-        </span>
-      )}
-      {!inConfirmed && inOtherDraft && (
-        <span title={`Also in draft ${inOtherDraft.reference}`}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-          in {inOtherDraft.reference}
-        </span>
-      )}
-      {/* Qty input — only when this SKU is in the current draft */}
-      {isSelected ? (
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <input
-            type="number"
-            min={1}
-            max={total}
-            value={localQty}
-            onChange={(e) => setLocalQty(e.target.value)}
-            onBlur={() => {
-              const num = parseInt(localQty, 10);
-              if (!isNaN(num) && num !== quantityInDraft && num > 0 && (!total || num <= total)) {
-                onQuantityChange(num);
-              } else if (isNaN(num) || num <= 0) {
-                setLocalQty(quantityInDraft != null ? String(quantityInDraft) : '');
-              }
-            }}
-            className="w-16 px-1.5 py-0.5 text-[11px] text-right border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-          />
-          <span className="text-[10px] text-gray-400 whitespace-nowrap">of {total.toLocaleString()}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggle}
+          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="font-mono text-[11px] text-gray-700 flex-shrink-0">{style.style_code || `#${style.order_id}`}</span>
+          <span className="text-gray-500 truncate flex-1">{style.description || '—'}</span>
+          {style.colour && (
+            <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] font-medium uppercase tracking-wide">
+              {style.colour}
+            </span>
+          )}
         </div>
-      ) : (
-        <span className="text-[10px] text-gray-400 flex-shrink-0">{total.toLocaleString()}</span>
+        {isSelected ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <input
+              type="number"
+              min={1}
+              max={total}
+              value={localQty}
+              onChange={(e) => setLocalQty(e.target.value)}
+              onBlur={() => {
+                const num = parseInt(localQty, 10);
+                if (!isNaN(num) && num !== quantityInDraft && num > 0 && (!total || num <= total)) {
+                  onQuantityChange(num);
+                } else if (isNaN(num) || num <= 0) {
+                  setLocalQty(quantityInDraft != null ? String(quantityInDraft) : '');
+                }
+              }}
+              className="w-16 px-1.5 py-0.5 text-[11px] text-right border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+            />
+            <span className="text-[10px] text-gray-400 whitespace-nowrap">of {total.toLocaleString()}</span>
+          </div>
+        ) : (
+          <span className="text-[10px] text-gray-400 flex-shrink-0">{total.toLocaleString()}</span>
+        )}
+      </div>
+      {/* Conflict sub-line — sits indented below the row when applicable. */}
+      {(inConfirmed || inOtherDraft) && (
+        <div className="pl-[22px] mt-0.5">
+          {inConfirmed ? (
+            <span
+              title={`Confirmed in ${inConfirmed.reference}. Confirming this draft will overwrite those values.`}
+              className="text-[10px] font-medium text-red-600 inline-flex items-center gap-1"
+            >
+              <AlertTriangle className="w-2.5 h-2.5" />
+              Will overwrite {inConfirmed.reference}
+            </span>
+          ) : inOtherDraft ? (
+            <span
+              title={`Also in draft ${inOtherDraft.reference}`}
+              className="text-[10px] font-medium text-amber-600 inline-flex items-center gap-1"
+            >
+              <span className="w-1 h-1 rounded-full bg-amber-500" />
+              Already in {inOtherDraft.reference}
+            </span>
+          ) : null}
+        </div>
       )}
     </div>
   );
@@ -689,12 +708,14 @@ function StyleRow({
 
 function ConfirmShipmentModal({
   draft,
+  pos,
   editedFields,
   isConfirming,
   onCancel,
   onConfirm,
 }: {
   draft: ShipmentDraftDetail;
+  pos: PickerPO[];
   editedFields: {
     reference: string;
     name: string | null;
@@ -726,10 +747,26 @@ function ConfirmShipmentModal({
   const totalSkus = draft.orders.length;
   const totalUnits = draft.orders.reduce((s, o) => s + (o.quantity || 0), 0);
 
-  // Detect partial-shipment SKUs (qty < total_quantity) and SKUs already in confirmed shipments.
-  // The confirmed-shipment data isn't on the order rows — server-side responsibility — so we
-  // just rely on any visual "would overwrite" hints already shown in the picker.
   const partials = draft.orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity);
+
+  // Cross-reference picker data to find SKUs in this draft that are ALSO already
+  // confirmed in another shipment — confirming this draft will overwrite the
+  // shipping fields previously applied. This is the safety check.
+  const overwriteByOrderId = useMemo(() => {
+    const map = new Map<number, { reference: string; name: string | null }>();
+    for (const p of pos) {
+      for (const s of p.styles) {
+        const confirmedConflict = (s.in_drafts || []).find(
+          d => d.draft_id !== draft.id && d.status === 'confirmed'
+        );
+        if (confirmedConflict) {
+          map.set(s.order_id, { reference: confirmedConflict.reference, name: confirmedConflict.name });
+        }
+      }
+    }
+    return map;
+  }, [pos, draft.id]);
+  const overwriteCount = draft.orders.filter(o => overwriteByOrderId.has(o.order_id)).length;
 
   let etd = '—', eta = '—';
   try { if (editedFields.vessel_etd) etd = format(parseISO(editedFields.vessel_etd), 'd MMM yyyy'); } catch {}
@@ -804,6 +841,16 @@ function ConfirmShipmentModal({
             </div>
           </div>
 
+          {/* Overwrite warning — SKUs already confirmed in another shipment */}
+          {overwriteCount > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+              <div className="text-[11px] text-red-900 leading-relaxed">
+                <strong>{overwriteCount} SKU{overwriteCount === 1 ? '' : 's'} already confirmed in {overwriteCount === 1 ? 'another shipment' : 'other shipments'}.</strong> Confirming will <strong>overwrite</strong> the previously-applied vessel / ETD / ETA / tracking values for those rows. Specific shipments are flagged in the SKU list below.
+              </div>
+            </div>
+          )}
+
           {/* Partial shipment warning */}
           {partials.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
@@ -829,11 +876,21 @@ function ConfirmShipmentModal({
                   <div className="divide-y divide-gray-100">
                     {g.orders.map((o) => {
                       const isPartial = o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity;
+                      const overwrite = overwriteByOrderId.get(o.order_id);
                       return (
-                        <div key={o.link_id} className="px-3 py-1.5 flex items-center gap-2 text-[11px]">
+                        <div key={o.link_id} className={cn('px-3 py-1.5 flex items-center gap-2 text-[11px]', overwrite && 'bg-red-50/40')}>
                           <span className="font-mono text-gray-700 flex-shrink-0">{o.style_code || `#${o.order_id}`}</span>
                           <span className="text-gray-500 truncate flex-1">{o.description || '—'}</span>
                           {o.colour && <span className="text-gray-400 truncate max-w-[80px]">{o.colour}</span>}
+                          {overwrite && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-700 border border-red-200 flex-shrink-0"
+                              title={`Currently confirmed in ${overwrite.reference}${overwrite.name ? ` (${overwrite.name})` : ''} — confirming overwrites those values.`}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              overwrites {overwrite.reference}
+                            </span>
+                          )}
                           <span className={cn('flex items-center gap-1 flex-shrink-0', isPartial ? 'text-amber-700' : 'text-gray-700')}>
                             {(o.quantity || 0).toLocaleString()}
                             <span className="text-gray-400">/{(o.total_quantity || 0).toLocaleString()}</span>
