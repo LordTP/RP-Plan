@@ -125,7 +125,7 @@ function DraftsListPage() {
                 <Ship className="w-5 h-5 text-teal-600" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-base font-bold text-gray-900">Shipment drafts</h3>
+                <h3 className="text-base font-bold text-gray-900">Shipments</h3>
                 <p className="text-xs text-gray-500 truncate">
                   {isLoading ? 'Loading…'
                     : isSupplier

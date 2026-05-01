@@ -5,6 +5,7 @@ import { X, Check, Inbox, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { submissionsApi, type SampleType } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 
 type ActionKind = 'approve' | 'markReceived';
 
@@ -172,12 +173,7 @@ export function ScopeActionModal({
               <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">
                 Received date
               </label>
-              <input
-                type="date"
-                value={receivedAt}
-                onChange={(e) => setReceivedAt(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent"
-              />
+              <DatePickerInput value={receivedAt} onChange={setReceivedAt} variant="block" size="sm" />
             </div>
           )}
 

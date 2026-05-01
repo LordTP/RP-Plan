@@ -5,6 +5,7 @@ import { Check, X, Loader2 } from 'lucide-react';
 import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from '@/lib/utils';
 import { ordersApi } from '@/lib/api';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import type { ColumnDef, Order } from '@/types';
 
 type ApplyMode = 'single' | 'all' | 'selected';
@@ -311,10 +312,18 @@ export function EditableCell({
                   disabled={isSaving}
                   placeholder={`Enter ${column.label.toLowerCase()}`}
                 />
+              ) : column.type === 'date' ? (
+                <DatePickerInput
+                  value={editValue}
+                  onChange={setEditValue}
+                  variant="block"
+                  size="md"
+                  disabled={isSaving}
+                />
               ) : (
                 <input
                   ref={inputRef as React.RefObject<HTMLInputElement>}
-                  type={column.type === 'date' ? 'date' : column.type === 'number' || column.type === 'currency' ? 'number' : 'text'}
+                  type={column.type === 'number' || column.type === 'currency' ? 'number' : 'text'}
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
                   onKeyDown={handleKeyDown}

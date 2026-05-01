@@ -33,6 +33,7 @@ import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -867,227 +868,27 @@ function DetailPanel({
         </div>
       </div>
 
-      {/* Content - 2 column layout. Details tab scrolls; Comments tab fills
-          the modal height instead so the panel doesn't visibly grow/shrink as
-          the user toggles between tabs. */}
-      <div
-        ref={modalContentRef}
-        className={cn(
-          'flex-1 min-h-0',
-          modalTab === 'comments'
-            ? 'overflow-hidden p-6 flex'
-            : 'overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6'
-        )}
-      >
-        {/* LEFT COLUMN - 2/5: Product info + Stats (hidden when comments tab active) */}
-        <div className={cn('lg:col-span-2 space-y-5', modalTab === 'comments' && 'hidden')}>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {hasCol('total_quantity') && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatQty(order.total_quantity)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Total Qty</p>
-            </div>
-          )}
-          {hasCol('trade_price') && !isDesigner && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatCurrency(order.trade_price)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Cost Price</p>
-            </div>
-          )}
-          {hasCol('total_order_value') && !isDesigner && (
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-lg font-bold text-gray-900">{formatCurrency(order.total_order_value)}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Order Value</p>
-            </div>
-          )}
-        </div>
-
-        {/* Size Breakdown */}
-        {sizes.length > 0 && (
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5" />
-              Size Breakdown
-            </h4>
-            <div className="space-y-1.5">
-              {sizes.map(s => (
-                <div key={s.label} className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-gray-500 w-8 text-right">{s.label}</span>
-                  <div className="flex-1 h-6 bg-gray-100 rounded-md overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-primary-400 to-primary-500 rounded-md flex items-center justify-end pr-2 transition-all duration-500"
-                      style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
-                    >
-                      <span className="text-[10px] font-bold text-white">{s.value}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Product Info */}
-        <div>
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Package className="w-3.5 h-3.5" />
-            Product Details
-          </h4>
-          <div className="space-y-2">
-            {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} onSave={(v) => onSave?.(order.id, 'description', v)} />}
-            {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} onSave={(v) => onSave?.(order.id, 'customer', v)} />}
-            {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
-            {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
-            {hasCol('china_orderbook_ref') && <DetailRow label="China Orderbook Ref" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
-            {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} onSave={(v) => onSave?.(order.id, 'season', v)} />}
-            {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} onSave={(v) => onSave?.(order.id, 'factory', v)} />}
-            {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
-            {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} onSave={(v) => onSave?.(order.id, 'terms', v)} />}
-            {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
-            {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
-          </div>
-        </div>
-
-        {/* Shipping */}
-        {(hasCol('vessel_name') || hasCol('fcl_lcl') || order.tracking_reference) && (
-          <div>
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Truck className="w-3.5 h-3.5" />
-              Shipping
-            </h4>
-            <div className="space-y-2">
-              {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-              {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-              {order.tracking_reference && <DetailRow label="Tracking Ref" value={order.tracking_reference} editable={canEdit('tracking_reference')} onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
-            </div>
-          </div>
-        )}
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <div className={cn('flex flex-col gap-5', modalTab === 'comments' ? 'flex-1 min-h-0' : 'lg:col-span-3')}>
-
-        {modalTab === 'comments' ? (
+      {/* Body — Comments tab keeps its own full-height layout. Details tab uses
+          the new hero + sticky pill nav + scroll-of-sections layout. */}
+      {modalTab === 'comments' ? (
+        <div ref={modalContentRef} className="flex-1 min-h-0 overflow-hidden p-6 flex">
           <div className="flex-1 min-h-0">
             <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
           </div>
-        ) : (
-        <>
-        {/* Timeline / Key Dates */}
-        <div className="order-3">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5" />
-            Timeline
-          </h4>
-          <div className="relative">
-            {/* Vertical line */}
-            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
-
-            <div className="space-y-0">
-              {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} editable={canEdit('order_received_date')} onSave={(v) => onSave?.(order.id, 'order_received_date', v)} />}
-              {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} editable={canEdit('order_sent_to_factory_date')} onSave={(v) => onSave?.(order.id, 'order_sent_to_factory_date', v)} />}
-              {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} editable={canEdit('tech_packs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'tech_packs_sent_to_factory', v)} />}
-              {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} editable={canEdit('specs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'specs_sent_to_factory', v)} />}
-              {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
-              {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
-              {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
-              {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
-              {hasCol('original_del_date_to_customer') && <TimelineItem label="Cust Req Delivery" date={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
-              {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
-              {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
-              {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-              {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-              {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-              {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
-            </div>
-          </div>
-          {hasCol('customer_po_open_month') && order.customer_po_open_month && (
-            <div className="mt-3 flex items-center gap-2 text-xs">
-              <span className="text-gray-400">PO Open Month:</span>
-              <span className="font-medium text-gray-700">{order.customer_po_open_month}</span>
-            </div>
-          )}
-          {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && (
-            <div className="mt-1 flex items-center gap-2 text-xs">
-              <span className="text-gray-400">Expected UK Month:</span>
-              <span className="font-medium text-gray-700">{order.expected_dispatch_arrive_uk_month}</span>
-            </div>
-          )}
         </div>
-
-        {/* Components — shown before samples so component data takes priority */}
-        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
-          <div className="order-1">
-            <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
-          </div>
-        )}
-
-        {/* Samples — fit/strike off/lab dip rows hidden when components exist */}
-        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
-          <div className="order-2">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Clock className="w-3.5 h-3.5" />
-              Samples
-            </h4>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-0">
-              {/* Fit Sample */}
-              {!hasComponents && (hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                <div>
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Fit Sample</p>
-                  {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
-                  {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
-                  {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
-                  {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
-                </div>
-              )}
-              {/* Strike Off */}
-              {!hasComponents && (hasCol('strike_off_status') || hasCol('strike_off_received')) && (
-                <div>
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-3 first:mt-1">Strike Off</p>
-                  {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
-                  {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
-                  {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
-                </div>
-              )}
-              {/* Lab Dip */}
-              {!hasComponents && (hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
-                <div className="pt-6">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Lab Dip</p>
-                  {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
-                  {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
-                  {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
-                </div>
-              )}
-              {/* PPS */}
-              {(hasCol('pps_status') || hasCol('pps_received')) && (
-                <div className="pt-6">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">PPS</p>
-                  {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
-                  {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
-                  {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
-                  {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
-                </div>
-              )}
-            </div>
-            {/* Other samples */}
-            <div className="grid grid-cols-2 gap-x-6 mt-4">
-              <div>
-                {hasCol('photo_sample_received') && <DetailRow label="Photo Sample Rcvd" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />}
-                {hasCol('ex_factory_from_pp_approval') && <DetailRow label="Ex-Fac from PP Appr" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />}
-              </div>
-              <div>
-                {hasCol('shipment_sample_received') && <DetailRow label="Shipment Sample Rcvd" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />}
-              </div>
-            </div>
-          </div>
-        )}
-        </>
-        )}
-
-        </div>
-      </div>
+      ) : (
+        <DetailBody
+          order={order}
+          hasCol={hasCol}
+          canEdit={canEdit}
+          isSupplier={isSupplier}
+          isDesigner={!!isDesigner}
+          onSave={onSave}
+          modalContentRef={modalContentRef}
+          sizes={sizes}
+          maxSize={maxSize}
+        />
+      )}
 
       {/* Footer */}
       <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
@@ -1095,6 +896,491 @@ function DetailPanel({
           Updated {timeAgo(order.updated_at)}
         </p>
       </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Detail body — new hybrid layout (hero + sticky pill nav + scroll sections) ───
+
+function DetailBody({
+  order,
+  hasCol,
+  canEdit,
+  isSupplier,
+  isDesigner,
+  onSave,
+  modalContentRef,
+  sizes,
+  maxSize,
+}: {
+  order: Order;
+  hasCol: (key: string) => boolean;
+  canEdit: (key: string) => boolean;
+  isSupplier: boolean;
+  isDesigner: boolean;
+  onSave?: (orderId: number, field: string, value: any) => void;
+  modalContentRef: React.RefObject<HTMLDivElement>;
+  sizes: { label: string; value: number }[];
+  maxSize: number;
+}) {
+  const [hasComponents, setHasComponents] = useState(false);
+  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
+
+  // Refs to each section so the sticky pill nav can scroll-to + we can flip
+  // the active pill based on which section is currently in view.
+  const productRef = useRef<HTMLElement>(null);
+  const samplingRef = useRef<HTMLElement>(null);
+  const shippingRef = useRef<HTMLElement>(null);
+  const timelineRef = useRef<HTMLElement>(null);
+
+  const sectionRefs = {
+    product: productRef,
+    sampling: samplingRef,
+    shipping: shippingRef,
+    timeline: timelineRef,
+  } as const;
+
+  const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
+    const el = sectionRefs[key].current;
+    const scroller = modalContentRef.current;
+    if (!el || !scroller) return;
+    const top = el.offsetTop - 80; // leave room for the sticky pill nav
+    scroller.scrollTo({ top, behavior: 'smooth' });
+  };
+
+  // Track which section is most-visible as the user scrolls so we can
+  // highlight the matching pill. IntersectionObserver-lite via scroll listener.
+  useEffect(() => {
+    const scroller = modalContentRef.current;
+    if (!scroller) return;
+    const onScroll = () => {
+      const top = scroller.scrollTop + 100;
+      const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
+      let current: typeof order[number] = 'product';
+      for (const key of order) {
+        const el = sectionRefs[key].current;
+        if (el && el.offsetTop <= top) current = key;
+      }
+      setActiveSection(current);
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sampling progress badge — count distinct sample types and how many are done.
+  // For the hero strip; also used to show "1 pending" on the Sampling pill.
+  const sampleProgress = useMemo(() => {
+    const items: { label: string; done: boolean }[] = [];
+    if (hasComponents) {
+      // When components exist, the count lives inside ComponentsSection — we can't
+      // accurately mirror it here without re-fetching, so fall back to PPS only.
+      if (hasCol('pps_status')) {
+        const s = (order.pps_status || '').toUpperCase();
+        items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
+      return items;
+    }
+    if (hasCol('fit_sample_status')) {
+      const s = (order.fit_sample_status || '').toUpperCase();
+      items.push({ label: 'Fit', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('strike_off_status')) {
+      const s = (order.strike_off_status || '').toUpperCase();
+      items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('lab_dip_status')) {
+      const s = (order.lab_dip_status || '').toUpperCase();
+      items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    if (hasCol('pps_status')) {
+      const s = (order.pps_status || '').toUpperCase();
+      items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    }
+    return items;
+  }, [order, hasCol, hasComponents]);
+  const sampleDone = sampleProgress.filter(s => s.done).length;
+  const sampleTotal = sampleProgress.length;
+  const samplePending = sampleTotal - sampleDone;
+
+  // Days until ex-factory for the hero tile colour.
+  const exFacDate = order.factory_confirmed_ex_factory || order.original_po_ex_factory;
+  const daysToExFac = useMemo(() => {
+    if (!exFacDate) return null;
+    try {
+      const d = new Date(exFacDate);
+      const now = new Date();
+      return Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    } catch { return null; }
+  }, [exFacDate]);
+
+  const exFacTone = daysToExFac == null
+    ? 'border-gray-200 bg-white'
+    : daysToExFac < 0
+    ? 'border-red-200 bg-red-50/30'
+    : daysToExFac < 7
+    ? 'border-amber-200 bg-amber-50/30'
+    : 'border-gray-200 bg-white';
+
+  const showSamplingTile = sampleTotal > 0;
+  const showExFacTile = !!exFacDate;
+  const showCostTile = hasCol('trade_price') && !isDesigner && !isSupplier;
+  const showValueTile = hasCol('total_order_value') && !isDesigner && !isSupplier;
+
+  return (
+    <>
+      {/* Hero stat strip — always visible, "what do I need to know at a glance". */}
+      <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, showCostTile || showValueTile, showExFacTile, hasCol('eta_to_customer'), showSamplingTile].filter(Boolean).length}, minmax(0, 1fr))` }}>
+        <HeroTile label="Total Qty" value={formatQty(order.total_quantity)} />
+        {showValueTile ? (
+          <HeroTile
+            label="Order Value"
+            value={formatCurrency(order.total_order_value)}
+            sub={hasCol('trade_price') ? `${formatCurrency(order.trade_price)} cost` : undefined}
+          />
+        ) : showCostTile ? (
+          <HeroTile label="Cost Price" value={formatCurrency(order.trade_price)} />
+        ) : null}
+        {showExFacTile && (
+          <HeroTile
+            label="Ex-Factory"
+            value={formatDate(exFacDate)}
+            sub={daysToExFac != null ? (daysToExFac < 0 ? `${Math.abs(daysToExFac)}d overdue` : `in ${daysToExFac}d`) : undefined}
+            tone={exFacTone}
+          />
+        )}
+        {hasCol('eta_to_customer') && (
+          <HeroTile
+            label="ETA Customer"
+            value={formatDate(order.eta_to_customer)}
+            sub={order.vessel_name ? `via ${order.vessel_name}` : undefined}
+          />
+        )}
+        {showSamplingTile && (
+          <HeroTile
+            label="Sampling"
+            value={`${sampleDone} of ${sampleTotal}`}
+            sub={samplePending > 0 ? `${samplePending} pending` : 'all done'}
+            tone={samplePending > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/30'}
+          />
+        )}
+      </div>
+
+      {/* Sticky pill nav */}
+      <div className="px-6 py-2 border-b border-gray-200 bg-white/95 backdrop-blur flex items-center gap-1.5 flex-shrink-0">
+        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-2">Jump to</span>
+        <SectionPill active={activeSection === 'product'} label="Product" onClick={() => scrollToSection('product')} />
+        <SectionPill
+          active={activeSection === 'sampling'}
+          label="Sampling"
+          badge={samplePending > 0 ? `${samplePending} pending` : undefined}
+          badgeTone="amber"
+          onClick={() => scrollToSection('sampling')}
+        />
+        <SectionPill active={activeSection === 'shipping'} label="Shipping" onClick={() => scrollToSection('shipping')} />
+        <SectionPill active={activeSection === 'timeline'} label="Timeline" onClick={() => scrollToSection('timeline')} />
+      </div>
+
+      {/* Scroll body — all sections rendered, separated by dividers */}
+      <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
+
+        {/* ─── Product section ─── */}
+        <section ref={productRef} className="px-6 pt-6 pb-3">
+          <SectionHeader accent="blue" label="Product" />
+          <div className="grid grid-cols-2 gap-4">
+            {/* Product details card */}
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+              {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} onSave={(v) => onSave?.(order.id, 'description', v)} />}
+              {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} onSave={(v) => onSave?.(order.id, 'customer', v)} />}
+              {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
+              {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
+              {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
+              {hasCol('colour') && <DetailRow label="Colour" value={order.colour} editable={canEdit('colour')} onSave={(v) => onSave?.(order.id, 'colour', v)} />}
+              {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
+              {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} onSave={(v) => onSave?.(order.id, 'season', v)} />}
+              {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} onSave={(v) => onSave?.(order.id, 'factory', v)} />}
+              {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} onSave={(v) => onSave?.(order.id, 'terms', v)} />}
+              {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
+              {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
+            </div>
+            {/* Size breakdown card */}
+            {sizes.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
+                  <SizeGuideTooltip gender={order.gender} />
+                </div>
+                <div className="space-y-1.5">
+                  {sizes.map(s => (
+                    <div key={s.label} className="flex items-center gap-3">
+                      <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
+                      <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
+                          style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
+                        >
+                          <span className="text-[10px] font-bold text-white">{s.value}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
+                  <span className="text-gray-500">Total units</span>
+                  <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <SectionDivider />
+
+        {/* ─── Sampling section ─── */}
+        {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
+          <>
+            <section ref={samplingRef} className="px-6 pt-6 pb-3">
+              <SectionHeader
+                accent="amber"
+                label="Sampling"
+                badge={samplePending > 0 ? `${samplePending} pending` : undefined}
+                badgeTone="amber"
+              />
+
+              {/* Components — uses the existing ComponentsSection. The component
+                  renders its own "Components" subhead + add button + cards. */}
+              {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                <div className="mb-4">
+                  <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
+                </div>
+              )}
+
+              {/* Order-level samples — only when there are no components. */}
+              {!hasComponents && (hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                <>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Order-level samples</div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
+                      <SampleCard label="Fit Sample">
+                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
+                        {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                        {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
+                        {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
+                      </SampleCard>
+                    )}
+                    {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
+                      <SampleCard label="Strike Off">
+                        {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
+                        {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
+                        {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
+                      </SampleCard>
+                    )}
+                    {(hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
+                      <SampleCard label="Lab Dip">
+                        {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
+                        {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
+                        {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
+                      </SampleCard>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* PPS — always order-level. */}
+              {(hasCol('pps_status') || hasCol('pps_received')) && (
+                <>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">PPS · order-level</div>
+                  <SampleCard label="Pre-Production Sample" highlight>
+                    {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
+                    {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
+                    {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
+                    {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
+                  </SampleCard>
+                </>
+              )}
+
+              {/* Other order-level samples — photo / shipment / ex-fac from PP */}
+              {(hasCol('photo_sample_received') || hasCol('shipment_sample_received') || hasCol('ex_factory_from_pp_approval')) && (
+                <div className="grid grid-cols-3 gap-2 mt-4">
+                  {hasCol('photo_sample_received') && (
+                    <SampleCard label="Photo Sample">
+                      <DetailRow label="Received" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />
+                    </SampleCard>
+                  )}
+                  {hasCol('shipment_sample_received') && (
+                    <SampleCard label="Shipment Sample">
+                      <DetailRow label="Received" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />
+                    </SampleCard>
+                  )}
+                  {hasCol('ex_factory_from_pp_approval') && (
+                    <SampleCard label="Ex-Fac from PP Approval">
+                      <DetailRow label="Date" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />
+                    </SampleCard>
+                  )}
+                </div>
+              )}
+            </section>
+            <SectionDivider />
+          </>
+        )}
+
+        {/* ─── Shipping section ─── */}
+        <section ref={shippingRef} className="px-6 pt-6 pb-3">
+          <SectionHeader accent="teal" label="Shipping" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Vessel</div>
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
+                {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
+                {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                {(order.tracking_reference || hasCol('tracking_reference')) && <DetailRow label="Tracking Ref" value={order.tracking_reference} editable={canEdit('tracking_reference')} onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
+              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={formatDate(order.original_del_date_to_customer)} type="date" rawValue={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
+                {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
+                {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
+                {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
+                {hasCol('customer_po_open_month') && order.customer_po_open_month && <DetailRow label="Open Month" value={order.customer_po_open_month} />}
+                {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && <DetailRow label="Expected UK Month" value={order.expected_dispatch_arrive_uk_month} />}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <SectionDivider />
+
+        {/* ─── Timeline section ─── */}
+        <section ref={timelineRef} className="px-6 pt-6 pb-6">
+          <SectionHeader accent="violet" label="Timeline" />
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="relative">
+              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
+              <div className="space-y-0">
+                {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} editable={canEdit('order_received_date')} onSave={(v) => onSave?.(order.id, 'order_received_date', v)} />}
+                {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} editable={canEdit('order_sent_to_factory_date')} onSave={(v) => onSave?.(order.id, 'order_sent_to_factory_date', v)} />}
+                {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} editable={canEdit('tech_packs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'tech_packs_sent_to_factory', v)} />}
+                {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} editable={canEdit('specs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'specs_sent_to_factory', v)} />}
+                {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
+                {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
+                {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
+                {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
+                {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
+                {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
+                {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </>
+  );
+}
+
+// ─── Section helpers ──────────────────────────────────
+
+function HeroTile({ label, value, sub, tone }: { label: string; value: string | number | null | undefined; sub?: string; tone?: string }) {
+  // Padding bumped up + value font sized to comfortably fit ~10 chars at the
+  // narrowest tile width (5 tiles in a 1200px modal). Long sub-text wraps
+  // to a second line rather than truncating.
+  return (
+    <div className={cn('rounded-lg border px-3.5 py-3 min-w-0', tone || 'border-gray-200 bg-white')}>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold leading-none mb-1.5 truncate">{label}</div>
+      <div className="text-base font-bold text-gray-900 leading-tight break-words">{value ?? '—'}</div>
+      {sub && <div className="text-[10px] text-gray-500 mt-1 leading-tight">{sub}</div>}
+    </div>
+  );
+}
+
+function SectionPill({
+  active, label, badge, badgeTone, onClick,
+}: {
+  active: boolean;
+  label: string;
+  badge?: string;
+  badgeTone?: 'amber' | 'red' | 'blue';
+  onClick: () => void;
+}) {
+  const badgeClass =
+    badgeTone === 'red'   ? 'bg-red-100 text-red-700' :
+    badgeTone === 'blue'  ? 'bg-blue-100 text-blue-700' :
+                            'bg-amber-100 text-amber-700';
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5',
+        active ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+      )}
+    >
+      {label}
+      {badge && (
+        <span className={cn(
+          'px-1 py-0 rounded text-[9px] font-bold',
+          active ? 'bg-white/25 text-white' : badgeClass
+        )}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SectionHeader({
+  accent, label, badge, badgeTone,
+}: {
+  accent: 'blue' | 'amber' | 'teal' | 'violet';
+  label: string;
+  badge?: string;
+  badgeTone?: 'amber' | 'red' | 'blue';
+}) {
+  const accentClass =
+    accent === 'amber'  ? 'bg-amber-500' :
+    accent === 'teal'   ? 'bg-teal-500' :
+    accent === 'violet' ? 'bg-violet-500' :
+                          'bg-blue-500';
+  const badgeClass =
+    badgeTone === 'red' ? 'bg-red-100 text-red-700' :
+    badgeTone === 'blue' ? 'bg-blue-100 text-blue-700' :
+                           'bg-amber-100 text-amber-700';
+  return (
+    <h4 className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+      <span className={cn('w-1 h-4 rounded-full', accentClass)} />
+      {label}
+      {badge && <span className={cn('text-[10px] px-1.5 py-0 rounded font-semibold', badgeClass)}>{badge}</span>}
+    </h4>
+  );
+}
+
+function SectionDivider() {
+  return <div className="px-6"><div className="border-t border-gray-200" /></div>;
+}
+
+function SampleCard({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn(
+      'rounded-lg border overflow-hidden',
+      highlight ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white'
+    )}>
+      <div className={cn(
+        'px-3 py-1.5 border-b text-[10px] uppercase tracking-wider font-semibold',
+        highlight ? 'bg-amber-50/60 border-amber-100 text-amber-800' : 'bg-gray-50/60 border-gray-100 text-gray-600'
+      )}>
+        {label}
+      </div>
+      <div className="bg-white divide-y divide-gray-100">
+        {children}
       </div>
     </div>
   );
@@ -1251,8 +1537,8 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   };
 
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-400 flex items-center gap-1">{label}{extra}</span>
+    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
       {editing ? (
         options ? (
           <StatusDropdown
@@ -1262,25 +1548,33 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
             onCancel={() => setEditing(false)}
             size="sm"
           />
+        ) : type === 'date' ? (
+          <DatePickerInput
+            value={editValue}
+            onChange={(v) => handleSave(v)}
+            onBlur={() => setEditing(false)}
+            autoFocus
+            size="sm"
+          />
         ) : (
           <input
-            type={type === 'date' ? 'date' : 'text'}
+            type="text"
             value={editValue}
-            onChange={(e) => { setEditValue(e.target.value); if (type === 'date') handleSave(e.target.value); }}
-            onBlur={() => { if (type !== 'date') handleSave(); }}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={() => handleSave()}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
             autoFocus
-            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
+            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[180px] text-right"
           />
         )
       ) : (
         <span
           className={cn(
-            'text-xs font-medium text-gray-700 text-right max-w-[200px] truncate',
+            'text-xs font-medium text-gray-800 text-right break-words min-w-0',
             editable && 'cursor-pointer hover:text-primary-600'
           )}
           onClick={() => { if (editable) startEdit(); }}
-          title={editable ? 'Click to edit' : undefined}
+          title={editable ? `${value || '—'} · click to edit` : (typeof value === 'string' ? value : undefined)}
         >
           {value || '—'}
         </span>
@@ -1299,12 +1593,6 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
   const [editing, setEditing] = useState(false);
   const hasDate = !!date;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    onSave?.(val);
-    setEditing(false);
-  };
-
   return (
     <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
       <div className={cn(
@@ -1320,13 +1608,12 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
       <div className="flex-1 flex items-center justify-between min-w-0">
         <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
         {editing ? (
-          <input
-            type="date"
-            defaultValue={date ? date.split('T')[0] : ''}
-            onChange={handleChange}
+          <DatePickerInput
+            value={date ? date.split('T')[0] : ''}
+            onChange={(v) => { onSave?.(v); setEditing(false); }}
             onBlur={() => setEditing(false)}
             autoFocus
-            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[130px]"
+            size="sm"
           />
         ) : (
           <span

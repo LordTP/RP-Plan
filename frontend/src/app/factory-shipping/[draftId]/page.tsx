@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import {
   shipmentDraftsApi,
   type ShipmentDraftDetail,
@@ -477,22 +478,20 @@ function DraftDetail() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <FieldLabel>Vessel ETD</FieldLabel>
-                      <input
-                        type="date"
+                      <DatePickerInput
                         value={vesselEtd}
-                        onChange={(e) => setVesselEtd(e.target.value)}
+                        onChange={setVesselEtd}
                         disabled={isLocked}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50"
+                        variant="block"
                       />
                     </div>
                     <div>
                       <FieldLabel>ETA to port</FieldLabel>
-                      <input
-                        type="date"
+                      <DatePickerInput
                         value={vesselEtaToPort}
-                        onChange={(e) => setVesselEtaToPort(e.target.value)}
+                        onChange={setVesselEtaToPort}
                         disabled={isLocked}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50"
+                        variant="block"
                       />
                     </div>
                   </div>

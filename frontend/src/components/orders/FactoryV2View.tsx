@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
@@ -424,11 +425,11 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
               {/* Date value */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">New Date</label>
-                <input
-                  type="date"
+                <DatePickerInput
                   value={reasonModal.value?.split('T')[0] || ''}
-                  onChange={(e) => setReasonModal({ ...reasonModal, value: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                  onChange={(v) => setReasonModal({ ...reasonModal, value: v })}
+                  variant="block"
+                  size="md"
                 />
               </div>
 
@@ -1914,15 +1915,22 @@ function ComponentFieldRow({
               size="sm"
               containerRef={editorRef}
             />
+          ) : type === 'date' ? (
+            <DatePickerInput
+              value={editValue}
+              onChange={(v) => { setEditValue(v); if (v) setShowApplyMenu(true); }}
+              autoFocus
+              size="sm"
+            />
           ) : (
-          <input
-            type={type === 'date' ? 'date' : 'text'}
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') { setEditing(false); setShowApplyMenu(false); setShowStylePicker(false); } if (e.key === 'Enter') handleSave(false); }}
-            autoFocus
-            className="text-[11px] border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[120px]"
-          />
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setEditing(false); setShowApplyMenu(false); setShowStylePicker(false); } if (e.key === 'Enter') handleSave(false); }}
+              autoFocus
+              className="text-[11px] border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[120px]"
+            />
           )}
           <div className="relative">
             {!options && (
@@ -2088,12 +2096,6 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
   const [editing, setEditing] = useState(false);
   const hasDate = !!date;
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    onSave?.(val);
-    setEditing(false);
-  };
-
   return (
     <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
       <div className={cn(
@@ -2109,13 +2111,12 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
       <div className="flex-1 flex items-center justify-between min-w-0">
         <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
         {editing ? (
-          <input
-            type="date"
-            defaultValue={date ? date.split('T')[0] : ''}
-            onChange={handleChange}
+          <DatePickerInput
+            value={date ? date.split('T')[0] : ''}
+            onChange={(v) => { onSave?.(v); setEditing(false); }}
             onBlur={() => setEditing(false)}
             autoFocus
-            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[130px]"
+            size="sm"
           />
         ) : (
           <span

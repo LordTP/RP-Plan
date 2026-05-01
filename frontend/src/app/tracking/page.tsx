@@ -9,6 +9,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
 import { trackingApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 
 interface TrackingOrder {
   id: number;
@@ -317,12 +318,7 @@ function TrackingContent() {
 
                   <div className="mb-4">
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">New Revised Vessel ETA</label>
-                    <input
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
+                    <DatePickerInput value={newDate} onChange={setNewDate} variant="block" size="md" />
                   </div>
 
                   <div className="mb-4 p-3 bg-gray-50/80 rounded-lg">
