@@ -63,7 +63,7 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
   }
 
   return (
-    <div className="space-y-2.5 max-h-[490px] overflow-y-auto pr-1">
+    <div className="space-y-2.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
       {poGroups.map((po) => (
         <POActivityCard key={po.po_number} po={po} onPOClick={onPOClick} />
       ))}

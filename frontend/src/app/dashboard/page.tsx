@@ -698,76 +698,34 @@ function DashboardContent() {
 
         </div>
 
-        {/* Right Column - 1/3 */}
-        <div className="space-y-6">
-          {/* Order Status Breakdown */}
-          <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100">
-            <div className="px-4 py-3.5 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900">Order Breakdown</h3>
+        {/* Right Column - 1/3 — full-height activity feed */}
+        <div className="flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-sm font-semibold text-gray-900">Recent Activity</h3>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+              <span className="text-[10px] text-gray-400">Live</span>
             </div>
-            <div className="p-4 space-y-2.5">
-              {[
-                { label: 'In Production', value: stats?.orders_in_production || 0, color: 'bg-amber-400', onClick: () => handleStatusClick('In Production') },
-                { label: 'Shipped', value: stats?.orders_shipped || 0, color: 'bg-blue-400', onClick: () => handleStatusClick('Shipped') },
-                { label: 'Delivered', value: stats?.orders_delivered || 0, color: 'bg-green-400', onClick: () => handleStatusClick('Delivered') },
-                { label: 'Pending', value: stats?.orders_pending_approval || 0, color: 'bg-orange-400', onClick: () => handleStatusClick('Pending') },
-                { label: 'Cancelled', value: stats?.orders_cancelled || 0, color: 'bg-gray-400', onClick: () => handleStatusClick('Cancelled') },
-              ].map((item) => {
-                const total = stats?.total_orders || 1;
-                const pct = Math.round((item.value / total) * 100);
-                return (
-                  <div key={item.label} onClick={item.onClick} className="cursor-pointer group">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors">{item.label}</span>
-                      <span className="text-[11px] font-semibold text-gray-700">{item.value}</span>
-                    </div>
-                    <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={cn('h-full rounded-full transition-all', item.color)} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {isInternal && (
-              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/40 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">This Month</p>
-                  <p className="text-[10px] text-gray-400">new orders</p>
-                </div>
-                <p className="text-xl font-bold text-gray-900 tabular-nums">{formatNumber(stats?.orders_this_month || 0)}</p>
-              </div>
-            )}
           </div>
-
-          {/* Recent Activity */}
-          <div>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <h3 className="text-sm font-semibold text-gray-900">Recent Activity</h3>
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                <span className="text-[10px] text-gray-400">Live</span>
-              </div>
-            </div>
-            <RecentActivityFeed
-              groups={groupBulkActivity(recentActivity)}
-              onPOClick={(po, style) => {
-                const params = new URLSearchParams({ expandPO: po });
-                if (style) params.set('style_code', style);
-                router.push(`/orders-v2?${params.toString()}`);
-              }}
-              hasMore={hasMoreActivity}
-              loadingMore={loadingMoreActivity}
-              onLoadMore={async () => {
-                setLoadingMoreActivity(true);
-                try {
-                  const result = await statsApi.getRecentActivity(15, recentActivity.length);
-                  setRecentActivity(prev => [...prev, ...result.events]);
-                  setHasMoreActivity(result.has_more);
-                } catch { /* ignore */ }
-                finally { setLoadingMoreActivity(false); }
-              }}
-            />
-          </div>
+          <RecentActivityFeed
+            groups={groupBulkActivity(recentActivity)}
+            onPOClick={(po, style) => {
+              const params = new URLSearchParams({ expandPO: po });
+              if (style) params.set('style_code', style);
+              router.push(`/orders-v2?${params.toString()}`);
+            }}
+            hasMore={hasMoreActivity}
+            loadingMore={loadingMoreActivity}
+            onLoadMore={async () => {
+              setLoadingMoreActivity(true);
+              try {
+                const result = await statsApi.getRecentActivity(15, recentActivity.length);
+                setRecentActivity(prev => [...prev, ...result.events]);
+                setHasMoreActivity(result.has_more);
+              } catch { /* ignore */ }
+              finally { setLoadingMoreActivity(false); }
+            }}
+          />
         </div>
       </div>
 
