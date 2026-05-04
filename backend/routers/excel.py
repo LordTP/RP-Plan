@@ -3,9 +3,9 @@ import json
 import uuid
 from datetime import datetime
 from io import BytesIO
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -112,6 +112,7 @@ async def import_excel(
 @router.get("/api/excel/export")
 async def export_excel(
     po_number: str = None,
+    po_numbers: Optional[List[str]] = Query(None),  # multi-select from export modal
     style_code: str = None,
     factory: str = None,
     customer: str = None,
@@ -127,6 +128,8 @@ async def export_excel(
         filters = {}
         if po_number:
             filters['po_number'] = po_number
+        if po_numbers:
+            filters['po_numbers'] = po_numbers
         if style_code:
             filters['style_code'] = style_code
         if factory:

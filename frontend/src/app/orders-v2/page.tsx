@@ -37,6 +37,7 @@ import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
+import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
@@ -155,6 +156,7 @@ function OrdersV2Content() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -416,6 +418,14 @@ function OrdersV2Content() {
               Refresh
             </button>
 
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+
             {/* Link to classic/table view */}
             <button
               onClick={() => router.push(
@@ -539,6 +549,12 @@ function OrdersV2Content() {
       </div>
 
       <CommentSidebar />
+
+      <ExportOrdersModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        filenamePrefix={isSupplier ? 'factory' : 'orderbook'}
+      />
     </AppShell>
   );
 }

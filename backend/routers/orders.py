@@ -907,3 +907,33 @@ async def get_styles_on_po(
             for order in orders
         ]
     }
+
+
+@router.get("/api/orders/list/distinct-pos")
+async def get_po_list(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lightweight list of distinct POs (number + customer + factory + style count)
+    for the export-orders modal picker. Respects supplier scoping automatically."""
+    query = db.query(PurchaseOrder)
+    query = apply_supplier_filter(query, current_user)
+    orders = query.all()
+
+    by_po: dict[str, dict] = {}
+    for o in orders:
+        if not o.po_number:
+            continue
+        v = by_po.get(o.po_number)
+        if v:
+            v["style_count"] += 1
+        else:
+            by_po[o.po_number] = {
+                "po_number": o.po_number,
+                "customer": o.customer,
+                "factory": o.factory,
+                "style_count": 1,
+            }
+    # Sort by PO number desc so newest-looking ones appear first
+    pos = sorted(by_po.values(), key=lambda p: p["po_number"], reverse=True)
+    return {"pos": pos}

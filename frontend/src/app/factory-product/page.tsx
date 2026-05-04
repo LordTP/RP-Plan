@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
+  Download,
   Filter,
   RefreshCw,
   X,
@@ -12,6 +13,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
+import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { useStore } from '@/store/useStore';
 import { ordersApi, OrderFilters } from '@/lib/api';
 import { wsClient } from '@/lib/websocket';
@@ -64,6 +66,7 @@ function PageContent() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const scrollSentinelRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const [filters, setFilters] = useState<OrderFilters>({
     search: '',
@@ -216,6 +219,13 @@ function PageContent() {
               <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
               Refresh
             </button>
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
           </div>
         </div>
 
@@ -275,6 +285,12 @@ function PageContent() {
       </div>
 
       <CommentSidebar />
+
+      <ExportOrdersModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        filenamePrefix="factory-product"
+      />
     </AppShell>
   );
 }

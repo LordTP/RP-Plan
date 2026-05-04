@@ -8,7 +8,6 @@ import {
   RefreshCw,
   X,
   Download,
-  ChevronDown,
   Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -18,7 +17,8 @@ import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { TrackingRefModal } from '@/components/orders/TrackingRefModal';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, OrderFilters } from '@/lib/api';
+import { ordersApi, OrderFilters } from '@/lib/api';
+import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { wsClient } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
@@ -69,8 +69,7 @@ function OrdersContent() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const scrollSentinelRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Tab state (internal/admin only)
   const [activeTab, setActiveTab] = useState<'orders' | 'shipped'>('orders');
@@ -325,28 +324,6 @@ function OrdersContent() {
     }
   };
 
-  const handleExport = async (exportFiltered: boolean) => {
-    setIsExporting(true);
-    setShowExportMenu(false);
-    try {
-      const exportFilters = exportFiltered ? filters : undefined;
-      const blob = await excelApi.exportExcel(exportFilters);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const suffix = exportFiltered ? '_filtered' : '';
-      link.download = `orderbook_export${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      toast.success(exportFiltered ? 'Filtered orders exported' : 'All orders exported');
-    } catch (error) {
-      toast.error('Export failed. Please try again.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
 
   return (
     <AppShell title="Orders">
@@ -398,45 +375,14 @@ function OrdersContent() {
               Refresh
             </button>
 
-            {/* Export Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowExportMenu(!showExportMenu)}
-                disabled={isExporting}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Download className={cn('w-4 h-4', isExporting && 'animate-pulse')} />
-                {isExporting ? 'Exporting...' : 'Export'}
-                <ChevronDown className="w-4 h-4" />
-              </button>
-
-              {showExportMenu && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowExportMenu(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                    <button
-                      onClick={() => handleExport(false)}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      <Download className="w-4 h-4" />
-                      All Orders
-                    </button>
-                    {hasActiveFilters && (
-                      <button
-                        onClick={() => handleExport(true)}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <Filter className="w-4 h-4" />
-                        Filtered Orders ({totalOrders})
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Export */}
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
           </div>
         </div>
 
@@ -729,6 +675,12 @@ function OrdersContent() {
           setTrackingModalOpen(false);
           setTrackingModalOrder(null);
         }}
+      />
+
+      <ExportOrdersModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        filenamePrefix="orderbook"
       />
     </AppShell>
   );

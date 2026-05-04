@@ -1235,6 +1235,9 @@ def export_database_to_excel(
     if filters:
         if filters.get('po_number'):
             query = query.filter(PurchaseOrder.po_number.ilike(f"%{filters['po_number']}%"))
+        # Multi-PO selection from the export modal — exact match against the list.
+        if filters.get('po_numbers'):
+            query = query.filter(PurchaseOrder.po_number.in_(filters['po_numbers']))
         if filters.get('style_code'):
             query = query.filter(PurchaseOrder.style_code.ilike(f"%{filters['style_code']}%"))
         if filters.get('factory'):

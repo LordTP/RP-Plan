@@ -270,6 +270,18 @@ export const ordersApi = {
     const response = await api.get('/api/orders/recent-changes', { params });
     return response.data;
   },
+
+  getPOList: async (): Promise<{
+    pos: Array<{
+      po_number: string;
+      customer: string | null;
+      factory: string | null;
+      style_count: number;
+    }>;
+  }> => {
+    const response = await api.get('/api/orders/list/distinct-pos');
+    return response.data;
+  },
 };
 
 // Components API
@@ -446,10 +458,13 @@ export interface ImportPreviewResult {
 }
 
 export const excelApi = {
-  exportExcel: async (filters?: OrderFilters): Promise<Blob> => {
+  exportExcel: async (filters?: OrderFilters & { po_numbers?: string[] }): Promise<Blob> => {
     const params = new URLSearchParams();
     if (filters) {
       if (filters.po_number) params.append('po_number', filters.po_number);
+      if (filters.po_numbers && filters.po_numbers.length > 0) {
+        for (const p of filters.po_numbers) params.append('po_numbers', p);
+      }
       if (filters.style_code) params.append('style_code', filters.style_code);
       if (filters.factory) params.append('factory', filters.factory);
       if (filters.customer) params.append('customer', filters.customer);

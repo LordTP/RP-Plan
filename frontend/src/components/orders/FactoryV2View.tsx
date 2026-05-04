@@ -20,6 +20,7 @@ import {
   Trash2,
   Copy,
   Ruler,
+  Download,
 } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -27,6 +28,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
+import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
@@ -153,6 +155,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<{ column_key: string; is_visible: boolean; is_editable: boolean }[]>([]);
 
   // Reason modal state for supplier date edits
@@ -589,6 +592,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
             </button>
 
             <button
+              onClick={() => setShowExportModal(true)}
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+
+            <button
               onClick={() => router.push(tableRoute)}
               className="px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
             >
@@ -695,6 +706,12 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       </div>
 
       <CommentSidebar />
+
+      <ExportOrdersModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        filenamePrefix={viewType === 'factory-shipping' ? 'factory-shipping' : 'factory-product'}
+      />
     </AppShell>
   );
 }
