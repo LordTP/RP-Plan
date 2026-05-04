@@ -55,3 +55,13 @@ postgres_data/
 
 # Temp files
 [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]
+
+# Ad-hoc design mockups + screenshots (delete when done with them)
+*-mockup*.html
+*mockup*.html
+layout-option-*.html
+Screenshot*.png
+
+# Local DB backups (should never be committed)
+*.backup-*
+*.sql.bak
