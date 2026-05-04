@@ -957,26 +957,39 @@ function DetailBody({
     timeline: timelineRef,
   } as const;
 
+  // Use getBoundingClientRect rather than offsetTop — sections aren't
+  // guaranteed to use the scroller as their offsetParent (it has no
+  // explicit position), so offsetTop walks past it and gives garbage.
   const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
     const el = sectionRefs[key].current;
     const scroller = modalContentRef.current;
     if (!el || !scroller) return;
-    const top = el.offsetTop - 80; // leave room for the sticky pill nav
-    scroller.scrollTo({ top, behavior: 'smooth' });
+    const elRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const top = elRect.top - scrollerRect.top + scroller.scrollTop - 8;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   };
 
-  // Track which section is most-visible as the user scrolls so we can
-  // highlight the matching pill. IntersectionObserver-lite via scroll listener.
+  // Track which section is most-visible. Uses getBoundingClientRect for
+  // robust math, plus a bottom-of-scroll snap so the last (timeline)
+  // section can still light up — it's short and may never push its top
+  // past the threshold by scrolling alone.
   useEffect(() => {
     const scroller = modalContentRef.current;
     if (!scroller) return;
     const onScroll = () => {
-      const top = scroller.scrollTop + 100;
+      // At the bottom of the scroll → force the last section active.
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        setActiveSection('timeline');
+        return;
+      }
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const threshold = scrollerTop + 60; // 60px into the visible area
       const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
       let current: typeof order[number] = 'product';
       for (const key of order) {
         const el = sectionRefs[key].current;
-        if (el && el.offsetTop <= top) current = key;
+        if (el && el.getBoundingClientRect().top <= threshold) current = key;
       }
       setActiveSection(current);
     };

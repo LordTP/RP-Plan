@@ -1057,23 +1057,35 @@ function DetailPanel({
   const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
   const sectionRefs = { product: productRef, sampling: samplingRef, shipping: shippingRef, timeline: timelineRef } as const;
 
+  // Use getBoundingClientRect rather than offsetTop — sections aren't
+  // guaranteed to use the scroller as their offsetParent (it has no
+  // explicit position), so offsetTop walks past it and gives garbage.
   const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
     const el = sectionRefs[key].current;
     const scroller = modalContentRef.current;
     if (!el || !scroller) return;
-    scroller.scrollTo({ top: el.offsetTop - 80, behavior: 'smooth' });
+    const elRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const top = elRect.top - scrollerRect.top + scroller.scrollTop - 8;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   };
 
   useEffect(() => {
     const scroller = modalContentRef.current;
     if (!scroller) return;
     const onScroll = () => {
-      const top = scroller.scrollTop + 100;
+      // At the bottom of the scroll → force the last section active.
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        setActiveSection('timeline');
+        return;
+      }
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const threshold = scrollerTop + 60;
       const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
       let current: typeof order[number] = 'product';
       for (const key of order) {
         const el = sectionRefs[key].current;
-        if (el && el.offsetTop <= top) current = key;
+        if (el && el.getBoundingClientRect().top <= threshold) current = key;
       }
       setActiveSection(current);
     };
