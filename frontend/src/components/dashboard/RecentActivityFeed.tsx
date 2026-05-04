@@ -56,24 +56,39 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
 
   if (poGroups.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-400 italic">
+      <div className="rounded-lg ring-1 ring-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-400 italic">
         Nothing's happened yet.
       </div>
     );
   }
 
+  // Single bordered container · PO header acts as a section divider inside
+  // the same list, NOT as a separate card. Events flow as one continuous
+  // surface from one PO to the next.
   return (
-    <div className="space-y-2.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
-      {poGroups.map((po) => (
-        <POActivityCard key={po.po_number} po={po} onPOClick={onPOClick} />
-      ))}
+    <div className="ring-1 ring-gray-200 rounded-lg overflow-hidden bg-white">
+      <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
+        {poGroups.map((po, poIdx) => (
+          <div key={po.po_number}>
+            <POSectionHeader po={po} onPOClick={onPOClick} isFirst={poIdx === 0} />
+            {po.groups.map((g, idx) => (
+              <POActivityRow
+                key={`${g.type}-${idx}`}
+                group={g}
+                poNumber={po.po_number}
+                onStyleClick={(s) => onPOClick(po.po_number, s)}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
 
       {hasMore && (
-        <div className="flex justify-center pt-1">
+        <div className="border-t border-gray-100 px-3 py-2 flex justify-center bg-gray-50/40">
           <button
             onClick={onLoadMore}
             disabled={loadingMore}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="text-[11px] font-semibold text-gray-500 hover:text-gray-700 disabled:opacity-50 transition-colors"
           >
             {loadingMore ? 'Loading…' : 'Load more'}
           </button>
@@ -83,44 +98,40 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
   );
 }
 
-function POActivityCard({ po, onPOClick }: { po: POGroup; onPOClick: (po: string, style?: string) => void }) {
+function POSectionHeader({ po, onPOClick, isFirst }: { po: POGroup; onPOClick: (po: string, style?: string) => void; isFirst: boolean }) {
   const totalEvents = po.groups.reduce((sum, g) => sum + g.count, 0);
   const latestRel = relativeTime(new Date(po.latestAt).toISOString());
   const statusClass = po.status ? getStatusColor(po.status) : '';
 
   return (
-    <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden">
-      {/* Card header */}
-      <div className="px-3.5 py-2 flex items-center gap-2 bg-gray-50/60 border-b border-gray-100 flex-wrap">
-        <span className="font-mono text-xs font-bold text-gray-900">{po.po_number}</span>
-        {po.customer && (
-          <span className="text-[11px] text-gray-500 truncate max-w-[180px]">{po.customer}</span>
-        )}
-        {po.status && (
-          <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-semibold', statusClass)}>
-            {po.status}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-gray-400 whitespace-nowrap">
-            {totalEvents} event{totalEvents > 1 ? 's' : ''} · {latestRel}
-          </span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onPOClick(po.po_number); }}
-            className="px-2 py-0.5 rounded bg-white ring-1 ring-gray-200 hover:bg-blue-50 hover:ring-blue-200 hover:text-blue-700 text-[10px] font-semibold text-gray-600 transition-colors flex items-center gap-1"
-          >
-            Open
-            <ExternalLink className="w-2.5 h-2.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Event rows */}
-      <div className="divide-y divide-gray-100">
-        {po.groups.map((g, idx) => (
-          <POActivityRow key={`${g.type}-${idx}`} group={g} poNumber={po.po_number} onStyleClick={(s) => onPOClick(po.po_number, s)} />
-        ))}
-      </div>
+    <div className={cn(
+      'px-3 py-2 flex items-center gap-2 bg-gray-50/70 sticky top-0 z-10',
+      !isFirst && 'border-t border-gray-200'
+    )}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onPOClick(po.po_number); }}
+        className="font-mono text-xs font-bold text-gray-900 hover:text-blue-700"
+      >
+        {po.po_number}
+      </button>
+      {po.customer && (
+        <span className="text-[11px] text-gray-500 truncate max-w-[180px]">{po.customer}</span>
+      )}
+      {po.status && (
+        <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-semibold', statusClass)}>
+          {po.status}
+        </span>
+      )}
+      <span className="ml-auto text-[10px] text-gray-400 whitespace-nowrap flex items-center gap-1.5">
+        {totalEvents} event{totalEvents > 1 ? 's' : ''} · {latestRel}
+        <button
+          onClick={(e) => { e.stopPropagation(); onPOClick(po.po_number); }}
+          className="text-gray-400 hover:text-blue-600"
+          title="Open PO"
+        >
+          <ExternalLink className="w-3 h-3" />
+        </button>
+      </span>
     </div>
   );
 }
@@ -135,7 +146,7 @@ function POActivityRow({ group, poNumber, onStyleClick }: {
   const isSupplier = (group.source || '').toLowerCase() === 'supplier';
 
   return (
-    <div className="px-3.5 py-2 flex items-start gap-2.5 hover:bg-gray-50/60 transition-colors">
+    <div className="px-3 py-1.5 pl-4 flex items-start gap-2.5 hover:bg-gray-50/60 transition-colors border-t border-gray-50">
       {/* Icon tile */}
       <div className={cn('flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md mt-0.5', f.iconBg)}>
         <f.Icon className={cn('h-3.5 w-3.5', f.iconText)} />
