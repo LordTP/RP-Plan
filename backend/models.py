@@ -480,3 +480,13 @@ class PendingDateChange(Base):
 
     # Relationships
     order = relationship("PurchaseOrder")
+
+
+class QACheck(Base):
+    """Shared QA test-plan state. One row = one ticked checkbox, by whoever
+    on whatever date. Untick = delete the row. Auto-migrates on startup."""
+    __tablename__ = "qa_checks"
+
+    check_id = Column(String(200), primary_key=True)
+    checked_by = Column(String(50), nullable=False)
+    checked_at = Column(DateTime, default=datetime.utcnow)

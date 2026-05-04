@@ -1224,4 +1224,25 @@ export const shipmentDraftsApi = {
   },
 };
 
+// QA test-plan tickbox state — shared across all logged-in users
+export interface QACheckState {
+  checked: boolean;
+  by?: string;
+  at?: string | null;
+}
+export const qaApi = {
+  getState: async (): Promise<{ checks: Record<string, QACheckState> }> => {
+    const response = await api.get('/api/qa/state');
+    return response.data;
+  },
+  toggle: async (checkId: string): Promise<QACheckState & { check_id: string }> => {
+    const response = await api.post(`/api/qa/toggle/${encodeURIComponent(checkId)}`);
+    return response.data;
+  },
+  resetAll: async (): Promise<{ deleted: number }> => {
+    const response = await api.post('/api/qa/reset');
+    return response.data;
+  },
+};
+
 export default api;
