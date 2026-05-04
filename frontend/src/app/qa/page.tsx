@@ -68,69 +68,6 @@ const PLAN: TestSection[] = [
 
   // ─────────────────────────────────────────────────────────────────
   {
-    id: 'recent',
-    title: 'Recently shipped — post-deploy checks',
-    subtitle: 'Code that changed in the last few weeks. If anything regressed, it\'s probably here.',
-    groups: [
-      {
-        title: '/dashboard-v2 inbox',
-        items: [
-          { id: 'r.i.1', severity: 'recent', text: 'Group toggle: PO / Supplier / Flat — total visible items count stays the same across modes (proof that grouping is just a re-render, not a re-fetch).' },
-          { id: 'r.i.2', severity: 'recent', text: 'Tick a PO group checkbox → every nested row selects + bulk action bar appears at top. Untick → bar disappears.' },
-          { id: 'r.i.3', severity: 'recent', text: 'Bulk Approve all → those rows disappear, refetch confirms they\'re gone from DB (not cached).' },
-          { id: 'r.i.4', severity: 'recent', text: 'Bulk Reject 5 with one reason → all 5 PendingDateChange rows show that same reason in DB.' },
-          { id: 'r.i.5', severity: 'recent', text: 'Filter pills (Dates / Samples / Other) actually filter — counts update when checks happen.' },
-          { id: 'r.i.6', severity: 'recent', text: 'Group headers stick to top of the inbox while you scroll past the rows in that group.' },
-        ],
-      },
-      {
-        title: 'V2 detail modal',
-        items: [
-          { id: 'r.v.1', severity: 'recent', text: 'Click each pill (Product / Sampling / Shipping / Timeline) — section scrolls so its top sits right under the pill nav, NOT past it.' },
-          { id: 'r.v.2', severity: 'recent', text: 'Scroll all the way down — Timeline pill highlights (the bottom-snap fix).' },
-          { id: 'r.v.3', severity: 'recent', text: 'Edit a date field → cross-OS DatePicker opens (NOT the native HTML date input — check on Windows + Firefox if you have one).' },
-          { id: 'r.v.4', severity: 'recent', text: 'Reject a sample status (Fit / Strike / Lab / PPS) → modal asks for reason → on save, AttemptBadge shows v2 + RejectionContextBanner appears.' },
-        ],
-      },
-      {
-        title: 'Activity feed',
-        items: [
-          { id: 'r.a.1', severity: 'recent', text: 'Activity surface is one continuous list (NOT separate boxed cards per PO). PO acts as a sticky section header inside the same surface.' },
-          { id: 'r.a.2', severity: 'recent', text: 'Click any PO header in the feed → /orders-v2 opens with that PO expanded. Click a style-code event → opens the V2 modal directly on that style.' },
-          { id: 'r.a.3', severity: 'recent', text: 'Bulk approval (e.g. "Sarah approved Fit Sample on 4 styles") shows ONE row in the activity feed, not 4 separate rows.' },
-        ],
-      },
-      {
-        title: 'Export modal',
-        items: [
-          { id: 'r.e.1', severity: 'recent', text: '/orders → Export → "Export all" downloads file. Open it in Excel — column headers + data look correct.' },
-          { id: 'r.e.2', severity: 'recent', text: '"Choose POs" → search filter works, tick 3 POs → "Export 3 POs" downloads file with ONLY those POs.' },
-          { id: 'r.e.3', severity: 'role', text: 'Supplier opens Export on /factory-product → "Choose POs" picker shows ONLY their factory\'s POs (not all POs).' },
-        ],
-      },
-      {
-        title: 'Shipment drafts',
-        items: [
-          { id: 'r.s.1', severity: 'recent', text: 'Build a draft from scratch, tick SKUs from 2 different POs, fill 5 shared fields, Confirm → vessel info propagates to all linked orders.' },
-          { id: 'r.s.2', severity: 'data', text: 'Edit a CONFIRMED shipment → change Vessel ETD → save → all linked orders show the new ETD (no stragglers).' },
-          { id: 'r.s.3', severity: 'recent', text: 'Pick a SKU already on another confirmed shipment → conflict note appears under that SKU row (not a separate alert).' },
-          { id: 'r.s.4', severity: 'data', text: 'Partial-shipment quantity: edit qty in draft, confirm → linked order quantity reflects the partial, not the full SKU qty.' },
-        ],
-      },
-      {
-        title: 'Tracking',
-        items: [
-          { id: 'r.t.1', severity: 'recent', text: '/tracking page lists tracking refs grouped by reference number with vessel info per group.' },
-          { id: 'r.t.2', severity: 'recent', text: 'Search a vessel name / ref → list filters live as you type.' },
-          { id: 'r.t.3', severity: 'data', text: 'Edit Revised Vessel ETA on a tracking ref → all orders linked to that ref get the new value (bulk update).' },
-          { id: 'r.t.4', severity: 'data', text: 'Tracking ref typed directly on an order → tracking page picks it up the next time it\'s loaded.' },
-        ],
-      },
-    ],
-  },
-
-  // ─────────────────────────────────────────────────────────────────
-  {
     id: 'data',
     title: 'Data integrity',
     subtitle: 'Silent corruption is the worst kind. Verify the system actually does what it says.',
@@ -179,6 +116,49 @@ const PLAN: TestSection[] = [
         ],
       },
       {
+        title: '/dashboard-v2 inbox',
+        items: [
+          { id: 'm.i.1', severity: 'recent', text: 'Group toggle: PO / Supplier / Flat — total visible items count stays the same across modes (proof that grouping is just a re-render, not a re-fetch).' },
+          { id: 'm.i.2', severity: 'recent', text: 'Tick a PO group checkbox → every nested row selects + bulk action bar appears at top. Untick → bar disappears.' },
+          { id: 'm.i.3', severity: 'recent', text: 'Bulk Approve all → those rows disappear, refetch confirms they\'re gone from DB (not cached).' },
+          { id: 'm.i.4', severity: 'recent', text: 'Bulk Reject 5 with one reason → all 5 PendingDateChange rows show that same reason in DB.' },
+          { id: 'm.i.5', severity: 'recent', text: 'Filter pills (Dates / Samples / Other) actually filter — counts update when checks happen.' },
+          { id: 'm.i.6', severity: 'recent', text: 'Group headers stick to top of the inbox while you scroll past the rows in that group.' },
+        ],
+      },
+      {
+        title: 'V2 detail modal',
+        items: [
+          { id: 'm.v.1', severity: 'recent', text: 'Click each pill (Product / Sampling / Shipping / Timeline) — section scrolls so its top sits right under the pill nav, NOT past it.' },
+          { id: 'm.v.2', severity: 'recent', text: 'Scroll all the way down — Timeline pill highlights (the bottom-snap fix).' },
+          { id: 'm.v.3', severity: 'recent', text: 'Edit a date field → cross-OS DatePicker opens (NOT the native HTML date input — check on Windows + Firefox if you have one).' },
+        ],
+      },
+      {
+        title: 'Activity feed',
+        items: [
+          { id: 'm.f.1', severity: 'recent', text: 'Activity surface is one continuous list (NOT separate boxed cards per PO). PO acts as a sticky section header inside the same surface.' },
+          { id: 'm.f.2', severity: 'recent', text: 'Click any PO header in the feed → /orders-v2 opens with that PO expanded. Click a style-code event → opens the V2 modal directly on that style.' },
+          { id: 'm.f.3', severity: 'recent', text: 'Bulk approval (e.g. "Sarah approved Fit Sample on 4 styles") shows ONE row in the activity feed, not 4 separate rows.' },
+        ],
+      },
+      {
+        title: 'Export modal',
+        items: [
+          { id: 'm.e.1', severity: 'recent', text: '/orders → Export → "Export all" downloads file. Open it in Excel — column headers + data look correct.' },
+          { id: 'm.e.2', severity: 'recent', text: '"Choose POs" → search filter works, tick 3 POs → "Export 3 POs" downloads file with ONLY those POs.' },
+        ],
+      },
+      {
+        title: 'Tracking',
+        items: [
+          { id: 'm.t.1', severity: 'recent', text: '/tracking page lists tracking refs grouped by reference number with vessel info per group.' },
+          { id: 'm.t.2', severity: 'recent', text: 'Search a vessel name / ref → list filters live as you type.' },
+          { id: 'm.t.3', severity: 'data', text: 'Edit Revised Vessel ETA on a tracking ref → all orders linked to that ref get the new value (bulk update).' },
+          { id: 'm.t.4', severity: 'data', text: 'Tracking ref typed directly on an order → tracking page picks it up the next time it\'s loaded.' },
+        ],
+      },
+      {
         title: 'Comments + collaboration',
         items: [
           { id: 'm.c.1', text: 'User A leaves a comment with @username → user B sees it as unread + with the @mention highlighted.' },
@@ -201,6 +181,12 @@ const PLAN: TestSection[] = [
           { id: 'g.c.1', text: 'Add component "Outer Shell" to a PO with 5 styles via "Apply to: all styles on PO" → 5 component rows created, all with the same name.' },
           { id: 'g.c.2', text: 'Add a component name that\'s a near-match of an existing one (whitespace / casing diff) → autocomplete should nudge towards the existing name to avoid variants.' },
           { id: 'g.c.3', text: 'On a component, set Fit Sample to REJECTED → reject modal appears, requires reason → submit → next attempt is v2, v1 is preserved in attempt history.' },
+        ],
+      },
+      {
+        title: 'V2 modal · sample reject',
+        items: [
+          { id: 'g.v.1', severity: 'recent', text: 'On a component, set Fit Sample to REJECTED → modal asks for reason → on save, AttemptBadge shows v2 + RejectionContextBanner appears on the order.' },
         ],
       },
       {
@@ -229,10 +215,20 @@ const PLAN: TestSection[] = [
         ],
       },
       {
-        title: 'Shipment drafts (supplier flow)',
+        title: 'Shipment drafts',
         items: [
           { id: 'f.d.1', text: 'Supplier creates a draft → it\'s automatically scoped to their factory; no factory picker shown.' },
           { id: 'f.d.2', text: 'Supplier sees only their own drafts in the list, never another factory\'s drafts.' },
+          { id: 'f.s.1', severity: 'recent', text: 'Build a draft from scratch, tick SKUs from 2 different POs, fill 5 shared fields, Confirm → vessel info propagates to all linked orders.' },
+          { id: 'f.s.2', severity: 'data', text: 'Edit a CONFIRMED shipment → change Vessel ETD → save → all linked orders show the new ETD (no stragglers).' },
+          { id: 'f.s.3', severity: 'recent', text: 'Pick a SKU already on another confirmed shipment → conflict note appears under that SKU row (not a separate alert).' },
+          { id: 'f.s.4', severity: 'data', text: 'Partial-shipment quantity: edit qty in draft, confirm → linked order quantity reflects the partial, not the full SKU qty.' },
+        ],
+      },
+      {
+        title: 'Export modal',
+        items: [
+          { id: 'f.e.1', severity: 'role', text: 'Supplier opens Export on /factory-product → "Choose POs" picker shows ONLY their factory\'s POs (not all POs).' },
         ],
       },
     ],
