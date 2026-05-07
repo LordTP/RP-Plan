@@ -1016,28 +1016,24 @@ function DetailBody({
 
   // Sampling progress badge — count distinct sample types and how many are done.
   // For the hero strip; also used to show "1 pending" on the Sampling pill.
+  // Fit + PPS are always order-level. Strike + Lab fall back to the order
+  // when there are no components; otherwise they're tracked per-component
+  // and don't show in this hero count.
   const sampleProgress = useMemo(() => {
     const items: { label: string; done: boolean }[] = [];
-    if (hasComponents) {
-      // When components exist, the count lives inside ComponentsSection — we can't
-      // accurately mirror it here without re-fetching, so fall back to PPS only.
-      if (hasCol('pps_status')) {
-        const s = (order.pps_status || '').toUpperCase();
-        items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
-      }
-      return items;
-    }
     if (hasCol('fit_sample_status')) {
       const s = (order.fit_sample_status || '').toUpperCase();
       items.push({ label: 'Fit', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
     }
-    if (hasCol('strike_off_status')) {
-      const s = (order.strike_off_status || '').toUpperCase();
-      items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
-    }
-    if (hasCol('lab_dip_status')) {
-      const s = (order.lab_dip_status || '').toUpperCase();
-      items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    if (!hasComponents) {
+      if (hasCol('strike_off_status')) {
+        const s = (order.strike_off_status || '').toUpperCase();
+        items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
+      if (hasCol('lab_dip_status')) {
+        const s = (order.lab_dip_status || '').toUpperCase();
+        items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
     }
     if (hasCol('pps_status')) {
       const s = (order.pps_status || '').toUpperCase();
@@ -1106,7 +1102,10 @@ function DetailBody({
           <HeroTile
             label="Sampling"
             value={`${sampleDone} of ${sampleTotal}`}
-            sub={samplePending > 0 ? `${samplePending} pending` : 'all done'}
+            sub={samplePending > 0
+              ? `${sampleProgress.filter(s => !s.done).map(s => s.label).join(', ')} pending`
+              : `${sampleProgress.map(s => s.label).join(', ')} all done`
+            }
             tone={samplePending > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/30'}
           />
         )}

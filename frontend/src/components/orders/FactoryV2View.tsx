@@ -1307,7 +1307,10 @@ function DetailPanel({
               <HeroTile
                 label="Sampling"
                 value={`${sampleDone} of ${sampleTotal}`}
-                sub={samplePending > 0 ? `${samplePending} pending` : 'all done'}
+                sub={samplePending > 0
+                  ? `${sampleProgress.filter(s => !s.done).map(s => s.label).join(', ')} pending`
+                  : `${sampleProgress.map(s => s.label).join(', ')} all done`
+                }
                 tone={samplePending > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200 bg-emerald-50/30'}
               />
             )}
