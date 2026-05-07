@@ -56,7 +56,6 @@ type Group = {
   name: string;
   instances: Instance[];
   visibleInstances: Instance[]; // filtered by search
-  fitDone: number;
   soDone: number;
   ldDone: number;
   total: number;
@@ -129,13 +128,13 @@ function DesignComponentsContent() {
         ? instances.filter(({ order }) => orderMatchesQuery(order, q))
         : instances;
 
-      // In Pending mode, drop any instance that's fully done (all 3 samples done)
+      // In Pending mode, drop any instance that's fully done (Strike + Lab done).
+      // Fit lives on the style now, not the component.
       if (sort === 'pending') {
         visibleInstances = visibleInstances.filter(({ component }) => {
-          const f = isSampleDone(component.fit_sample_status, component.fit_sample_approved);
           const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
           const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-          return !(f && s && l);
+          return !(s && l);
         });
       }
 
@@ -143,21 +142,18 @@ function DesignComponentsContent() {
       // If Pending mode and nothing pending, also skip (filters out fully-done groups).
       if ((q || sort === 'pending') && visibleInstances.length === 0) continue;
 
-      let fitDone = 0, soDone = 0, ldDone = 0, pending = 0;
+      let soDone = 0, ldDone = 0, pending = 0;
       for (const { component } of visibleInstances) {
-        const f = isSampleDone(component.fit_sample_status, component.fit_sample_approved);
         const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
         const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-        if (f) fitDone++;
         if (s) soDone++;
         if (l) ldDone++;
-        if (!f || !s || !l) pending++;
+        if (!s || !l) pending++;
       }
       out.push({
         name,
         instances,
         visibleInstances,
-        fitDone,
         soDone,
         ldDone,
         total: visibleInstances.length,
@@ -228,10 +224,10 @@ function DesignComponentsContent() {
     }
   };
 
-  // Summary stats for the selected component (computed on the visible instances so search-aware)
+  // Summary stats for the selected component (computed on the visible instances so search-aware).
+  // Fit lives on the style now, so it's not part of component-level summary.
   const summary = useMemo(() => {
     if (!selectedGroup) return null;
-    const fitDays: number[] = [];
     const soDays: number[] = [];
     const ldDays: number[] = [];
     const factoryCounts = new Map<string, number>();
@@ -240,9 +236,6 @@ function DesignComponentsContent() {
 
     for (const inst of selectedGroup.visibleInstances) {
       const { order, component } = inst;
-      if (component.fit_sample_received && component.fit_sample_approved) {
-        fitDays.push(businessDaysBetween(component.fit_sample_received, component.fit_sample_approved));
-      }
       if (component.strike_off_received && component.strike_off_approved) {
         soDays.push(businessDaysBetween(component.strike_off_received, component.strike_off_approved));
       }
@@ -253,10 +246,9 @@ function DesignComponentsContent() {
         factoryCounts.set(order.factory, (factoryCounts.get(order.factory) || 0) + 1);
       }
 
-      const fitDone = isSampleDone(component.fit_sample_status, component.fit_sample_approved);
       const soDone = isSampleDone(component.strike_off_status, component.strike_off_approved);
       const ldDone = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-      if (!fitDone || !soDone || !ldDone) {
+      if (!soDone || !ldDone) {
         const ageDays = Math.floor((Date.now() - new Date(component.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         if (ageDays > oldestPendingAge) {
           oldestPendingAge = ageDays;
@@ -271,7 +263,6 @@ function DesignComponentsContent() {
       .slice(0, 3);
 
     return {
-      avgFit: avg(fitDays),
       avgSo: avg(soDays),
       avgLd: avg(ldDays),
       topFactories,
@@ -360,7 +351,7 @@ function DesignComponentsContent() {
                 ) : (
                   groups.map((g) => {
                     const isActive = g.name === selectedName;
-                    const allDone = g.total > 0 && g.fitDone === g.total && g.soDone === g.total && g.ldDone === g.total;
+                    const allDone = g.total > 0 && g.soDone === g.total && g.ldDone === g.total;
                     return (
                       <button
                         key={g.name}
@@ -414,7 +405,6 @@ function DesignComponentsContent() {
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <SamplePill label="Fit" done={selectedGroup.fitDone} total={selectedGroup.total} />
                       <SamplePill label="SO" done={selectedGroup.soDone} total={selectedGroup.total} />
                       <SamplePill label="LD" done={selectedGroup.ldDone} total={selectedGroup.total} />
                     </div>
@@ -424,7 +414,6 @@ function DesignComponentsContent() {
                     <div className="px-5 py-3 border-b border-gray-100 grid grid-cols-3 gap-3">
                       <SummaryCard label="Avg approval (biz days)">
                         <div className="flex items-center gap-2">
-                          <AvgStat letter="F" value={summary.avgFit} />
                           <AvgStat letter="SO" value={summary.avgSo} />
                           <AvgStat letter="LD" value={summary.avgLd} />
                         </div>
@@ -499,14 +488,12 @@ function DesignComponentsContent() {
                           <th className="px-3 py-2">Season</th>
                           <th className="px-3 py-2">Ex-fac</th>
                           <th className="px-3 py-2">Updated</th>
-                          <th className="px-2 py-2 text-center">Fit</th>
                           <th className="px-2 py-2 text-center">SO</th>
                           <th className="px-2 py-2 text-center">LD</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedGroup.visibleInstances.map(({ order, component }) => {
-                          const fit = isSampleDone(component.fit_sample_status, component.fit_sample_approved);
                           const so = isSampleDone(component.strike_off_status, component.strike_off_approved);
                           const ld = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
                           const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
@@ -549,12 +536,6 @@ function DesignComponentsContent() {
                               <td className="px-3 py-2.5 text-gray-500 text-[10px] uppercase tracking-wider">{order.season || '—'}</td>
                               <td className="px-3 py-2.5"><ExFacBadge days={daysToExFac} /></td>
                               <td className="px-3 py-2.5 text-gray-500">{relativeTimeShort(component.updated_at)}</td>
-                              <td className="px-2 py-2.5 text-center">
-                                <div className="inline-flex items-center gap-1">
-                                  <Dot done={fit} />
-                                  <AttemptBadge attemptNo={component.fit_sample_attempt_no} rejectionCount={component.fit_sample_rejection_count} size="xs" />
-                                </div>
-                              </td>
                               <td className="px-2 py-2.5 text-center">
                                 <div className="inline-flex items-center gap-1">
                                   <Dot done={so} />
@@ -627,7 +608,6 @@ function DesignComponentsContent() {
 // Dates aren't offered here because setting the same date across many styles
 // is almost always wrong; stick to status/NOT REQUIRED clears.
 const BULK_FIELDS: { key: string; label: string; options: string[] }[] = [
-  { key: 'fit_sample_status', label: 'Fit Sample', options: FIT_SAMPLE_STATUS_OPTIONS },
   { key: 'strike_off_status', label: 'Strike Off', options: SAMPLE_STATUS_OPTIONS },
   { key: 'lab_dip_status', label: 'Lab Dip', options: SAMPLE_STATUS_OPTIONS },
 ];

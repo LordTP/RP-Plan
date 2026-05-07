@@ -1198,27 +1198,18 @@ function DetailBody({
                 badgeTone="amber"
               />
 
-              {/* Components — uses the existing ComponentsSection. The component
-                  renders its own "Components" subhead + add button + cards. */}
-              {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+              {/* Components — Strike Off + Lab Dip per component. Fit lives on the style. */}
+              {(hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
                 <div className="mb-4">
                   <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
                 </div>
               )}
 
-              {/* Order-level samples — only when there are no components. */}
-              {!hasComponents && (hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+              {/* Style-level Strike + Lab — only when no components exist (default fallback). */}
+              {!hasComponents && (hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
                 <>
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Order-level samples</div>
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                      <SampleCard label="Fit Sample">
-                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
-                        {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
-                        {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
-                        {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
-                      </SampleCard>
-                    )}
+                  <div className="grid grid-cols-2 gap-2 mb-4">
                     {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                       <SampleCard label="Strike Off">
                         {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="strike_off_status" onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
@@ -1234,6 +1225,19 @@ function DetailBody({
                       </SampleCard>
                     )}
                   </div>
+                </>
+              )}
+
+              {/* Fit Sample — always at order/style level. */}
+              {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
+                <>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
+                  <SampleCard label="Fit Sample" highlight>
+                    {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
+                    {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                    {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
+                    {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
+                  </SampleCard>
                 </>
               )}
 

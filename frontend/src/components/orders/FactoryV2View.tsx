@@ -1148,26 +1148,23 @@ function DetailPanel({
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
 
   // Hero strip computations (sampling progress + ex-fac countdown).
+  // Fit is always order-level; Strike + Lab roll up from components when those
+  // exist, otherwise read directly from the order.
   const sampleProgress = useMemo(() => {
     const items: { label: string; done: boolean }[] = [];
-    if (hasComponents) {
-      if (hasCol('pps_status')) {
-        const s = (order.pps_status || '').toUpperCase();
-        items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
-      }
-      return items;
-    }
     if (hasCol('fit_sample_status')) {
       const s = (order.fit_sample_status || '').toUpperCase();
       items.push({ label: 'Fit', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
     }
-    if (hasCol('strike_off_status')) {
-      const s = (order.strike_off_status || '').toUpperCase();
-      items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
-    }
-    if (hasCol('lab_dip_status')) {
-      const s = (order.lab_dip_status || '').toUpperCase();
-      items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+    if (!hasComponents) {
+      if (hasCol('strike_off_status')) {
+        const s = (order.strike_off_status || '').toUpperCase();
+        items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
+      if (hasCol('lab_dip_status')) {
+        const s = (order.lab_dip_status || '').toUpperCase();
+        items.push({ label: 'Lab', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      }
     }
     if (hasCol('pps_status')) {
       const s = (order.pps_status || '').toUpperCase();
@@ -1387,26 +1384,18 @@ function DetailPanel({
                 <section ref={samplingRef} className="px-6 pt-6 pb-3">
                   <SectionHeader accent="amber" label="Sampling" badge={samplePending > 0 ? `${samplePending} pending` : undefined} badgeTone="amber" />
 
-                  {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                  {/* Components section — Strike Off + Lab Dip per component (Fit lives on the style now). */}
+                  {(hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
                     <div className="mb-4">
                       <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
                     </div>
                   )}
 
-                  {!hasComponents && (hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
+                  {/* Style-level Strike + Lab — only shown when no components exist (default-fallback). */}
+                  {!hasComponents && (hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
                     <>
                       <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Order-level samples</div>
-                      <div className="grid grid-cols-3 gap-2 mb-4">
-                        {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                          <SampleCard label="Fit Sample">
-                            <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
-                            {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
-                            {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
-                            {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
-                            {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
-                            <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="fit" size="sm" />
-                          </SampleCard>
-                        )}
+                      <div className="grid grid-cols-2 gap-2 mb-4">
                         {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                           <SampleCard label="Strike Off">
                             <RejectionContextBanner rejection={order.strike_off_last_rejection} attemptNo={order.strike_off_attempt_no} sampleAreaLabel="Strike Off" size="sm" />
@@ -1426,6 +1415,21 @@ function DetailPanel({
                           </SampleCard>
                         )}
                       </div>
+                    </>
+                  )}
+
+                  {/* Fit Sample — always at order level, regardless of components. */}
+                  {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
+                    <>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
+                      <SampleCard label="Fit Sample" highlight>
+                        <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
+                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
+                        {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
+                        {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
+                        {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
+                        <AttemptHistory submissions={orderSubmissions} componentId={null} sampleType="fit" size="sm" />
+                      </SampleCard>
                     </>
                   )}
 
@@ -1558,10 +1562,9 @@ function DetailPanel({
 
 // ─── Components Section ───────────────────────────────────
 
+// Components only carry Strike Off + Lab Dip — Fit Sample is a whole-garment
+// concern and lives on the style/order itself.
 const COMPONENT_SAMPLE_FIELDS: { key: string; label: string; type: string; colKey: string; options?: string[] }[] = [
-  { key: 'fit_sample_status', label: 'Fit Status', type: 'text', colKey: 'fit_sample_status', options: FIT_SAMPLE_STATUS_OPTIONS },
-  { key: 'fit_sample_received', label: 'Fit Rcvd', type: 'date', colKey: 'fit_sample_received' },
-  { key: 'fit_sample_approved', label: 'Fit Appr', type: 'date', colKey: 'fit_sample_approved' },
   { key: 'strike_off_status', label: 'Strike Off Status', type: 'text', colKey: 'strike_off_status', options: SAMPLE_STATUS_OPTIONS },
   { key: 'strike_off_received', label: 'Strike Off Rcvd', type: 'date', colKey: 'strike_off_received' },
   { key: 'strike_off_approved', label: 'Strike Off Appr', type: 'date', colKey: 'strike_off_approved' },
@@ -1909,7 +1912,6 @@ export function ComponentsSection({
                 <div className="flex items-center gap-1">
                   {/* Quick status summary with rework indicator. Shows the current attempt
                       number and prior rejection count when submissions exist. */}
-                  <SampleAreaChip label="Fit" done={(comp.fit_sample_status || '').toUpperCase() === 'APPROVED' || (comp.fit_sample_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.fit_sample_approved} submissions={submissions} componentId={comp.id} sampleType="fit" />
                   <SampleAreaChip label="SO" done={(comp.strike_off_status || '').toUpperCase() === 'APPROVED' || (comp.strike_off_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.strike_off_approved} submissions={submissions} componentId={comp.id} sampleType="strike" />
                   <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
                 </div>
@@ -1919,20 +1921,6 @@ export function ComponentsSection({
               {expandedId === comp.id && (
                 <div className="px-3 py-2 border-t border-gray-100 space-y-2">
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    {/* Fit Sample */}
-                    {visibleFields.some(f => f.key.startsWith('fit_')) && (
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1.5">
-                          Fit Sample
-                          <AttemptBadge attemptNo={comp.fit_sample_attempt_no} rejectionCount={comp.fit_sample_rejection_count} size="xs" />
-                        </p>
-                        <RejectionContextBanner rejection={comp.fit_sample_last_rejection} attemptNo={comp.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
-                        {visibleFields.filter(f => f.key.startsWith('fit_')).map(field => (
-                          <ComponentFieldRow key={field.key} label={field.label.replace('Fit ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
-                        ))}
-                        <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="fit" size="sm" />
-                      </div>
-                    )}
                     {/* Strike Off */}
                     {visibleFields.some(f => f.key.startsWith('strike_off_')) && (
                       <div className="space-y-1.5">

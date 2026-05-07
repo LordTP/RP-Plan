@@ -97,7 +97,9 @@ def _decorate_component_attempts(
     optionally the latest-rejection context (only populated when current attempt > 1)."""
     cid = component_dict['id'] if isinstance(component_dict, dict) else component_dict.id
     oid = component_dict.get('order_id') if isinstance(component_dict, dict) else getattr(component_dict, 'order_id', None)
-    for sample_type, prefix in (('fit', 'fit_sample'), ('strike', 'strike_off'), ('lab', 'lab_dip')):
+    # Fit lives on the style/order, not the component — drop it from the per-component
+    # decorator so the component dict no longer ships fit_sample_attempt_no etc.
+    for sample_type, prefix in (('strike', 'strike_off'), ('lab', 'lab_dip')):
         attempt, rejections = summary.get((cid, sample_type), (1, 0))
         if isinstance(component_dict, dict):
             component_dict[f'{prefix}_attempt_no'] = attempt
