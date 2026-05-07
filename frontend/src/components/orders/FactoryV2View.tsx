@@ -33,7 +33,7 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
@@ -1424,7 +1424,7 @@ function DetailPanel({
                       <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
                       <SampleCard label="Fit Sample" highlight>
                         <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
-                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} />}
+                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
                         {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} extra={<AttemptBadge attemptNo={order.fit_sample_attempt_no} rejectionCount={order.fit_sample_rejection_count} size="xs" />} />}
                         {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} />}
                         {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} />}
@@ -1435,7 +1435,7 @@ function DetailPanel({
 
                   {(hasCol('pps_status') || hasCol('pps_received')) && (
                     <>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">PPS · order-level</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS · order-level</div>
                       <SampleCard label="Pre-Production Sample" highlight>
                         <RejectionContextBanner rejection={order.pps_last_rejection} attemptNo={order.pps_attempt_no} sampleAreaLabel="PPS" size="sm" />
                         {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} extra={<AttemptBadge attemptNo={order.pps_attempt_no} rejectionCount={order.pps_rejection_count} size="xs" />} />}

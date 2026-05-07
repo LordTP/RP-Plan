@@ -40,7 +40,7 @@ import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -1233,7 +1233,7 @@ function DetailBody({
                 <>
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
                   <SampleCard label="Fit Sample" highlight>
-                    {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
+                    {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
                     {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
                     {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
                     {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
@@ -1244,7 +1244,7 @@ function DetailBody({
               {/* PPS — always order-level. */}
               {(hasCol('pps_status') || hasCol('pps_received')) && (
                 <>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">PPS · order-level</div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS · order-level</div>
                   <SampleCard label="Pre-Production Sample" highlight>
                     {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
                     {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} fieldKey="pps_received" onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
@@ -1498,28 +1498,23 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
     setEditing(false);
   };
 
-  // If editing AND bulkable AND we have PO context, swap the inline editor
-  // for the scope-aware one so the user can choose this-style / all / selected.
-  if (editing && isBulkable && fieldKey) {
-    return (
-      <div className="flex items-baseline justify-between gap-2 px-4 py-2 border-b border-gray-50 last:border-0">
-        <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
+  return (
+    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
+      {/* When bulkable, the editor is a floating modal — show the row's value
+          underneath while the modal is open so the layout doesn't collapse. */}
+      {editing && isBulkable && fieldKey && (
         <InlineBulkScopeEditor
           fieldKey={fieldKey}
           type={type}
           options={options}
           initialValue={editValue}
+          fieldLabel={label}
           onSavedSingle={(v) => { handleSave(v); }}
           onCancel={() => setEditing(false)}
         />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
-      {editing ? (
+      )}
+      {editing && !isBulkable ? (
         options ? (
           <StatusDropdown
             value={editValue}

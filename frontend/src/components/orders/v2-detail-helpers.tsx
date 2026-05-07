@@ -56,6 +56,7 @@ export function InlineBulkScopeEditor({
   type,
   options,
   initialValue,
+  fieldLabel,
   onSavedSingle,
   onCancel,
 }: {
@@ -63,6 +64,8 @@ export function InlineBulkScopeEditor({
   type?: 'text' | 'date';
   options?: string[];
   initialValue: string;
+  /** Display label — shown in the modal header. Defaults to a humanised fieldKey. */
+  fieldLabel?: string;
   /** Called when the user chose "this style only" — parent handles single update via its own onSave path. */
   onSavedSingle: (value: string) => void;
   onCancel: () => void;
@@ -74,6 +77,13 @@ export function InlineBulkScopeEditor({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Esc to close
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel, saving]);
 
   // Fetch siblings on the same PO (excluding the current order)
   useEffect(() => {
@@ -101,10 +111,12 @@ export function InlineBulkScopeEditor({
   };
 
   const totalIfBulk = mode === 'all' ? 1 + siblings.length : 1 + selectedIds.size;
+  const prettyLabel = fieldLabel || fieldKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   const handleSubmit = async () => {
     if (!ctx) return;
     if (mode === 'single') {
+      // Parent's onSavedSingle calls handleSave which closes the editor.
       onSavedSingle(value);
       return;
     }
@@ -122,9 +134,9 @@ export function InlineBulkScopeEditor({
       const count = result?.updated_count ?? totalIfBulk;
       toast.success(`Updated ${count} style${count === 1 ? '' : 's'}`);
       ctx.onAfterBulkSave();
+      onCancel();  // close the modal — parent refreshes via the context callback
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Bulk update failed');
-    } finally {
       setSaving(false);
     }
   };
@@ -132,100 +144,108 @@ export function InlineBulkScopeEditor({
   const showSiblings = !loading && siblings.length > 0;
 
   return (
-    <div className="flex-1 ml-4 -my-1 -mr-1 bg-white border border-blue-200 rounded-md shadow-sm p-2.5 space-y-2.5 min-w-[280px]">
-      {/* Value input */}
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold w-12">Value</span>
-        {options ? (
-          <select
-            value={value}
-            onChange={(e) => setValue(e.target.value.toUpperCase())}
-            autoFocus
-            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">— Select —</option>
-            {options.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        ) : type === 'date' ? (
-          <div className="flex-1">
-            <DatePickerInput value={value} onChange={setValue} variant="block" size="sm" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-6"
+      onClick={saving ? undefined : onCancel}
+    >
+      <div
+        className="w-full max-w-sm bg-white rounded-xl shadow-xl ring-1 ring-gray-200 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Edit</div>
+            <h3 className="text-sm font-bold text-gray-900 truncate">{prettyLabel}</h3>
           </div>
-        ) : (
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoFocus
-            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        )}
-      </div>
+          <button onClick={onCancel} disabled={saving} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </button>
+        </div>
 
-      {/* Scope picker — only shown if there are siblings on the PO */}
-      {showSiblings && (
-        <div className="border-t border-gray-100 pt-2 space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Apply to</div>
-          <div className="space-y-1">
-            <ScopeRadio
-              checked={mode === 'single'}
-              onChange={() => setMode('single')}
-              title="This style only"
-            />
-            <ScopeRadio
-              checked={mode === 'all'}
-              onChange={() => setMode('all')}
-              title={`All styles on this PO (${1 + siblings.length})`}
-            />
-            <ScopeRadio
-              checked={mode === 'selected'}
-              onChange={() => setMode('selected')}
-              title={`Select specific styles (${selectedIds.size + 1} of ${siblings.length + 1})`}
-            />
-            {mode === 'selected' && (
-              <div className="ml-6 mt-1 max-h-32 overflow-y-auto border border-gray-200 rounded-md bg-gray-50/40 divide-y divide-gray-100">
-                {siblings.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 px-2 py-1 text-[11px] hover:bg-white cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(s.id)}
-                      onChange={() => toggleSelected(s.id)}
-                      className="w-3 h-3"
-                    />
-                    <span className="font-mono text-gray-700">{s.style_code}</span>
-                    <span className="text-gray-500 truncate">{s.description}</span>
-                    <span className="text-gray-400 ml-auto">{s.colour}</span>
-                  </label>
-                ))}
-              </div>
+        {/* Body */}
+        <div className="px-4 py-3 space-y-3">
+          {/* Value input */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5 block">Value</label>
+            {options ? (
+              <select
+                value={value}
+                onChange={(e) => setValue(e.target.value.toUpperCase())}
+                autoFocus
+                className="w-full text-xs border border-gray-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                <option value="">— Select —</option>
+                {options.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            ) : type === 'date' ? (
+              <DatePickerInput value={value} onChange={setValue} variant="block" size="sm" />
+            ) : (
+              <input
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                autoFocus
+                className="w-full text-xs border border-gray-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
             )}
           </div>
-        </div>
-      )}
 
-      {loading && (
-        <div className="flex items-center gap-2 text-[11px] text-gray-400">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Checking sibling styles…
-        </div>
-      )}
+          {/* Scope picker — only shown if there are siblings on the PO */}
+          {showSiblings && (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5 block">Apply to</label>
+              <div className="space-y-1">
+                <ScopeRadio checked={mode === 'single'} onChange={() => setMode('single')} title="This style only" />
+                <ScopeRadio checked={mode === 'all'} onChange={() => setMode('all')} title={`All styles on this PO (${1 + siblings.length})`} />
+                <ScopeRadio checked={mode === 'selected'} onChange={() => setMode('selected')} title={`Select specific styles (${selectedIds.size + 1} of ${siblings.length + 1})`} />
+                {mode === 'selected' && (
+                  <div className="ml-5 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-gray-50/40 divide-y divide-gray-100">
+                    {siblings.map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 px-2 py-1 text-[11px] hover:bg-white cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(s.id)}
+                          onChange={() => toggleSelected(s.id)}
+                          className="w-3 h-3"
+                        />
+                        <span className="font-mono text-gray-700">{s.style_code}</span>
+                        <span className="text-gray-500 truncate">{s.description}</span>
+                        <span className="text-gray-400 ml-auto">{s.colour}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-gray-100">
-        <button
-          onClick={onCancel}
-          disabled={saving}
-          className="px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-100 rounded"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-1 disabled:opacity-50"
-        >
-          {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-          {mode === 'single' ? 'Save' : `Save · ${totalIfBulk} style${totalIfBulk === 1 ? '' : 's'}`}
-        </button>
+          {loading && (
+            <div className="flex items-center gap-2 text-[11px] text-gray-400">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Checking sibling styles…
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2 bg-gray-50/40">
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-md flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+            {mode === 'single' ? 'Save' : `Save · ${totalIfBulk} style${totalIfBulk === 1 ? '' : 's'}`}
+          </button>
+        </div>
       </div>
     </div>
   );

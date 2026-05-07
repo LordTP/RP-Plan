@@ -285,6 +285,8 @@ export const SAMPLE_STATUS_FIELD_TO_TYPE: Record<string, 'fit' | 'strike' | 'lab
 
 export const FCL_LCL_OPTIONS = ['FCL', 'LCL', 'AIR'];
 
+export const FIT_REQUIRED_OPTIONS = ['Y', 'N'];
+
 export const COLUMNS: ColumnDef[] = [
   // Core PO identifiers - matches new CP HEADERS order
   { key: 'po_number', label: 'PO#', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
@@ -330,7 +332,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'original_po_ex_factory', label: 'Requested Ex-Fac', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'factory_confirmed_ex_factory', label: 'Factory Confirmed Ex-Fac', width: 150, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Samples - Fit
-  { key: 'fit_sample_required', label: 'Fit Sample Req', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  { key: 'fit_sample_required', label: 'Fit Sample Req', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FIT_REQUIRED_OPTIONS },
   { key: 'fit_sample_status', label: 'Fit Sample Status', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FIT_SAMPLE_STATUS_OPTIONS },
   { key: 'fit_sample_received', label: 'Fit Sample Rcvd', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'fit_sample_approved', label: 'Fit Sample Appr', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
