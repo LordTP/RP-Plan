@@ -7,6 +7,8 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { AddComponentModal } from '@/components/orders/AddComponentModal';
+import { ComponentEditModal } from '@/components/orders/ComponentEditModal';
+import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { ordersApi, componentsApi, submissionsApi, type RejectReason, type SampleType } from '@/lib/api';
 import { SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
@@ -76,6 +78,7 @@ function DesignComponentsContent() {
   const [bulkAction, setBulkAction] = useState<{ field: string; fieldLabel: string; value: string | null; valueLabel: string } | null>(null);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editing, setEditing] = useState<{ order: Order; component: OrderComponent } | null>(null);
 
   const reloadOrders = () => {
     setIsLoading(true);
@@ -519,7 +522,7 @@ function DesignComponentsContent() {
                           return (
                             <tr
                               key={component.id}
-                              onClick={() => openStyle(order.id)}
+                              onClick={() => setEditing({ order, component })}
                               className={cn(
                                 'border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors',
                                 isSelected && 'bg-primary-50/60 hover:bg-primary-50'
@@ -629,17 +632,41 @@ function DesignComponentsContent() {
           setSelectedName(componentName);
         }}
       />
+
+      {editing && (
+        <ComponentEditModal
+          open={!!editing}
+          order={editing.order}
+          component={editing.component}
+          onClose={() => setEditing(null)}
+          onUpdated={reloadOrders}
+          onOpenFullOrder={(orderId) => { setEditing(null); router.push(`/design?openStyle=${orderId}`); }}
+        />
+      )}
     </AppShell>
   );
 }
 
-// Fields a user can bulk-set on selected components, with preset values.
-// Dates aren't offered here because setting the same date across many styles
-// is almost always wrong; stick to status/NOT REQUIRED clears.
-const BULK_FIELDS: { key: string; label: string; options: string[] }[] = [
-  { key: 'strike_off_status', label: 'Strike Off', options: SAMPLE_STATUS_OPTIONS },
-  { key: 'lab_dip_status', label: 'Lab Dip', options: SAMPLE_STATUS_OPTIONS },
+// Fields a user can bulk-set on selected components. "status" entries pop
+// a list of preset values; "date" entries pop a date picker with a Today
+// shortcut and a Clear option.
+type BulkField =
+  | { kind: 'status'; key: string; label: string; options: string[] }
+  | { kind: 'date'; key: string; label: string };
+
+const BULK_FIELDS: BulkField[] = [
+  { kind: 'status', key: 'strike_off_status',   label: 'Strike Status', options: SAMPLE_STATUS_OPTIONS },
+  { kind: 'date',   key: 'strike_off_received', label: 'Strike Rcvd' },
+  { kind: 'date',   key: 'strike_off_approved', label: 'Strike Appr' },
+  { kind: 'status', key: 'lab_dip_status',      label: 'Lab Status',    options: SAMPLE_STATUS_OPTIONS },
+  { kind: 'date',   key: 'lab_dip_received',    label: 'Lab Rcvd' },
+  { kind: 'date',   key: 'lab_dip_approved',    label: 'Lab Appr' },
 ];
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function BulkActionBar({
   count,
@@ -671,27 +698,37 @@ function BulkActionBar({
             onClick={() => setOpenMenu(openMenu === f.key ? null : f.key)}
             className="flex items-center gap-1 text-[11px] font-medium text-primary-700 hover:bg-primary-100 rounded px-2 py-1 transition-colors"
           >
-            Set {f.label}
+            {f.label}
             <ChevronDown className={cn('w-3 h-3 transition-transform', openMenu === f.key && 'rotate-180')} />
           </button>
           {openMenu === f.key && (
             <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-30">
-              {f.options.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => { setOpenMenu(null); onPick(f.key, f.label, opt, opt); }}
-                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50"
-                >
-                  {opt}
-                </button>
-              ))}
-              <div className="border-t border-gray-100 my-1" />
-              <button
-                onClick={() => { setOpenMenu(null); onPick(f.key, f.label, null, 'Clear (empty)'); }}
-                className="w-full text-left px-3 py-1.5 text-[11px] text-gray-500 italic hover:bg-gray-50"
-              >
-                Clear (empty)
-              </button>
+              {f.kind === 'status' ? (
+                <>
+                  {f.options.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => { setOpenMenu(null); onPick(f.key, f.label, opt, opt); }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50"
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                  <div className="border-t border-gray-100 my-1" />
+                  <button
+                    onClick={() => { setOpenMenu(null); onPick(f.key, f.label, null, 'Clear (empty)'); }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-gray-500 italic hover:bg-gray-50"
+                  >
+                    Clear (empty)
+                  </button>
+                </>
+              ) : (
+                <BulkDatePopover
+                  onPickToday={() => { setOpenMenu(null); const t = todayISO(); onPick(f.key, f.label, t, `Today (${t})`); }}
+                  onPickDate={(v) => { setOpenMenu(null); onPick(f.key, f.label, v, v); }}
+                  onClear={() => { setOpenMenu(null); onPick(f.key, f.label, null, 'Clear (empty)'); }}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1016,6 +1053,35 @@ function DupeClusterCard({
   );
 }
 
+
+function BulkDatePopover({ onPickToday, onPickDate, onClear }: {
+  onPickToday: () => void;
+  onPickDate: (iso: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="px-2 py-1 min-w-[200px]">
+      <button
+        onClick={onPickToday}
+        className="w-full text-left px-2 py-1.5 text-[11px] font-semibold text-primary-700 hover:bg-primary-50 rounded"
+      >
+        Set to today
+      </button>
+      <div className="border-t border-gray-100 my-1" />
+      <div className="px-2 py-1.5">
+        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Pick a date</p>
+        <DatePickerInput value="" onChange={(v) => v && onPickDate(v)} variant="block" size="sm" />
+      </div>
+      <div className="border-t border-gray-100 my-1" />
+      <button
+        onClick={onClear}
+        className="w-full text-left px-2 py-1.5 text-[11px] text-gray-500 italic hover:bg-gray-50 rounded"
+      >
+        Clear (empty)
+      </button>
+    </div>
+  );
+}
 
 function SortTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
