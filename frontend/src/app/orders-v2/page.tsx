@@ -34,7 +34,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
@@ -1128,6 +1128,11 @@ function DetailBody({
       </div>
 
       {/* Scroll body — all sections rendered, separated by dividers */}
+      <BulkScopeProvider
+        poNumber={order.po_number}
+        currentOrderId={order.id}
+        onAfterBulkSave={() => onSave?.(order.id, '__refresh__', null)}
+      >
       <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
 
         {/* ─── Product section ─── */}
@@ -1136,18 +1141,18 @@ function DetailBody({
           <div className="grid grid-cols-2 gap-4">
             {/* Product details card */}
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-              {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} onSave={(v) => onSave?.(order.id, 'description', v)} />}
-              {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} onSave={(v) => onSave?.(order.id, 'customer', v)} />}
-              {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
-              {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
-              {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
-              {hasCol('colour') && <DetailRow label="Colour" value={order.colour} editable={canEdit('colour')} onSave={(v) => onSave?.(order.id, 'colour', v)} />}
-              {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
-              {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} onSave={(v) => onSave?.(order.id, 'season', v)} />}
-              {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} onSave={(v) => onSave?.(order.id, 'factory', v)} />}
-              {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} onSave={(v) => onSave?.(order.id, 'terms', v)} />}
-              {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
-              {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
+              {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} fieldKey="description" onSave={(v) => onSave?.(order.id, 'description', v)} />}
+              {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} fieldKey="customer" onSave={(v) => onSave?.(order.id, 'customer', v)} />}
+              {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} fieldKey="customer_po_number" onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
+              {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} fieldKey="system_po_number" onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
+              {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} fieldKey="china_orderbook_ref" onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
+              {hasCol('colour') && <DetailRow label="Colour" value={order.colour} editable={canEdit('colour')} fieldKey="colour" onSave={(v) => onSave?.(order.id, 'colour', v)} />}
+              {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} fieldKey="gender" onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
+              {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} fieldKey="season" onSave={(v) => onSave?.(order.id, 'season', v)} />}
+              {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} fieldKey="factory" onSave={(v) => onSave?.(order.id, 'factory', v)} />}
+              {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} fieldKey="terms" onSave={(v) => onSave?.(order.id, 'terms', v)} />}
+              {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} fieldKey="sales_person" onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
+              {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} fieldKey="direct_repeat_new" onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
             </div>
             {/* Size breakdown card */}
             {sizes.length > 0 && (
@@ -1208,24 +1213,24 @@ function DetailBody({
                   <div className="grid grid-cols-3 gap-2 mb-4">
                     {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
                       <SampleCard label="Fit Sample">
-                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
-                        {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
-                        {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
-                        {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
+                        {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
+                        {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                        {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
+                        {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
                       </SampleCard>
                     )}
                     {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                       <SampleCard label="Strike Off">
-                        {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
-                        {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
-                        {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
+                        {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="strike_off_status" onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
+                        {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} fieldKey="strike_off_received" onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
+                        {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} fieldKey="strike_off_approved" onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
                       </SampleCard>
                     )}
                     {(hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
                       <SampleCard label="Lab Dip">
-                        {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
-                        {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
-                        {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
+                        {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="lab_dip_status" onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
+                        {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} fieldKey="lab_dip_received" onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
+                        {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} fieldKey="lab_dip_approved" onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
                       </SampleCard>
                     )}
                   </div>
@@ -1237,10 +1242,10 @@ function DetailBody({
                 <>
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">PPS · order-level</div>
                   <SampleCard label="Pre-Production Sample" highlight>
-                    {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
-                    {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
-                    {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
-                    {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
+                    {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
+                    {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} fieldKey="pps_received" onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
+                    {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} fieldKey="pps_sent_to_customer" onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
+                    {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} fieldKey="pps_approved" onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
                   </SampleCard>
                 </>
               )}
@@ -1250,17 +1255,17 @@ function DetailBody({
                 <div className="grid grid-cols-3 gap-2 mt-4">
                   {hasCol('photo_sample_received') && (
                     <SampleCard label="Photo Sample">
-                      <DetailRow label="Received" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />
+                      <DetailRow label="Received" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} fieldKey="photo_sample_received" onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />
                     </SampleCard>
                   )}
                   {hasCol('shipment_sample_received') && (
                     <SampleCard label="Shipment Sample">
-                      <DetailRow label="Received" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />
+                      <DetailRow label="Received" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} fieldKey="shipment_sample_received" onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />
                     </SampleCard>
                   )}
                   {hasCol('ex_factory_from_pp_approval') && (
                     <SampleCard label="Ex-Fac from PP Approval">
-                      <DetailRow label="Date" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />
+                      <DetailRow label="Date" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} fieldKey="ex_factory_from_pp_approval" onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />
                     </SampleCard>
                   )}
                 </div>
@@ -1277,18 +1282,18 @@ function DetailBody({
             <div>
               <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Vessel</div>
               <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-                {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-                {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-                {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-                {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-                {(order.tracking_reference || hasCol('tracking_reference')) && <DetailRow label="Tracking Ref" value={order.tracking_reference} editable={canEdit('tracking_reference')} onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
+                {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} fieldKey="fcl_lcl" onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
+                {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} fieldKey="vessel_name" onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
+                {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} fieldKey="vessel_etd" onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} fieldKey="vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} fieldKey="revised_vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                {(order.tracking_reference || hasCol('tracking_reference')) && <DetailRow label="Tracking Ref" value={order.tracking_reference} editable={canEdit('tracking_reference')} fieldKey="tracking_reference" onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
               </div>
             </div>
             <div>
               <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
               <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={formatDate(order.original_del_date_to_customer)} type="date" rawValue={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
+                {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={formatDate(order.original_del_date_to_customer)} type="date" rawValue={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} fieldKey="original_del_date_to_customer" onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
                 {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
                 {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
                 {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
@@ -1308,27 +1313,28 @@ function DetailBody({
             <div className="relative">
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
               <div className="space-y-0">
-                {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} editable={canEdit('order_received_date')} onSave={(v) => onSave?.(order.id, 'order_received_date', v)} />}
-                {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} editable={canEdit('order_sent_to_factory_date')} onSave={(v) => onSave?.(order.id, 'order_sent_to_factory_date', v)} />}
-                {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} editable={canEdit('tech_packs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'tech_packs_sent_to_factory', v)} />}
-                {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} editable={canEdit('specs_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'specs_sent_to_factory', v)} />}
-                {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
-                {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
-                {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
-                {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
-                {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-                {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-                {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
+                {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} editable={canEdit('order_received_date')} fieldKey="order_received_date" onSave={(v) => onSave?.(order.id, 'order_received_date', v)} />}
+                {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} editable={canEdit('order_sent_to_factory_date')} fieldKey="order_sent_to_factory_date" onSave={(v) => onSave?.(order.id, 'order_sent_to_factory_date', v)} />}
+                {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} editable={canEdit('tech_packs_sent_to_factory')} fieldKey="tech_packs_sent_to_factory" onSave={(v) => onSave?.(order.id, 'tech_packs_sent_to_factory', v)} />}
+                {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} editable={canEdit('specs_sent_to_factory')} fieldKey="specs_sent_to_factory" onSave={(v) => onSave?.(order.id, 'specs_sent_to_factory', v)} />}
+                {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} fieldKey="barcodes_sent_to_factory" onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
+                {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} fieldKey="original_po_ex_factory" onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
+                {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} fieldKey="factory_confirmed_ex_factory" onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} fieldKey="revised_po_ex_factory" onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
+                {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} fieldKey="vessel_etd" onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} fieldKey="vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
+                {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} fieldKey="revised_vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
                 {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
                 {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
                 {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
-                {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
+                {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} fieldKey="original_del_date_to_customer" onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
               </div>
             </div>
           </div>
         </section>
 
       </div>
+      </BulkScopeProvider>
     </>
   );
 }
@@ -1456,7 +1462,7 @@ function SizeGuideTooltip({ gender }: { gender: string | undefined }) {
 
 // ─── Sub-components ────────────────────────────────────────
 
-function DetailRow({ label, value, editable, onSave, options, extra, type, rawValue }: {
+function DetailRow({ label, value, editable, onSave, options, extra, type, rawValue, fieldKey }: {
   label: string;
   value: string | number | null | undefined;
   editable?: boolean;
@@ -1465,9 +1471,14 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   extra?: React.ReactNode;
   type?: 'text' | 'date';
   rawValue?: string | null;
+  /** When passed, enables the bulk-scope picker for date / dropdown fields. */
+  fieldKey?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const bulkCtx = useBulkScope();
+  // Mirrors EditableCell's rule: any date OR any dropdown is bulkable.
+  const isBulkable = !!fieldKey && bulkCtx && (type === 'date' || !!options);
 
   const startEdit = () => {
     if (type === 'date' && rawValue) {
@@ -1482,6 +1493,24 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
     onSave?.(val ?? editValue);
     setEditing(false);
   };
+
+  // If editing AND bulkable AND we have PO context, swap the inline editor
+  // for the scope-aware one so the user can choose this-style / all / selected.
+  if (editing && isBulkable && fieldKey) {
+    return (
+      <div className="flex items-baseline justify-between gap-2 px-4 py-2 border-b border-gray-50 last:border-0">
+        <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
+        <InlineBulkScopeEditor
+          fieldKey={fieldKey}
+          type={type}
+          options={options}
+          initialValue={editValue}
+          onSavedSingle={(v) => { handleSave(v); }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
@@ -1530,15 +1559,18 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   );
 }
 
-function TimelineItem({ label, date, highlight, editable, onSave }: {
+function TimelineItem({ label, date, highlight, editable, onSave, fieldKey }: {
   label: string;
   date: string | null | undefined;
   highlight?: boolean;
   editable?: boolean;
   onSave?: (value: string) => void;
+  fieldKey?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const hasDate = !!date;
+  const bulkCtx = useBulkScope();
+  const isBulkable = !!fieldKey && !!bulkCtx;
 
   return (
     <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
@@ -1554,7 +1586,15 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
       </div>
       <div className="flex-1 flex items-center justify-between min-w-0">
         <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
-        {editing ? (
+        {editing && isBulkable && fieldKey ? (
+          <InlineBulkScopeEditor
+            fieldKey={fieldKey}
+            type="date"
+            initialValue={date ? date.split('T')[0] : ''}
+            onSavedSingle={(v) => { onSave?.(v); setEditing(false); }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : editing ? (
           <DatePickerInput
             value={date ? date.split('T')[0] : ''}
             onChange={(v) => { onSave?.(v); setEditing(false); }}
