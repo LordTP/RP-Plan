@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTriangle, ChevronDown, Wand2 } from 'lucide-react';
+import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTriangle, ChevronDown, Wand2, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
+import { AddComponentModal } from '@/components/orders/AddComponentModal';
 import { ordersApi, componentsApi, submissionsApi, type RejectReason, type SampleType } from '@/lib/api';
 import { SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
@@ -74,6 +75,15 @@ function DesignComponentsContent() {
   const [selectedComponentIds, setSelectedComponentIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState<{ field: string; fieldLabel: string; value: string | null; valueLabel: string } | null>(null);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+
+  const reloadOrders = () => {
+    setIsLoading(true);
+    ordersApi.getOrders(1, 500, {})
+      .then((res) => setOrders(res.orders))
+      .catch(() => toast.error('Failed to load orders'))
+      .finally(() => setIsLoading(false));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -300,6 +310,13 @@ function DesignComponentsContent() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => setAddModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add component
+              </button>
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -600,6 +617,18 @@ function DesignComponentsContent() {
           }}
         />
       )}
+
+      <AddComponentModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        orders={orders}
+        onCreated={(componentName) => {
+          // Refresh the orders list so the new component shows up, then
+          // pre-select the newly-created component group.
+          reloadOrders();
+          setSelectedName(componentName);
+        }}
+      />
     </AppShell>
   );
 }

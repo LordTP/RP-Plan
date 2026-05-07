@@ -334,6 +334,13 @@ export const componentsApi = {
     await api.delete(`/api/components/${componentId}`);
   },
 
+  /** Add a single component name to many styles across multiple POs at once.
+   *  Skips orders that already have a component with the same name. */
+  crossPoAdd: async (name: string, orderIds: number[]): Promise<{ success: boolean; components_created: number; skipped_existing: number }> => {
+    const response = await api.post('/api/components/cross-po-add', { name, order_ids: orderIds });
+    return response.data;
+  },
+
   bulkAddComponent: async (orderId: number, data: { name: string; order_ids?: number[] }): Promise<{ success: boolean; components_created: number }> => {
     const response = await api.post(`/api/orders/${orderId}/components/bulk-add`, data);
     return response.data;

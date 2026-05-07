@@ -430,6 +430,48 @@ async def delete_component(
     db.commit()
 
 
+@router.post("/api/components/cross-po-add")
+async def cross_po_add_component(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a component (by name) to any set of styles, regardless of which PO
+    they belong to. Used by the /design-components page's bulk "Add component"
+    modal. Designers + internal/admin only — suppliers can't manage components.
+    Skips orders that already have a component with the same name (no dupes)."""
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    if role_str == 'supplier':
+        raise HTTPException(status_code=403, detail="Suppliers can't manage components")
+
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    order_ids = body.get("order_ids") or []
+    if not name:
+        raise HTTPException(status_code=400, detail="Component name is required")
+    if not isinstance(order_ids, list) or not order_ids:
+        raise HTTPException(status_code=400, detail="At least one order id is required")
+
+    target_orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+    if not target_orders:
+        raise HTTPException(status_code=404, detail="No matching orders found")
+
+    created = 0
+    skipped = 0
+    for o in target_orders:
+        existing = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.name == name
+        ).first()
+        if existing:
+            skipped += 1
+            continue
+        db.add(OrderComponent(order_id=o.id, name=name))
+        created += 1
+    db.commit()
+    return {"success": True, "components_created": created, "skipped_existing": skipped}
+
+
 @router.post("/api/orders/{order_id}/components/bulk-add")
 async def bulk_add_component(
     order_id: int,
