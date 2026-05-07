@@ -514,50 +514,60 @@ async def update_order(
         for key, value in order_data.items():
             if key not in ALLOWED_UPDATE_FIELDS:
                 continue
-            if value is not None and hasattr(order, key):
-                old_value = getattr(order, key)
+            if not hasattr(order, key):
+                continue
 
-                # Parse datetime for date fields if it's a string
-                if (key in date_fields or 'date' in key.lower()) and isinstance(value, str) and value:
+            is_date = key in date_fields or 'date' in key.lower()
+
+            # Treat empty string OR null as "clear this date" for date fields.
+            # Without this, clearing a date in the UI silently no-ops.
+            if is_date and (value is None or (isinstance(value, str) and not value.strip())):
+                value = None
+            elif value is None:
+                # Non-date None: client didn't include this field, skip.
+                continue
+            elif is_date and isinstance(value, str):
+                try:
+                    value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                except ValueError:
                     try:
-                        value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                        value = datetime.strptime(value, '%Y-%m-%d')
                     except ValueError:
                         try:
-                            value = datetime.strptime(value, '%Y-%m-%d')
+                            value = datetime.strptime(value, '%d/%m/%Y')
                         except ValueError:
-                            try:
-                                value = datetime.strptime(value, '%d/%m/%Y')
-                            except ValueError:
-                                continue  # Skip this field if we can't parse the date
+                            continue  # Unparseable date — skip
 
-                # Track changes for all business fields
-                values_different = old_value != value
+            old_value = getattr(order, key)
 
-                if key not in skip_tracking and values_different:
-                    role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-                    change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
+            # Track changes for all business fields
+            values_different = old_value != value
 
-                    old_value_str = str(old_value) if old_value is not None else None
-                    new_value_str = str(value) if value is not None else None
+            if key not in skip_tracking and values_different:
+                role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+                change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
 
-                    field_change = DateChangeHistory(
-                        po_id=order.id,
-                        user_id=current_user.id,
-                        field_name=key,
-                        old_value=old_value_str,
-                        new_value=new_value_str,
-                        source=change_source
-                    )
-                    db.add(field_change)
+                old_value_str = str(old_value) if old_value is not None else None
+                new_value_str = str(value) if value is not None else None
 
-                # Update the field
-                setattr(order, key, value)
+                field_change = DateChangeHistory(
+                    po_id=order.id,
+                    user_id=current_user.id,
+                    field_name=key,
+                    old_value=old_value_str,
+                    new_value=new_value_str,
+                    source=change_source
+                )
+                db.add(field_change)
 
-                # Keep sample_submissions in sync — APPROVED via the legacy path
-                # closes the open submission row; REJECTED via the legacy path
-                # backfills v1+v2 with reason='OTHER'. No-op for any other value.
-                if key in STATUS_FIELD_TO_SAMPLE_TYPE:
-                    sync_submission_on_status_change(db, order, None, key, value, current_user.id)
+            # Update the field
+            setattr(order, key, value)
+
+            # Keep sample_submissions in sync — APPROVED via the legacy path
+            # closes the open submission row; REJECTED via the legacy path
+            # backfills v1+v2 with reason='OTHER'. No-op for any other value.
+            if key in STATUS_FIELD_TO_SAMPLE_TYPE:
+                sync_submission_on_status_change(db, order, None, key, value, current_user.id)
 
     # Auto-calculate total_quantity from size columns
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
