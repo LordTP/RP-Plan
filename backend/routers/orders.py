@@ -569,6 +569,25 @@ async def update_order(
             if key in STATUS_FIELD_TO_SAMPLE_TYPE:
                 sync_submission_on_status_change(db, order, None, key, value, current_user.id)
 
+    # Fit Sample Required = N → force fit_sample_status to NOT REQUIRED.
+    # Records the derived status change in history so the activity feed
+    # reflects it. No-op when status is already NOT REQUIRED.
+    if (order.fit_sample_required or '').strip().upper() == 'N':
+        current_status = (order.fit_sample_status or '').strip().upper()
+        if current_status != 'NOT REQUIRED':
+            old_status = order.fit_sample_status
+            role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+            change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
+            db.add(DateChangeHistory(
+                po_id=order.id,
+                user_id=current_user.id,
+                field_name='fit_sample_status',
+                old_value=str(old_status) if old_status is not None else None,
+                new_value='NOT REQUIRED',
+                source=change_source,
+            ))
+            order.fit_sample_status = 'NOT REQUIRED'
+
     # Auto-calculate total_quantity from size columns
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
                    'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
@@ -876,6 +895,21 @@ async def bulk_update_date(
             setattr(order, field_name, new_value)
             order.updated_at = datetime.utcnow()
             updated_count += 1
+
+            # Apply the "Required = N → Status = NOT REQUIRED" rule for fit
+            # samples whenever this bulk hits fit_sample_required.
+            if field_name == 'fit_sample_required' and (new_value or '').strip().upper() == 'N':
+                if (order.fit_sample_status or '').strip().upper() != 'NOT REQUIRED':
+                    old_status = order.fit_sample_status
+                    db.add(DateChangeHistory(
+                        po_id=order.id,
+                        user_id=current_user.id,
+                        field_name='fit_sample_status',
+                        old_value=str(old_status) if old_status is not None else None,
+                        new_value='NOT REQUIRED',
+                        source=change_source,
+                    ))
+                    order.fit_sample_status = 'NOT REQUIRED'
 
     db.commit()
 

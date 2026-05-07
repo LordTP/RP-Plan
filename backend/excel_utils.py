@@ -1007,6 +1007,11 @@ def _calculate_order_totals(order) -> None:
     if order.trade_price is not None and order.total_quantity is not None:
         order.total_order_value = round(order.trade_price * order.total_quantity, 2)
 
+    # Fit Sample Required = N → force fit_sample_status to NOT REQUIRED.
+    if (order.fit_sample_required or '').strip().upper() == 'N':
+        if (order.fit_sample_status or '').strip().upper() != 'NOT REQUIRED':
+            order.fit_sample_status = 'NOT REQUIRED'
+
     from datetime import timedelta
 
     # If revised_po_ex_factory is blank, default to factory_confirmed_ex_factory
