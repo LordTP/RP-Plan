@@ -328,11 +328,10 @@ function DesignComponentsContent() {
 
   return (
     <AppShell title="Components">
-      <div className="p-6">
-        <div
-          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
-          style={{ height: 'calc(100vh - 100px)' }}
-        >
+      <div
+        className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
+        style={{ height: 'calc(100vh - 116px)' }}
+      >
           {/* Header */}
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
@@ -351,30 +350,32 @@ function DesignComponentsContent() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-              <button
-                onClick={() => setAddModalOpen(true)}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg flex items-center gap-1.5 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add component
-              </button>
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search PO, style, customer, factory..."
-                  className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-72"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search PO, style, customer, factory..."
+                    className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white focus:border-transparent transition-all w-72"
+                  />
+                  {search && (
+                    <button
+                      onClick={() => setSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => setAddModalOpen(true)}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg flex items-center gap-1.5 transition-colors flex-shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add component
+                </button>
               </div>
               <label className="flex items-center gap-1.5 text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer select-none pr-1">
                 <input
@@ -420,12 +421,12 @@ function DesignComponentsContent() {
                         )}
                       >
                         <span className={cn(
-                          'flex-shrink-0 w-1.5 h-1.5 rounded-full',
+                          'flex-shrink-0 w-2 h-2 rounded-full',
                           allDone ? 'bg-green-400' : g.pending > 0 ? 'bg-amber-400' : 'bg-gray-300'
                         )} />
-                        <span className="flex-1 text-xs font-medium truncate">{g.name}</span>
+                        <span className="flex-1 text-sm font-semibold truncate">{g.name}</span>
                         <span className={cn(
-                          'text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[22px] text-center',
+                          'text-[11px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 min-w-[24px] text-center',
                           isActive ? 'bg-white/70' : 'bg-gray-200 text-gray-600'
                         )}>
                           {g.total}
@@ -620,7 +621,6 @@ function DesignComponentsContent() {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Bulk-update confirm modal */}
       {bulkAction && selectedGroup && (

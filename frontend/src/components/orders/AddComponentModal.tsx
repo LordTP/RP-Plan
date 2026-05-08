@@ -256,9 +256,16 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
               )}
             </div>
             {existingExact && (
-              <p className="text-[11px] text-amber-700 mt-1.5">
-                Looks similar to <strong>"{existingExact.name}"</strong> — pick that one to avoid making variants.
-              </p>
+              <div className="mt-1.5 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 flex items-center justify-between gap-2">
+                <span>Looks like <strong>"{existingExact.name}"</strong> already exists — pick it to avoid duplicates.</span>
+                <button
+                  type="button"
+                  onClick={() => setName(existingExact.name)}
+                  className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+                >
+                  Use it →
+                </button>
+              </div>
             )}
           </div>
 
