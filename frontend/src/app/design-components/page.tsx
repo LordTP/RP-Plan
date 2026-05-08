@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTriangle, ChevronDown, Wand2, Plus } from 'lucide-react';
+import { Layers, Search, Loader2, Package, ArrowDownAZ, Flame, Hash, X, AlertTriangle, ChevronDown, ChevronRight, Wand2, Plus, LayoutGrid, List } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
@@ -28,6 +28,60 @@ export default function DesignComponentsPage() {
 
 type Instance = { order: Order; component: OrderComponent };
 type SortMode = 'count' | 'pending' | 'alpha';
+type ViewMode = 'cards' | 'table';
+type BucketKey = 'needs-attention' | 'in-progress' | 'done' | 'not-required';
+
+// Buckets within a selected component group. Drives the cards view layout.
+//  - needs-attention: REJECTED/LATE/P23 ADVISE UPDATE, or stale OUTSTANDING (>14 biz days
+//    untouched), or ex-fac is overdue / within 7 biz days and the row isn't done.
+//  - in-progress: OUTSTANDING/RECEIVED in flight, no urgency triggers.
+//  - done: both SO + LD are APPROVED or NOT REQUIRED.
+//  - not-required: both SO + LD are NOT REQUIRED.
+const STALE_BIZ_DAYS = 14;
+const EX_FAC_URGENT_BIZ_DAYS = 7;
+const HARD_ATTENTION_STATUSES = new Set(['REJECTED', 'LATE', 'P23 ADVISE UPDATE']);
+
+function bucketInstance(inst: Instance): BucketKey {
+  const { order, component } = inst;
+  const so = (component.strike_off_status || '').trim().toUpperCase();
+  const ld = (component.lab_dip_status || '').trim().toUpperCase();
+  const soDone = isSampleDone(component.strike_off_status, component.strike_off_approved);
+  const ldDone = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
+  if (so === 'NOT REQUIRED' && ld === 'NOT REQUIRED') return 'not-required';
+  if (soDone && ldDone) return 'done';
+  if (HARD_ATTENTION_STATUSES.has(so) || HARD_ATTENTION_STATUSES.has(ld)) return 'needs-attention';
+  const updatedDays = component.updated_at ? businessDaysBetween(component.updated_at, new Date()) : 0;
+  const hasOutstanding = (!soDone && so === 'OUTSTANDING') || (!ldDone && ld === 'OUTSTANDING');
+  if (hasOutstanding && updatedDays >= STALE_BIZ_DAYS) return 'needs-attention';
+  const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
+  const days = businessDaysUntil(exFac);
+  if (days !== null && days <= EX_FAC_URGENT_BIZ_DAYS) return 'needs-attention';
+  return 'in-progress';
+}
+
+const BUCKET_META: Record<BucketKey, { label: string; sub: string; dot: string; ring: string; text: string; bgChip: string }> = {
+  'needs-attention': { label: 'Needs attention', sub: 'Overdue, rejected, or stale',  dot: 'bg-red-500',    ring: 'ring-red-100',    text: 'text-red-700',   bgChip: 'bg-red-50' },
+  'in-progress':     { label: 'In progress',     sub: 'Sent and within review window', dot: 'bg-amber-500', ring: 'ring-amber-100', text: 'text-amber-700', bgChip: 'bg-amber-50' },
+  'done':            { label: 'Done',             sub: 'Both SO + LD approved',         dot: 'bg-green-500', ring: 'ring-green-100', text: 'text-green-700', bgChip: 'bg-green-50' },
+  'not-required':    { label: 'Not required',     sub: 'Marked N/A',                    dot: 'bg-gray-400',  ring: 'ring-gray-100',  text: 'text-gray-500',  bgChip: 'bg-gray-50' },
+};
+
+const BUCKET_ORDER: BucketKey[] = ['needs-attention', 'in-progress', 'done', 'not-required'];
+
+function statusPillStyle(status: string | null | undefined): { bg: string; text: string; label: string } {
+  const s = (status || '').trim().toUpperCase();
+  switch (s) {
+    case 'APPROVED':          return { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Approved' };
+    case 'NOT REQUIRED':      return { bg: 'bg-gray-100',   text: 'text-gray-500',   label: 'Not required' };
+    case 'OUTSTANDING':       return { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Outstanding' };
+    case 'RECEIVED':          return { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Received' };
+    case 'REJECTED':          return { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Rejected' };
+    case 'LATE':              return { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Late' };
+    case 'P23 ADVISE UPDATE': return { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Advise update' };
+    case '':                  return { bg: 'bg-gray-100',   text: 'text-gray-400',   label: 'Not started' };
+    default:                  return { bg: 'bg-gray-100',   text: 'text-gray-600',   label: status as string };
+  }
+}
 
 // Statuses that mean "order has left the factory" — hidden by default so the
 // page focuses on work still in progress.
@@ -79,6 +133,25 @@ function DesignComponentsContent() {
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editing, setEditing] = useState<{ order: Order; component: OrderComponent } | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [collapsedBuckets, setCollapsedBuckets] = useState<Set<BucketKey>>(new Set<BucketKey>(['done', 'not-required']));
+  const toggleBucket = (b: BucketKey) => {
+    setCollapsedBuckets((prev) => {
+      const next = new Set(prev);
+      if (next.has(b)) next.delete(b); else next.add(b);
+      return next;
+    });
+  };
+  // PO collapse state is keyed `${bucket}::${po}` so the same PO can be expanded
+  // in one bucket and collapsed in another.
+  const [collapsedPos, setCollapsedPos] = useState<Set<string>>(new Set());
+  const togglePo = (key: string) => {
+    setCollapsedPos((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   const reloadOrders = () => {
     setIsLoading(true);
@@ -202,6 +275,18 @@ function DesignComponentsContent() {
   const selectedGroup = groups.find((g) => g.name === selectedName) || null;
   const totalInstancesVisible = groups.reduce((s, g) => s + g.total, 0);
 
+  // Bucket the selected group's visible instances for the cards view.
+  const buckets = useMemo(() => {
+    const out: Record<BucketKey, Instance[]> = {
+      'needs-attention': [], 'in-progress': [], 'done': [], 'not-required': [],
+    };
+    if (!selectedGroup) return out;
+    for (const inst of selectedGroup.visibleInstances) {
+      out[bucketInstance(inst)].push(inst);
+    }
+    return out;
+  }, [selectedGroup]);
+
   // Data quality: find component names that differ only by casing/whitespace.
   const dupeClusters = useMemo(() => {
     const byNorm = new Map<string, Map<string, number>>();
@@ -236,53 +321,6 @@ function DesignComponentsContent() {
       toast.error(e?.response?.data?.detail || 'Merge failed');
     }
   };
-
-  // Summary stats for the selected component (computed on the visible instances so search-aware).
-  // Fit lives on the style now, so it's not part of component-level summary.
-  const summary = useMemo(() => {
-    if (!selectedGroup) return null;
-    const soDays: number[] = [];
-    const ldDays: number[] = [];
-    const factoryCounts = new Map<string, number>();
-    let oldestPending: Instance | null = null;
-    let oldestPendingAge = -1;
-
-    for (const inst of selectedGroup.visibleInstances) {
-      const { order, component } = inst;
-      if (component.strike_off_received && component.strike_off_approved) {
-        soDays.push(businessDaysBetween(component.strike_off_received, component.strike_off_approved));
-      }
-      if (component.lab_dip_received && component.lab_dip_approved) {
-        ldDays.push(businessDaysBetween(component.lab_dip_received, component.lab_dip_approved));
-      }
-      if (order.factory) {
-        factoryCounts.set(order.factory, (factoryCounts.get(order.factory) || 0) + 1);
-      }
-
-      const soDone = isSampleDone(component.strike_off_status, component.strike_off_approved);
-      const ldDone = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-      if (!soDone || !ldDone) {
-        const ageDays = Math.floor((Date.now() - new Date(component.updated_at).getTime()) / (1000 * 60 * 60 * 24));
-        if (ageDays > oldestPendingAge) {
-          oldestPendingAge = ageDays;
-          oldestPending = inst;
-        }
-      }
-    }
-
-    const avg = (arr: number[]) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null);
-    const topFactories = Array.from(factoryCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-
-    return {
-      avgSo: avg(soDays),
-      avgLd: avg(ldDays),
-      topFactories,
-      oldestPending,
-      oldestPendingAge,
-    };
-  }, [selectedGroup]);
 
   const openStyle = (orderId: number) => {
     router.push(`/design?openStyle=${orderId}`);
@@ -424,54 +462,33 @@ function DesignComponentsContent() {
                         {selectedGroup.pending > 0 && ` · ${selectedGroup.pending} pending`}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <SamplePill label="SO" done={selectedGroup.soDone} total={selectedGroup.total} />
                       <SamplePill label="LD" done={selectedGroup.ldDone} total={selectedGroup.total} />
+                      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 ml-1">
+                        <button
+                          onClick={() => setViewMode('cards')}
+                          className={cn(
+                            'flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded-md transition-colors',
+                            viewMode === 'cards' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700',
+                          )}
+                          title="Bucketed cards"
+                        >
+                          <LayoutGrid className="w-3 h-3" /> Cards
+                        </button>
+                        <button
+                          onClick={() => setViewMode('table')}
+                          className={cn(
+                            'flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded-md transition-colors',
+                            viewMode === 'table' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700',
+                          )}
+                          title="Compact table"
+                        >
+                          <List className="w-3 h-3" /> Table
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  {/* Summary strip */}
-                  {summary && (
-                    <div className="px-5 py-3 border-b border-gray-100 grid grid-cols-3 gap-3">
-                      <SummaryCard label="Avg approval (biz days)">
-                        <div className="flex items-center gap-2">
-                          <AvgStat letter="SO" value={summary.avgSo} />
-                          <AvgStat letter="LD" value={summary.avgLd} />
-                        </div>
-                      </SummaryCard>
-                      <SummaryCard label="Top factories">
-                        {summary.topFactories.length === 0 ? (
-                          <p className="text-[11px] text-gray-400">—</p>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            {summary.topFactories.map(([name, count]) => (
-                              <div key={name} className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] text-gray-700 truncate">{name}</span>
-                                <span className="text-[10px] font-semibold text-gray-500 flex-shrink-0">{count}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </SummaryCard>
-                      <SummaryCard label="Oldest pending">
-                        {!summary.oldestPending ? (
-                          <p className="text-[11px] text-gray-400">None — all done</p>
-                        ) : (
-                          <button
-                            onClick={() => openStyle(summary.oldestPending!.order.id)}
-                            className="text-left w-full group"
-                          >
-                            <div className="text-[11px] font-semibold text-gray-900 group-hover:text-primary-700 truncate">
-                              {summary.oldestPending.order.style_code || summary.oldestPending.order.po_number}
-                            </div>
-                            <div className="text-[10px] text-amber-600 font-medium">
-                              {summary.oldestPendingAge}d since last update
-                            </div>
-                          </button>
-                        )}
-                      </SummaryCard>
-                    </div>
-                  )}
-
                   {/* Bulk action bar (appears when rows are selected) */}
                   {selectedComponentIds.size > 0 && (
                     <BulkActionBar
@@ -481,6 +498,29 @@ function DesignComponentsContent() {
                     />
                   )}
 
+                  {viewMode === 'cards' ? (
+                    <BucketedCardsView
+                      buckets={buckets}
+                      collapsed={collapsedBuckets}
+                      onToggle={toggleBucket}
+                      collapsedPos={collapsedPos}
+                      onTogglePo={togglePo}
+                      selectedIds={selectedComponentIds}
+                      onToggleSelect={(id) => {
+                        const next = new Set(selectedComponentIds);
+                        if (next.has(id)) next.delete(id); else next.add(id);
+                        setSelectedComponentIds(next);
+                      }}
+                      onSelectBucket={(insts) => {
+                        const next = new Set(selectedComponentIds);
+                        const allSelected = insts.every((i) => next.has(i.component.id));
+                        if (allSelected) insts.forEach((i) => next.delete(i.component.id));
+                        else insts.forEach((i) => next.add(i.component.id));
+                        setSelectedComponentIds(next);
+                      }}
+                      onClickInstance={(inst) => setEditing({ order: inst.order, component: inst.component })}
+                    />
+                  ) : (
                   <div className="flex-1 overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
@@ -574,6 +614,7 @@ function DesignComponentsContent() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </>
               )}
             </div>
@@ -1112,31 +1153,6 @@ function SamplePill({ label, done, total }: { label: string; done: number; total
   );
 }
 
-function SummaryCard({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-gray-50/70 border border-gray-100 rounded-lg px-3 py-2">
-      <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">{label}</p>
-      {children}
-    </div>
-  );
-}
-
-function AvgStat({ letter, value }: { letter: string; value: number | null }) {
-  const color =
-    value === null ? 'text-gray-300'
-      : value > 14 ? 'text-red-500'
-      : value > 7 ? 'text-amber-500'
-      : 'text-green-600';
-  return (
-    <div className="flex items-baseline gap-1">
-      <span className="text-[9px] font-semibold text-gray-400">{letter}</span>
-      <span className={cn('text-sm font-bold tabular-nums', color)}>
-        {value === null ? '—' : `${value}d`}
-      </span>
-    </div>
-  );
-}
-
 function ExFacBadge({ days }: { days: number | null }) {
   if (days === null) return <span className="text-gray-300">—</span>;
   const overdue = days < 0;
@@ -1149,6 +1165,287 @@ function ExFacBadge({ days }: { days: number | null }) {
     <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-semibold tabular-nums', color)}>
       {overdue ? `${Math.abs(days)}d late` : `${days}d`}
     </span>
+  );
+}
+
+// Within a bucket, group instances by PO number while preserving the order
+// they appeared in (which is the parent group's sort order).
+function groupInstancesByPo(insts: Instance[]): { po: string; insts: Instance[] }[] {
+  const order: string[] = [];
+  const byPo = new Map<string, Instance[]>();
+  for (const inst of insts) {
+    const po = inst.order.po_number || '—';
+    if (!byPo.has(po)) { byPo.set(po, []); order.push(po); }
+    byPo.get(po)!.push(inst);
+  }
+  return order.map((po) => ({ po, insts: byPo.get(po)! }));
+}
+
+function BucketedCardsView({
+  buckets,
+  collapsed,
+  onToggle,
+  collapsedPos,
+  onTogglePo,
+  selectedIds,
+  onToggleSelect,
+  onSelectBucket,
+  onClickInstance,
+}: {
+  buckets: Record<BucketKey, Instance[]>;
+  collapsed: Set<BucketKey>;
+  onToggle: (b: BucketKey) => void;
+  collapsedPos: Set<string>;
+  onTogglePo: (key: string) => void;
+  selectedIds: Set<number>;
+  onToggleSelect: (componentId: number) => void;
+  onSelectBucket: (insts: Instance[]) => void;
+  onClickInstance: (inst: Instance) => void;
+}) {
+  const total = BUCKET_ORDER.reduce((s, b) => s + buckets[b].length, 0);
+  if (total === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-12">
+        <Package className="w-7 h-7 mb-2" />
+        <p className="text-xs">Nothing in this view</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 overflow-y-auto bg-gray-50/40">
+      <div className="px-5 py-4 space-y-5">
+        {BUCKET_ORDER.map((bucket) => {
+          const insts = buckets[bucket];
+          if (insts.length === 0) return null;
+          const meta = BUCKET_META[bucket];
+          const isCollapsed = collapsed.has(bucket);
+          const allSelected = insts.length > 0 && insts.every((i) => selectedIds.has(i.component.id));
+          return (
+            <section key={bucket}>
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  onClick={() => onToggle(bucket)}
+                  className="flex items-center gap-2 text-left group"
+                >
+                  {isCollapsed
+                    ? <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
+                    : <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600" />
+                  }
+                  <span className={cn('w-1.5 h-1.5 rounded-full', meta.dot)} />
+                  <h5 className={cn('text-[11px] font-bold uppercase tracking-wider', meta.text)}>
+                    {meta.label} <span className="num">· {insts.length}</span>
+                  </h5>
+                  <span className="text-[10px] text-gray-400 font-medium hidden md:inline">{meta.sub}</span>
+                </button>
+                {!isCollapsed && insts.length > 0 && (
+                  <button
+                    onClick={() => onSelectBucket(insts)}
+                    className="text-[10px] font-semibold text-gray-500 hover:text-gray-900"
+                  >
+                    {allSelected ? 'Clear bucket' : 'Select bucket'}
+                  </button>
+                )}
+              </div>
+              {!isCollapsed && (
+                <div className="space-y-3">
+                  {groupInstancesByPo(insts).map(({ po, insts: poInsts }) => {
+                    const ref = poInsts[0].order;
+                    const refs = Array.from(new Set(poInsts.map((i) => i.order.china_orderbook_ref).filter(Boolean) as string[]));
+                    const allInPoSelected = poInsts.every((i) => selectedIds.has(i.component.id));
+                    const poKey = `${bucket}::${po}`;
+                    const poCollapsed = collapsedPos.has(poKey);
+                    return (
+                      <div key={po} className="space-y-1.5">
+                        <div className="flex items-center gap-2 px-1">
+                          <button
+                            onClick={() => onTogglePo(poKey)}
+                            className="flex items-center gap-2 min-w-0 group flex-1 text-left"
+                            title={poCollapsed ? 'Expand PO' : 'Collapse PO'}
+                          >
+                            {poCollapsed
+                              ? <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
+                              : <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
+                            }
+                            <span
+                              className="px-2.5 py-1 rounded-md bg-gray-900 text-white text-xs font-bold tracking-wide num inline-flex items-center gap-1.5"
+                              title={refs.length > 0 ? refs.join(', ') : undefined}
+                            >
+                              <span>PO {po}</span>
+                              {refs.length > 0 && (
+                                <>
+                                  <span className="text-gray-500 font-normal">·</span>
+                                  <span className="text-gray-200 font-semibold truncate max-w-[180px]">
+                                    {refs[0]}{refs.length > 1 && ` +${refs.length - 1}`}
+                                  </span>
+                                </>
+                              )}
+                            </span>
+                            <span className="text-[11px] text-gray-700 font-semibold truncate">
+                              {ref.customer || '—'}
+                            </span>
+                            {ref.factory && (
+                              <span className="text-[11px] text-gray-500 truncate">· {ref.factory}</span>
+                            )}
+                            <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">
+                              · {poInsts.length} {poInsts.length === 1 ? 'style' : 'styles'}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => onSelectBucket(poInsts)}
+                            className="text-[10px] font-semibold text-gray-500 hover:text-gray-900 flex-shrink-0"
+                          >
+                            {allInPoSelected ? 'Clear PO' : 'Select PO'}
+                          </button>
+                        </div>
+                        {!poCollapsed && (
+                          <div className="space-y-1.5">
+                            {poInsts.map((inst) => (
+                              <InstanceCard
+                                key={inst.component.id}
+                                inst={inst}
+                                bucket={bucket}
+                                selected={selectedIds.has(inst.component.id)}
+                                onToggleSelect={() => onToggleSelect(inst.component.id)}
+                                onClick={() => onClickInstance(inst)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InstanceCard({
+  inst,
+  bucket,
+  selected,
+  onToggleSelect,
+  onClick,
+}: {
+  inst: Instance;
+  bucket: BucketKey;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onClick: () => void;
+}) {
+  const { order, component } = inst;
+  const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
+  const daysToExFac = businessDaysUntil(exFac);
+  const updatedDays = component.updated_at ? businessDaysBetween(component.updated_at, new Date()) : null;
+  const meta = BUCKET_META[bucket];
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        'bg-white rounded-xl ring-1 hover:shadow-sm cursor-pointer flex items-stretch transition-all',
+        selected ? 'ring-primary-300 bg-primary-50/40' : meta.ring,
+        bucket === 'needs-attention' && !selected && 'hover:ring-red-200',
+      )}
+    >
+      <div onClick={(e) => e.stopPropagation()} className="pl-3 pr-1 self-center flex items-center">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 cursor-pointer"
+        />
+      </div>
+      {/* Status block */}
+      <div className="py-2.5 pr-4 pl-2 flex flex-col gap-1.5 min-w-[240px] border-r border-gray-100">
+        <SampleStatusRow
+          label="SO"
+          status={component.strike_off_status}
+          attemptNo={component.strike_off_attempt_no}
+          rejectionCount={component.strike_off_rejection_count}
+          showAge={bucket === 'needs-attention'}
+          updatedDays={updatedDays}
+        />
+        <SampleStatusRow
+          label="LD"
+          status={component.lab_dip_status}
+          attemptNo={component.lab_dip_attempt_no}
+          rejectionCount={component.lab_dip_rejection_count}
+          showAge={bucket === 'needs-attention'}
+          updatedDays={updatedDays}
+        />
+      </div>
+      {/* Style / colour (PO + customer + factory live in the PO sub-header) */}
+      <div className="flex-1 py-2.5 px-3 min-w-0">
+        <div className="flex items-baseline gap-2 mb-0.5">
+          <span className="text-sm font-bold text-gray-900 truncate">{order.style_code || `Style #${order.id}`}</span>
+          {order.colour && <span className="text-[11px] text-gray-500 truncate">{order.colour}</span>}
+        </div>
+        {(order.description || order.china_orderbook_ref) && (
+          <div className="text-[11px] text-gray-400 truncate">
+            {order.china_orderbook_ref}
+            {order.china_orderbook_ref && order.description && ' · '}
+            {order.description}
+          </div>
+        )}
+      </div>
+      {/* Right meta */}
+      <div className="py-2.5 pr-4 flex items-center gap-3 flex-shrink-0">
+        <div className="text-right hidden md:block">
+          <div className="text-[10px] text-gray-400 leading-tight">Ex-fac</div>
+          <ExFacBadge days={daysToExFac} />
+        </div>
+        <div className="text-right hidden sm:block">
+          <div className="text-[10px] text-gray-400 leading-tight">Updated</div>
+          <div className="text-[11px] text-gray-700 num">{relativeTimeShort(component.updated_at)}</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-gray-300" />
+      </div>
+    </div>
+  );
+}
+
+function SampleStatusRow({
+  label,
+  status,
+  attemptNo,
+  rejectionCount,
+  showAge,
+  updatedDays,
+}: {
+  label: string;
+  status: string | null | undefined;
+  attemptNo: number | null | undefined;
+  rejectionCount: number | null | undefined;
+  showAge: boolean;
+  updatedDays: number | null;
+}) {
+  const style = statusPillStyle(status);
+  const upper = (status || '').trim().toUpperCase();
+  // Show age in the row only when the bucket is "Needs attention" and the status is one
+  // that meaningfully ages (OUTSTANDING/RECEIVED/REJECTED/LATE). Don't bother for done/N-R.
+  const ageRelevant = showAge && updatedDays !== null && ['OUTSTANDING', 'RECEIVED', 'REJECTED', 'LATE', 'P23 ADVISE UPDATE'].includes(upper);
+  const ageColor =
+    updatedDays === null ? 'text-gray-400'
+      : updatedDays >= STALE_BIZ_DAYS ? 'text-red-600'
+      : updatedDays >= 7 ? 'text-amber-600'
+      : 'text-gray-500';
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-bold text-gray-700 w-6 tracking-wide">{label}</span>
+      <span className={cn('px-2.5 py-1 rounded-md text-[11px] font-bold leading-none', style.bg, style.text)}>
+        {style.label}
+      </span>
+      {!!attemptNo && attemptNo > 1 && (
+        <AttemptBadge attemptNo={attemptNo} rejectionCount={rejectionCount} size="xs" />
+      )}
+      {ageRelevant && (
+        <span className={cn('text-[11px] font-semibold num ml-auto', ageColor)}>{updatedDays}d</span>
+      )}
+    </div>
   );
 }
 
