@@ -41,6 +41,7 @@ const navItemsAfter = [
 const factorySubItems = [
   { href: '/factory-product', label: 'Product', icon: ShoppingBag },
   { href: '/factory-shipping', label: 'Shipping', icon: Truck },
+  { href: '/factory-guide', label: 'Guide', icon: BookOpen },
 ];
 
 const designSubItems = [
