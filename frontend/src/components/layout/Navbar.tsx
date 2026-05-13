@@ -176,9 +176,29 @@ export function Navbar() {
             );
           })}
 
-          {/* Factory dropdown — independent so it still shows for suppliers
-              who don't see Dashboard/Orders */}
-          {user?.role && factoryRoles.includes(user.role) && (() => {
+          {/* Factory nav — suppliers get flat top-level links (no dropdown),
+              admin keeps the dropdown so their navbar stays compact. */}
+          {user?.role === 'supplier' && factorySubItems.map(sub => {
+            const SubIcon = sub.icon;
+            const subActive = pathname === sub.href || pathname.startsWith(sub.href + '-v2');
+            return (
+              <Link
+                key={sub.href}
+                href={sub.href}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  subActive
+                    ? 'bg-primary-50 text-primary-700'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                )}
+              >
+                <SubIcon className="h-3.5 w-3.5" />
+                {sub.label}
+              </Link>
+            );
+          })}
+
+          {user?.role === 'admin' && (() => {
             const factoryActive = pathname.startsWith('/factory-');
             return (
               <div className="relative" ref={factoryRef}>
@@ -417,9 +437,29 @@ export function Navbar() {
                   </Link>
                 );
               })}
-              {/* Factory sub-items in mobile — independent of nav-before loop
-                  so they still show for suppliers without Dashboard/Orders */}
-              {user?.role && factoryRoles.includes(user.role) && (
+              {/* Factory items in mobile.
+                  Suppliers: render as flat top-level links (no section header).
+                  Admin: render under a "Factory" group heading. */}
+              {user?.role === 'supplier' && factorySubItems.map(sub => {
+                const SubIcon = sub.icon;
+                const subActive = pathname === sub.href;
+                return (
+                  <Link
+                    key={sub.href}
+                    href={sub.href}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
+                      subActive
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                  >
+                    <SubIcon className="h-4 w-4" />
+                    {sub.label}
+                  </Link>
+                );
+              })}
+              {user?.role === 'admin' && (
                 <>
                   <div className="px-4 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Factory</div>
                   {factorySubItems.map(sub => {
