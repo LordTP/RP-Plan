@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import {
   ShoppingBag, Truck, BookOpen, CheckCircle2, AlertTriangle, Info, Search, Calendar,
-  FileSpreadsheet, Edit3, Lock, MessageSquare, X, Plus, ChevronDown, Image as ImageIcon,
-  Ship, Package, ArrowRight,
+  FileSpreadsheet, Edit3, Lock, MessageSquare, X, Plus, ChevronDown, ChevronRight,
+  Image as ImageIcon, Ship, ArrowRight, Clock, CheckCircle, XCircle, RefreshCw, Package,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
@@ -53,7 +53,7 @@ function FactoryGuideContent() {
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Factory Guide</h1>
             <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">
-              How to use the Critical Path app — for our factory partners. Two main pages: <strong>Product</strong> (find your orders, update dates) and <strong>Shipping</strong> (raise shipment drafts when goods are ready to leave).
+              How to use the Critical Path app — for our factory partners. Two main pages: <strong>Product</strong> (find your orders, request date changes, track approvals) and <strong>Shipping</strong> (raise shipment drafts when goods are ready to leave).
             </p>
           </div>
         </div>
@@ -88,86 +88,106 @@ function FactoryGuideContent() {
           <SectionHeader
             icon={ShoppingBag}
             title="Factory · Product"
-            blurb="The Product page lists every order under your factory. Use it to find your styles, update ex-fac dates, and read rejection feedback on samples."
+            blurb="When you sign in, you land here. Your orders are grouped by PO with the styles inside. Use this page to track samples, request date changes, and stay across what Source Lab has approved."
           />
 
           <Step number="1" title="Finding your orders">
             <p>
-              When you open <strong>Factory → Product</strong>, you'll see a table of all orders assigned to your factory. We filter automatically — you only ever see your own work.
+              When you sign in, you'll see <strong>your factory's purchase orders</strong> on the Product page — we filter automatically so you only ever see your own work.
             </p>
-            <MockShot caption="Factory · Product — your order list">
-              <ProductTableMock />
+            <p>
+              The page is split into two parts: a <strong>tracker bar</strong> across the top showing the status of your date-change requests, and the <strong>list of purchase orders</strong> grouped by PO number underneath.
+            </p>
+            <MockShot caption="Factory · Product — tracker bar across the top, then your PO list">
+              <ProductPageMock />
             </MockShot>
             <Tips>
-              <Tip icon={Search}>Use the search bar at the top to filter by <strong>PO number</strong>, <strong>style code</strong>, or <strong>customer name</strong>. Type your term and press <kbd>Enter</kbd> or click Apply.</Tip>
-              <Tip icon={Info}>The list pages 100 rows at a time. Scroll down and more will load automatically.</Tip>
-              <Tip icon={FileSpreadsheet}>Click <strong>Export</strong> to download a CSV of what's currently shown — handy for your own records or to share internally.</Tip>
+              <Tip icon={Search}>Use the search bar to find a specific <strong>PO number</strong>, <strong>style code</strong>, <strong>customer</strong>, or <strong>factory</strong>. Filter chips below let you narrow by status.</Tip>
+              <Tip icon={ChevronRight}>Each row in the list is one PO. Click the row to <strong>expand it</strong> and see the styles inside.</Tip>
             </Tips>
           </Step>
 
-          <Step number="2" title="What the columns mean">
-            <p>Some columns are more important to you than others. The ones that matter most day-to-day:</p>
+          <Step number="2" title="Reading a PO + the styles inside">
+            <p>
+              An expanded PO shows every style on the order. For each style you'll see the style code, description, colour, quantity, the Ex-Factory date, and the status.
+            </p>
+            <MockShot caption="A PO expanded — one row per style, with a Date change button on each">
+              <ExpandedPOMock />
+            </MockShot>
             <Table>
-              <TableRow label="PO#" value="The Source Lab purchase order number. Your main reference." />
-              <TableRow label="Style Code" value="The unique code for each style in the PO." />
-              <TableRow label="Description / Colour" value="What the garment is and the colourway." />
-              <TableRow label="Sizes (2XS → S14)" value="Quantities per size. Read-only — set by Source Lab." />
-              <TableRow label="Order Received" value="Date Source Lab issued the PO to you." />
-              <TableRow label="Original Ex-Fac" value="The agreed ship-out date from your factory. Read-only — was set when the PO was placed." />
-              <TableRow label="Revised Ex-Fac" value="If the date needs to slip, this is where the new date lives. You can request a change here (see step 3)." />
-              <TableRow label="Fit / Strike / Lab / PPS Status" value="Where each sample type is in the approval cycle. Read-only on this page — Source Lab updates these when they receive your samples." />
-              <TableRow label="Specs Sent" value="Date the latest specs were sent to you." />
+              <TableRow label="Style code" value="The unique code for the style. Source Lab sets this and it doesn't change." />
+              <TableRow label="Description / Colour" value="What the garment is and which colourway." />
+              <TableRow label="Quantity" value="Units ordered for that style. Read-only." />
+              <TableRow label="Ex-Factory" value="The current target ex-factory date. If a revised date has been approved, that's what shows here." />
+              <TableRow label="Status" value="Where the order is in the lifecycle — Sampling, Production, Shipped, etc. Source Lab updates this." />
+              <TableRow label="Date change button" value="The orange button on the right of each style row. Click it to request a change to the Revised Ex-Factory date (see step 4)." />
             </Table>
           </Step>
 
-          <Step number="3" title="Updating the Revised Ex-Fac date">
+          <Step number="3" title="Tracking your date-change requests">
             <p>
-              If you can't make the agreed ex-fac date, you can request a new one. The change won't go live immediately — it needs Source Lab to approve it.
+              Every time you submit a date change, it appears in the <strong>tracker bar at the top of the page</strong>. Three columns: <strong>Pending approval</strong> (waiting for Source Lab), <strong>Approved</strong> (live), and <strong>Rejected</strong> (with the reason explained).
+            </p>
+            <MockShot caption="Tracker bar — see at a glance what's waiting, what's live, what's been rejected">
+              <TrackerMock />
+            </MockShot>
+            <Tips>
+              <Tip icon={Clock}>A pending request shows the current date → proposed date so you can see what you've asked for.</Tip>
+              <Tip icon={X}>Cancel a pending request with the small × in the top-right of the card if you submitted it by mistake or things changed.</Tip>
+              <Tip icon={CheckCircle}>When Source Lab approves, the new date goes live on the order. Until then, the original date is still what we're tracking against.</Tip>
+              <Tip icon={XCircle}>If a request is rejected, the rejection reason shows on the card so you know why and what to try next.</Tip>
+            </Tips>
+          </Step>
+
+          <Step number="4" title="Requesting a date change">
+            <p>
+              If you can't make the agreed Ex-Factory date, you can request a new one. The change won't go live immediately — Source Lab has to approve it first.
             </p>
             <ol className="list-decimal pl-5 space-y-1.5 text-sm text-gray-700 my-3">
-              <li>Click the <strong>Revised Ex-Fac</strong> cell on the row you want to change.</li>
-              <li>Pick a new date.</li>
-              <li>A box will appear asking for a <strong>reason</strong> — please fill this in honestly. "Fabric delay 1 week" is more useful than just "delay".</li>
-              <li>Choose the <strong>scope</strong>: just this style, all styles on this PO, or specific styles you pick.</li>
-              <li>Click <strong>Submit for approval</strong>.</li>
+              <li>Expand the PO that contains the style.</li>
+              <li>Click the orange <strong>Date change</strong> button on the right of the style row.</li>
+              <li>A focused modal opens — pick the new date.</li>
+              <li>Give a <strong>reason</strong> — required. "Fabric mill delay 1 week" is more useful than "delay".</li>
+              <li>Choose the <strong>scope</strong>: just this style, all styles on this PO, or specific styles.</li>
+              <li>Click <strong>Submit for approval</strong>. The request appears in the Pending column at the top of the page.</li>
             </ol>
-            <MockShot caption="Date change modal — pick the date, give a reason, choose the scope">
+            <MockShot caption="Date change modal — locked to Revised Ex-Factory, current value shown, scope picker at the bottom">
               <DateChangeModalMock />
             </MockShot>
             <Callout type="warn" title="What happens next">
-              Source Lab gets a notification and either approves or rejects. If approved, the new date sticks. If rejected, you'll see a comment explaining why. <strong>Don't ship to the new date until you've seen the approval confirmation.</strong>
+              Source Lab gets notified and either approves or rejects. <strong>Don't ship to the new date until you see the request in the Approved column.</strong> If they reject, the rejection reason will explain why.
             </Callout>
           </Step>
 
-          <Step number="4" title="When a sample is rejected">
+          <Step number="5" title="When a sample is rejected">
             <p>
-              When Source Lab rejects a Strike Off or Lab Dip, you'll see the row light up with a rejection marker. Click into the order to see the reason, any notes, and (often) a photo showing the problem.
+              When Source Lab rejects a Strike Off or Lab Dip, you'll see it on the order row. Click into the order to see the reason, any notes, and (often) a photo showing the problem.
             </p>
-            <MockShot caption="Rejection panel — reason, notes, and (where given) a photo">
+            <MockShot caption="Rejection details — reason, notes, and (where given) a photo">
               <RejectionPanelMock />
             </MockShot>
             <Tips>
               <Tip icon={MessageSquare}>Read the rejection notes carefully before re-submitting. The brand has flagged a specific issue — fix exactly that.</Tip>
-              <Tip icon={AlertTriangle}>If the rejection doesn't make sense, leave a comment on the order (see step 5) rather than guessing.</Tip>
-              <Tip icon={Info}>After you ship the next attempt, the status will move to <strong>Received</strong> when Source Lab gets it. You don't need to mark anything yourself — they handle the system update.</Tip>
+              <Tip icon={AlertTriangle}>If the rejection doesn't make sense, leave a comment on the order (see step 6) rather than guessing.</Tip>
+              <Tip icon={Info}>After you ship the next attempt, the status will move to <strong>Received</strong> when Source Lab gets it. You don't need to mark anything yourself.</Tip>
             </Tips>
           </Step>
 
-          <Step number="5" title="Comments &amp; questions">
+          <Step number="6" title="Comments &amp; questions">
             <p>
-              Every order has a <strong>comments panel</strong> down the right side of the order detail view. Use it for anything that needs a written trail — questions, photos, confirmations.
+              Every order has a <strong>comments panel</strong>. Use it for anything that needs a written trail — questions, photos, confirmations.
             </p>
-            <MockShot caption="Comments sidebar — mention people with @ to make sure they see it">
+            <MockShot caption="Comments — mention people with @ to make sure they see it">
               <CommentsSidebarMock />
             </MockShot>
             <Tips>
-              <Tip icon={MessageSquare}>Mention a specific Source Lab person with <strong>@</strong> + their name to make sure they see it.</Tip>
-              <Tip icon={Info}>Comments are saved instantly. They show up in Source Lab's dashboard alongside email-style notifications.</Tip>
+              <Tip icon={MessageSquare}>Mention a specific Source Lab person with <strong>@</strong> + their name.</Tip>
+              <Tip icon={Info}>Comments save instantly. They appear in Source Lab's dashboard alongside email notifications.</Tip>
             </Tips>
           </Step>
 
           <Callout type="info" title="What's read-only for factory users">
-            You can update the <strong>Revised Ex-Fac</strong> date (with approval) and add <strong>comments</strong>. Everything else — PO number, customer, sizes, pricing, sample statuses, approval dates, original ex-fac — is set by Source Lab and is read-only on your side. If something looks wrong, leave a comment and they'll fix it.
+            You can request a change to the <strong>Revised Ex-Factory</strong> date (with approval) and add <strong>comments</strong>. Everything else — PO number, customer, sizes, pricing, sample statuses, approval dates, original ex-factory — is set by Source Lab and is read-only. If something looks wrong, leave a comment and they'll fix it.
           </Callout>
         </section>
 
@@ -201,7 +221,7 @@ function FactoryGuideContent() {
             <Tips>
               <Tip icon={Search}>Use the search at the top to filter by <strong>PO#</strong> or <strong>style code</strong> when you have lots of orders.</Tip>
               <Tip icon={CheckCircle2}>Click the <strong>checkbox next to a PO heading</strong> to select every style in that PO at once.</Tip>
-              <Tip icon={Edit3}>You can enter a <strong>partial quantity</strong> if you're only shipping some of the units now. The remainder stays open for a later draft.</Tip>
+              <Tip icon={Edit3}>Enter a <strong>partial quantity</strong> if you're only shipping some of the units now. The remainder stays open for a later draft.</Tip>
               <Tip icon={AlertTriangle}>If you tick a SKU that's <em>already in another draft</em>, you'll see a red warning. Decide which draft it belongs in before confirming.</Tip>
             </Tips>
           </Step>
@@ -234,7 +254,7 @@ function FactoryGuideContent() {
               <ConfirmModalMock />
             </MockShot>
             <Callout type="warn" title="Before you confirm">
-              The confirmation modal shows a full summary: number of POs, number of SKUs, total units, and any warnings (overwrites, partial shipments). <strong>Read it carefully — the SKU list locks after you confirm.</strong>
+              The confirmation modal shows a full summary: number of POs, number of SKUs, total units, and any warnings. <strong>Read it carefully — the SKU list locks after you confirm.</strong>
             </Callout>
           </Step>
 
@@ -301,7 +321,6 @@ function Step({ number, title, children }: { number: string; title: string; chil
 function MockShot({ caption, children }: { caption: string; children: React.ReactNode }) {
   return (
     <figure className="my-4 rounded-lg overflow-hidden ring-1 ring-gray-200 bg-white">
-      {/* Faux browser chrome */}
       <div className="bg-gray-100 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
         <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
         <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
@@ -374,91 +393,300 @@ function StatusPill({ children, tone }: { children: React.ReactNode; tone: 'gree
     blue: 'bg-blue-100 text-blue-700',
     gray: 'bg-gray-100 text-gray-600',
   };
-  return <span className={cn('inline-block px-1.5 py-0.5 rounded text-[9px] font-bold', styles[tone])}>{children}</span>;
+  return <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold', styles[tone])}>{children}</span>;
 }
 
-function ProductTableMock() {
+/**
+ * Mini tracker that mirrors SupplierChangeTracker — three columns of date-
+ * change requests by status. Used in the page-level mock and standalone in
+ * step 3.
+ */
+function TrackerMock() {
+  return (
+    <div className="p-4 grid grid-cols-3 gap-3">
+      {/* Pending */}
+      <div className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden">
+        <div className="px-3 py-2 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
+          <Clock className="w-3 h-3 text-orange-600" />
+          <span className="text-[10px] font-medium text-orange-800">Pending approval</span>
+          <span className="ml-auto text-[9px] bg-orange-200 text-orange-800 px-1.5 py-0.5 rounded-full font-semibold">2</span>
+        </div>
+        <div className="divide-y divide-gray-50">
+          <div className="p-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-medium">5050 <span className="text-[9px] text-gray-400">(SS26-CREW-NVY)</span></p>
+                <p className="text-[10px] text-gray-500">Revised Po Ex Factory</p>
+                <p className="text-[10px] mt-0.5"><span className="text-gray-400">12 May</span> → <span className="font-medium text-orange-600">20 May</span></p>
+              </div>
+              <X className="w-3 h-3 text-gray-300" />
+            </div>
+          </div>
+          <div className="p-2">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-medium">4992 <span className="text-[9px] text-gray-400">(SS26-PARKA-OLV)</span></p>
+                <p className="text-[10px] text-gray-500">Revised Po Ex Factory</p>
+                <p className="text-[10px] mt-0.5"><span className="text-gray-400">21 May</span> → <span className="font-medium text-orange-600">28 May</span></p>
+              </div>
+              <X className="w-3 h-3 text-gray-300" />
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Approved */}
+      <div className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden">
+        <div className="px-3 py-2 bg-green-50 border-b border-green-100 flex items-center gap-2">
+          <CheckCircle className="w-3 h-3 text-green-600" />
+          <span className="text-[10px] font-medium text-green-800">Approved</span>
+          <span className="ml-auto text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full font-semibold">3</span>
+        </div>
+        <div className="divide-y divide-gray-50">
+          <div className="p-2">
+            <p className="text-[11px] font-medium">4980 <span className="text-[9px] text-gray-400">(SS26-TEE-WHT)</span></p>
+            <p className="text-[10px] text-gray-500">Revised Po Ex Factory</p>
+            <p className="text-[10px] text-green-600 mt-0.5">Approved by Tom Paul</p>
+          </div>
+          <div className="p-2">
+            <p className="text-[11px] font-medium">4965 <span className="text-[9px] text-gray-400">(SS26-HOOD-BLK)</span></p>
+            <p className="text-[10px] text-gray-500">Revised Po Ex Factory</p>
+            <p className="text-[10px] text-green-600 mt-0.5">Approved by Sarah Chen</p>
+          </div>
+        </div>
+      </div>
+      {/* Rejected */}
+      <div className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden">
+        <div className="px-3 py-2 bg-red-50 border-b border-red-100 flex items-center gap-2">
+          <XCircle className="w-3 h-3 text-red-600" />
+          <span className="text-[10px] font-medium text-red-800">Rejected</span>
+          <span className="ml-auto text-[9px] bg-red-200 text-red-800 px-1.5 py-0.5 rounded-full font-semibold">1</span>
+        </div>
+        <div className="divide-y divide-gray-50">
+          <div className="p-2">
+            <p className="text-[11px] font-medium">4992 <span className="text-[9px] text-gray-400">(SS26-PARKA-NVY)</span></p>
+            <p className="text-[10px] text-gray-500">Revised Po Ex Factory</p>
+            <p className="text-[10px] text-red-600 mt-0.5 truncate">Customer's deadline can't slip — need original date</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A single collapsed PO card matching the real V2 styling. */
+function POCardCollapsedMock({ po, customer, factory, styles, units, exFac, status, tone }: {
+  po: string; customer: string; factory: string; styles: number; units: string; exFac: string;
+  status: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'gray';
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 px-4 py-3 flex items-center gap-3">
+      <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-bold">{po}</span>
+          <span className="text-[10px] text-gray-400">·</span>
+          <span className="text-[11px] text-gray-500 truncate">{customer}</span>
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[10px] text-gray-400">{factory}</span>
+          <span className="text-[10px] text-gray-300">·</span>
+          <span className="text-[10px] text-gray-400">{styles} styles</span>
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-[11px] font-semibold text-gray-900">{units}</p>
+        <p className="text-[9px] text-gray-400">units</p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-[10px] font-medium text-gray-700">{exFac}</p>
+        <p className="text-[9px] text-gray-400">ex-factory</p>
+      </div>
+      <div className="flex-shrink-0">
+        <StatusPill tone={tone}>{status}</StatusPill>
+      </div>
+    </div>
+  );
+}
+
+/** Full V2 product page mockup — tracker bar + search row + PO list. */
+function ProductPageMock() {
+  return (
+    <div className="p-4 space-y-3">
+      {/* Tracker */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
+          <div className="px-2.5 py-1.5 bg-orange-50 border-b border-orange-100 flex items-center gap-1.5">
+            <Clock className="w-2.5 h-2.5 text-orange-600" />
+            <span className="text-[9px] font-medium text-orange-800">Pending</span>
+            <span className="ml-auto text-[9px] bg-orange-200 text-orange-800 px-1 py-0.5 rounded-full font-semibold">2</span>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
+          <div className="px-2.5 py-1.5 bg-green-50 border-b border-green-100 flex items-center gap-1.5">
+            <CheckCircle className="w-2.5 h-2.5 text-green-600" />
+            <span className="text-[9px] font-medium text-green-800">Approved</span>
+            <span className="ml-auto text-[9px] bg-green-200 text-green-800 px-1 py-0.5 rounded-full font-semibold">3</span>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
+          <div className="px-2.5 py-1.5 bg-red-50 border-b border-red-100 flex items-center gap-1.5">
+            <XCircle className="w-2.5 h-2.5 text-red-600" />
+            <span className="text-[9px] font-medium text-red-800">Rejected</span>
+            <span className="ml-auto text-[9px] bg-red-200 text-red-800 px-1 py-0.5 rounded-full font-semibold">1</span>
+          </div>
+        </div>
+      </div>
+      {/* Search row */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="w-3 h-3 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <div className="pl-7 pr-3 py-1.5 text-[11px] bg-white border border-gray-200 rounded-lg text-gray-400">Search PO, customer, style, factory…</div>
+        </div>
+        <button className="p-1.5 bg-white border border-gray-200 rounded-lg">
+          <RefreshCw className="w-3 h-3 text-gray-500" />
+        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <span className="px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-[9px] font-bold">All 12</span>
+          <span className="px-2 py-1 rounded-full bg-white border border-gray-200 text-[9px] text-gray-600">Sampling</span>
+          <span className="px-2 py-1 rounded-full bg-white border border-gray-200 text-[9px] text-gray-600">Production</span>
+        </div>
+      </div>
+      {/* PO list — mix of collapsed and one expanded teaser */}
+      <div className="space-y-2">
+        <POCardCollapsedMock po="PO 5050" customer="Acme Apparel" factory="Shanghai Boomscarf" styles={4} units="2,400" exFac="12 May" status="Sampling" tone="amber" />
+        <POCardCollapsedMock po="PO 4992" customer="Acme Apparel" factory="YKK Vietnam" styles={3} units="1,800" exFac="21 May" status="Sampling" tone="amber" />
+        <POCardCollapsedMock po="PO 4980" customer="Other Customer" factory="Wuxi Print" styles={9} units="4,400" exFac="3 Jun" status="Production" tone="green" />
+        <POCardCollapsedMock po="PO 4965" customer="Other Customer" factory="Hangzhou Knit" styles={8} units="1,600" exFac="15 May" status="Production" tone="green" />
+      </div>
+    </div>
+  );
+}
+
+/** PO card expanded — showing the inner style rows. */
+function ExpandedPOMock() {
+  const rows = [
+    { style: 'SS26-CREW-NVY', desc: 'Heavy crew rib', colour: 'Navy', qty: '600', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
+    { style: 'SS26-CREW-CHA', desc: 'Heavy crew rib', colour: 'Charcoal', qty: '600', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
+    { style: 'SS26-CREW-OAT', desc: 'Heavy crew rib', colour: 'Oat', qty: '500', exFac: '12 May', status: 'Production', tone: 'green' as const },
+    { style: 'SS26-HOOD-BLK', desc: 'Pullover hood', colour: 'Black', qty: '700', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
+  ];
   return (
     <div className="p-4">
-      {/* Faux toolbar */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="w-3 h-3 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
-          <div className="pl-7 pr-3 py-1.5 text-[11px] bg-white border border-gray-200 rounded text-gray-400">Search PO, style, customer…</div>
+      <div className="bg-white rounded-xl border border-primary-200 shadow-sm overflow-hidden">
+        {/* Expanded header */}
+        <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
+          <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-bold">PO 5050</span>
+              <span className="text-[10px] text-gray-400">·</span>
+              <span className="text-[11px] text-gray-500">Acme Apparel</span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[10px] text-gray-400">Shanghai Boomscarf</span>
+              <span className="text-[10px] text-gray-300">·</span>
+              <span className="text-[10px] text-gray-400">4 styles</span>
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-[11px] font-semibold text-gray-900">2,400</p>
+            <p className="text-[9px] text-gray-400">units</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-[10px] font-medium text-gray-700">12 May</p>
+            <p className="text-[9px] text-gray-400">ex-factory</p>
+          </div>
+          <StatusPill tone="amber">Sampling</StatusPill>
         </div>
-        <button className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-200 rounded text-gray-600">Filters</button>
-        <button className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-200 rounded text-gray-600 flex items-center gap-1"><FileSpreadsheet className="w-3 h-3"/>Export</button>
+        {/* Style table header */}
+        <div className="grid grid-cols-[1.5fr_1.5fr_0.7fr_0.6fr_0.7fr_0.8fr_auto] gap-2 px-4 py-2 text-[9px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60 border-b border-gray-100">
+          <div>Style</div>
+          <div>Description</div>
+          <div>Colour</div>
+          <div className="text-right">Qty</div>
+          <div className="text-right">Ex-Factory</div>
+          <div>Status</div>
+          <div></div>
+        </div>
+        {/* Style rows */}
+        {rows.map((r) => (
+          <div key={r.style} className="grid grid-cols-[1.5fr_1.5fr_0.7fr_0.6fr_0.7fr_0.8fr_auto] gap-2 px-4 py-2 items-center border-t border-gray-50">
+            <div className="text-[11px] font-medium truncate">{r.style}</div>
+            <div className="text-[11px] text-gray-600 truncate">{r.desc}</div>
+            <div className="text-[11px] text-gray-600 truncate">{r.colour}</div>
+            <div className="text-[11px] font-medium text-right num">{r.qty}</div>
+            <div className="text-[10px] text-gray-600 text-right num">{r.exFac}</div>
+            <div><StatusPill tone={r.tone}>{r.status}</StatusPill></div>
+            <div className="flex items-center gap-1.5 justify-end">
+              <button className="p-1 hover:bg-primary-50 rounded">
+                <MessageSquare className="w-3 h-3 text-gray-400" />
+              </button>
+              <button className="inline-flex items-center gap-1 px-2 py-1 text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-md text-[10px] font-bold">
+                <Calendar className="w-3 h-3" strokeWidth={2.5} />
+                Date change
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
-      <div className="border border-gray-200 rounded overflow-hidden">
-        <table className="w-full text-[10px]">
-          <thead className="bg-gray-50">
-            <tr className="text-left text-gray-500 font-semibold uppercase tracking-wider">
-              <th className="px-2 py-1.5">PO#</th>
-              <th className="px-2 py-1.5">Style</th>
-              <th className="px-2 py-1.5">Customer</th>
-              <th className="px-2 py-1.5">Description</th>
-              <th className="px-2 py-1.5">Original Ex-Fac</th>
-              <th className="px-2 py-1.5">Revised Ex-Fac</th>
-              <th className="px-2 py-1.5">Strike</th>
-              <th className="px-2 py-1.5">Lab</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white">
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">5050</td><td className="px-2 py-1.5">SS26-CREW-NVY</td><td className="px-2 py-1.5">Acme Apparel</td><td className="px-2 py-1.5 text-gray-600">Heavy crew rib · Navy</td><td className="px-2 py-1.5 num text-gray-600">12 May</td><td className="px-2 py-1.5 num text-gray-600">—</td><td className="px-2 py-1.5"><StatusPill tone="red">REJECTED</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="amber">OUTSTANDING</StatusPill></td></tr>
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">5050</td><td className="px-2 py-1.5">SS26-CREW-CHA</td><td className="px-2 py-1.5">Acme Apparel</td><td className="px-2 py-1.5 text-gray-600">Heavy crew rib · Charcoal</td><td className="px-2 py-1.5 num text-gray-600">12 May</td><td className="px-2 py-1.5 num text-gray-600">—</td><td className="px-2 py-1.5"><StatusPill tone="blue">RECEIVED</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="amber">OUTSTANDING</StatusPill></td></tr>
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">5050</td><td className="px-2 py-1.5">SS26-CREW-OAT</td><td className="px-2 py-1.5">Acme Apparel</td><td className="px-2 py-1.5 text-gray-600">Heavy crew rib · Oat</td><td className="px-2 py-1.5 num text-gray-600">12 May</td><td className="px-2 py-1.5 num text-gray-600">—</td><td className="px-2 py-1.5"><StatusPill tone="green">APPROVED</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="green">APPROVED</StatusPill></td></tr>
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">5050</td><td className="px-2 py-1.5">SS26-HOOD-BLK</td><td className="px-2 py-1.5">Acme Apparel</td><td className="px-2 py-1.5 text-gray-600">Pullover hood · Black</td><td className="px-2 py-1.5 num text-gray-600">12 May</td><td className="px-2 py-1.5 num text-amber-700 font-semibold">20 May</td><td className="px-2 py-1.5"><StatusPill tone="amber">OUTSTANDING</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="amber">OUTSTANDING</StatusPill></td></tr>
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">4992</td><td className="px-2 py-1.5">SS26-PARKA-OLV</td><td className="px-2 py-1.5">Acme Apparel</td><td className="px-2 py-1.5 text-gray-600">Lightweight parka · Olive</td><td className="px-2 py-1.5 num text-gray-600">21 May</td><td className="px-2 py-1.5 num text-gray-600">—</td><td className="px-2 py-1.5"><StatusPill tone="green">APPROVED</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="amber">OUTSTANDING</StatusPill></td></tr>
-            <tr className="border-t border-gray-100"><td className="px-2 py-1.5 font-semibold num">4980</td><td className="px-2 py-1.5">SS26-TEE-WHT</td><td className="px-2 py-1.5">Other Customer</td><td className="px-2 py-1.5 text-gray-600">Boxy tee · White</td><td className="px-2 py-1.5 num text-gray-600">8 May</td><td className="px-2 py-1.5 num text-gray-600">—</td><td className="px-2 py-1.5"><StatusPill tone="gray">NOT REQ</StatusPill></td><td className="px-2 py-1.5"><StatusPill tone="green">APPROVED</StatusPill></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p className="text-[9px] text-gray-400 mt-2 italic">…and 94 more rows below — scroll to load more</p>
     </div>
   );
 }
 
 function DateChangeModalMock() {
   return (
-    <div className="p-6 bg-gray-100/60 flex items-center justify-center min-h-[280px]">
-      <div className="bg-white rounded-lg shadow-lg ring-1 ring-gray-200 w-full max-w-md">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-amber-600"/>
-            <h4 className="text-sm font-bold">Request date change</h4>
-          </div>
-          <X className="w-4 h-4 text-gray-400"/>
-        </div>
-        <div className="p-4 space-y-3">
-          <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
-            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"/>
-            This change will require approval from Source Lab.
+    <div className="p-6 bg-gray-100/60 flex items-center justify-center min-h-[400px]">
+      <div className="bg-white rounded-xl shadow-lg ring-1 ring-gray-200 w-full max-w-md">
+        {/* Header */}
+        <div className="px-5 py-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Calendar className="w-5 h-5 text-orange-600" strokeWidth={2.5} />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">New Revised Ex-Fac</label>
-            <div className="flex items-center gap-2 px-3 py-2 border-2 border-amber-300 rounded text-[12px] font-semibold num">
-              <Calendar className="w-3.5 h-3.5 text-amber-600"/>
+            <h4 className="text-sm font-bold">Request Revised Ex-Factory change</h4>
+            <p className="text-[10px] text-gray-500">PO 5050 · SS26-CREW-NVY</p>
+          </div>
+        </div>
+        <div className="px-5 pb-4 space-y-3">
+          {/* Approval warning */}
+          <div className="px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2 text-[11px] text-orange-800">
+            <Clock className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <span>This change requires approval from Source Lab. They'll be notified once you submit.</span>
+          </div>
+          {/* Current value */}
+          <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between text-[11px]">
+            <span className="text-gray-500">Current Revised Ex-Factory</span>
+            <span className="font-semibold text-gray-900">12 May 2026</span>
+          </div>
+          {/* New date */}
+          <div>
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-500 block mb-1">New date</label>
+            <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-semibold num">
+              <Calendar className="w-3 h-3 text-gray-400" />
               20 May 2026
             </div>
           </div>
+          {/* Reason */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Reason</label>
-            <div className="px-3 py-2 border-2 border-amber-300 rounded text-[11px] text-gray-700 leading-relaxed min-h-[46px]">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Reason <span className="text-red-500 normal-case">*</span></label>
+            <div className="px-3 py-2 border-2 border-orange-200 rounded-lg text-[11px] text-gray-700 min-h-[44px]">
               Fabric mill delay — knitting starts 1 week late
             </div>
           </div>
+          {/* Scope */}
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1.5">Apply to</label>
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-2 text-[12px]"><div className="w-3 h-3 rounded-full border-2 border-violet-600 bg-violet-600 ring-2 ring-white shadow-sm"></div>This style only</label>
-              <label className="flex items-center gap-2 text-[12px] text-gray-600"><div className="w-3 h-3 rounded-full border-2 border-gray-300"></div>All 22 styles on PO 5050</label>
-              <label className="flex items-center gap-2 text-[12px] text-gray-600"><div className="w-3 h-3 rounded-full border-2 border-gray-300"></div>Specific styles I pick</label>
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-500 block mb-1.5">Apply to</label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-[11px]"><div className="w-3 h-3 rounded-full border-2 border-orange-600 bg-orange-600 ring-2 ring-white shadow-sm"></div>This style only</label>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600"><div className="w-3 h-3 rounded-full border-2 border-gray-300"></div>All styles on PO 5050</label>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600"><div className="w-3 h-3 rounded-full border-2 border-gray-300"></div>Specific styles</label>
             </div>
           </div>
         </div>
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
-          <button className="px-3 py-1.5 text-[11px] font-medium text-gray-700 rounded">Cancel</button>
-          <button className="px-3 py-1.5 text-[11px] font-bold text-white bg-amber-600 rounded">Submit for approval</button>
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2">
+          <button className="flex-1 px-3 py-2 text-[11px] font-medium text-gray-700 bg-gray-100 rounded-lg">Cancel</button>
+          <button className="flex-1 px-3 py-2 text-[11px] font-bold text-white bg-orange-600 rounded-lg">Submit for approval</button>
         </div>
       </div>
     </div>
@@ -570,7 +798,6 @@ function SKUPickerMock() {
         <div className="pl-7 pr-3 py-1.5 text-[11px] bg-white border border-gray-200 rounded text-gray-400">Filter by PO or style…</div>
       </div>
       <div className="border border-gray-200 rounded bg-white">
-        {/* PO 5050 group header */}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
           <div className="w-3 h-3 rounded border-2 border-violet-600 bg-violet-600 flex items-center justify-center"><span className="text-white text-[8px] font-bold">✓</span></div>
           <span className="text-[11px] font-bold">PO 5050</span>
@@ -594,15 +821,13 @@ function SKUPickerMock() {
           <span className="text-[10px] font-semibold flex-1">SS26-HOOD-BLK</span>
           <span className="text-[9px] text-red-600 font-semibold">⚠ already in draft SH-2026-012</span>
         </div>
-        {/* PO 4992 group header */}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
           <div className="w-3 h-3 rounded border-2 border-gray-300"></div>
           <span className="text-[11px] font-bold">PO 4992</span>
           <span className="text-[10px] text-gray-500">Acme Apparel · 3 styles · 1,800 units</span>
-          <ChevronDown className="w-3 h-3 text-gray-400 ml-auto -rotate-90"/>
+          <ChevronRight className="w-3 h-3 text-gray-400 ml-auto"/>
         </div>
       </div>
-      <p className="text-[9px] text-gray-400 mt-2 italic">Tick the box next to a PO to select every style in that PO. Enter a partial quantity in the box on the right for split shipments.</p>
     </div>
   );
 }
