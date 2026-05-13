@@ -541,27 +541,31 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
 
                     {reasonApplyMode === 'selected' && (
                       <div className="ml-6 space-y-1.5 max-h-40 overflow-y-auto">
-                        {reasonStylesOnPO
-                          .filter(s => s.id !== reasonModal.orderId)
-                          .map((style) => (
-                            <label key={style.id} className="flex items-center gap-2 cursor-pointer">
+                        {reasonStylesOnPO.map((style) => {
+                          const isCurrent = style.id === reasonModal.orderId;
+                          return (
+                            <label key={style.id} className={cn('flex items-center gap-2', isCurrent ? 'cursor-default' : 'cursor-pointer')}>
                               <input
                                 type="checkbox"
-                                checked={reasonSelectedIds.includes(style.id)}
+                                checked={isCurrent || reasonSelectedIds.includes(style.id)}
+                                disabled={isCurrent}
                                 onChange={(e) => {
+                                  if (isCurrent) return;
                                   setReasonSelectedIds(prev =>
                                     e.target.checked
                                       ? [...prev, style.id]
                                       : prev.filter(id => id !== style.id)
                                   );
                                 }}
-                                className="w-3.5 h-3.5 text-primary-600 focus:ring-primary-500 rounded"
+                                className="w-3.5 h-3.5 text-primary-600 focus:ring-primary-500 rounded disabled:opacity-60"
                               />
-                              <span className="text-xs text-gray-600">
+                              <span className={cn('text-xs', isCurrent ? 'text-gray-500' : 'text-gray-600')}>
                                 {style.style_code} · {style.colour} — {style.description}
                               </span>
+                              {isCurrent && <span className="text-[10px] font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">this style</span>}
                             </label>
-                          ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -724,23 +728,28 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                   </label>
                   {reasonApplyMode === 'selected' && (
                     <div className="ml-6 mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
-                      {reasonStylesOnPO
-                        .filter(s => s.id !== modalOrder.id)
-                        .map(s => (
-                          <label key={s.id} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+                      {reasonStylesOnPO.map(s => {
+                        const isCurrent = s.id === modalOrder.id;
+                        return (
+                          <label key={s.id} className={cn('flex items-center gap-2 text-[12px] px-2 py-1 rounded', isCurrent ? 'cursor-default' : 'cursor-pointer hover:bg-gray-50')}>
                             <input
                               type="checkbox"
-                              checked={reasonSelectedIds.includes(s.id)}
-                              onChange={() => setReasonSelectedIds(prev =>
-                                prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
-                              )}
-                              className="text-orange-600 focus:ring-orange-500"
+                              checked={isCurrent || reasonSelectedIds.includes(s.id)}
+                              disabled={isCurrent}
+                              onChange={() => {
+                                if (isCurrent) return;
+                                setReasonSelectedIds(prev =>
+                                  prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                                );
+                              }}
+                              className="text-orange-600 focus:ring-orange-500 disabled:opacity-60"
                             />
-                            <span className="font-medium">{s.style_code}</span>
+                            <span className={cn('font-medium', isCurrent && 'text-gray-500')}>{s.style_code}</span>
                             <span className="text-gray-500">{s.colour}</span>
+                            {isCurrent && <span className="ml-auto text-[10px] font-semibold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded">this style</span>}
                           </label>
-                        ))
-                      }
+                        );
+                      })}
                     </div>
                   )}
                 </div>
