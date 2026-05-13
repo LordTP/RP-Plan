@@ -41,6 +41,7 @@ import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
 import { submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
+import { SupplierChangeTracker } from '@/components/supplier/SupplierChangeTracker';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -158,10 +159,22 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [showExportModal, setShowExportModal] = useState(false);
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<{ column_key: string; is_visible: boolean; is_editable: boolean }[]>([]);
 
-  // Reason modal state for supplier date edits
+  // Reason modal state for supplier date edits (existing inline-edit flow)
   const [reasonModal, setReasonModal] = useState<{ orderId: number; field: string; value: string } | null>(null);
   const [changeReason, setChangeReason] = useState('');
   const [isSavingReason, setIsSavingReason] = useState(false);
+
+  // Supplier-only "Request date change" modal — opened by the orange calendar
+  // button on each style row. Lets the supplier pick which date field to
+  // change, the new value, reason, and scope (this style / all on PO /
+  // selected). Reuses the same submit handler (handleReasonSubmit) by
+  // populating the existing reasonModal state on submit.
+  const [dateReqModal, setDateReqModal] = useState<{ orderId: number } | null>(null);
+  const [dateReqField, setDateReqField] = useState<string>('revised_po_ex_factory');
+  const [dateReqValue, setDateReqValue] = useState<string>('');
+  // Bumped after every successful date request, to nudge SupplierChangeTracker
+  // to re-fetch and show the new pending entry.
+  const [trackerRefreshKey, setTrackerRefreshKey] = useState(0);
 
   const isSupplier = user?.role === 'supplier';
 
@@ -278,8 +291,36 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   };
 
   const handleStyleClick = (order: Order) => {
+    // Suppliers don't get a detail panel — they only interact with the
+    // orange calendar button per row to request date changes. Internal/admin
+    // users still get the full detail panel on click.
+    if (isSupplier) return;
     setSelectedStyleId(order.id);
   };
+
+  const openDateRequest = (order: Order) => {
+    setDateReqModal({ orderId: order.id });
+    // Default to the most common editable field; supplier can change it
+    // inside the modal if more than one is allowed.
+    setDateReqField('revised_po_ex_factory');
+    setDateReqValue('');
+    setChangeReason('');
+    setReasonApplyMode('single');
+    setReasonSelectedIds([]);
+  };
+
+  // Compute which date fields the supplier is allowed to edit, based on the
+  // settings loaded from the backend. Cross-reference with COLUMNS to find
+  // the labels and ensure they're date-typed.
+  const supplierEditableDateFields = useMemo(() => {
+    const editable = supplierColumnSettings.filter(s => s.is_editable).map(s => s.column_key);
+    // If no settings loaded yet, fall back to the backend default
+    const fallback = ['revised_po_ex_factory', 'factory_confirmed_ex_factory'];
+    const keys = editable.length > 0 ? editable : fallback;
+    return keys
+      .map(k => COLUMNS.find(c => c.key === k))
+      .filter((c): c is NonNullable<typeof c> => !!c && c.type === 'date');
+  }, [supplierColumnSettings]);
 
   const handleCommentClick = (order: Order) => {
     setSelectedOrder(order);
@@ -395,10 +436,11 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [reasonStylesOnPO, setReasonStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
   const [loadingReasonStyles, setLoadingReasonStyles] = useState(false);
 
-  // Load styles on PO when reason modal opens
+  // Load styles on PO when reason modal OR date request modal opens
   useEffect(() => {
-    if (reasonModal) {
-      const order = orders.find(o => o.id === reasonModal.orderId);
+    const openOrderId = reasonModal?.orderId ?? dateReqModal?.orderId;
+    if (openOrderId) {
+      const order = orders.find(o => o.id === openOrderId);
       if (order?.po_number) {
         setLoadingReasonStyles(true);
         ordersApi.getStylesOnPO(order.po_number)
@@ -407,7 +449,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           .finally(() => setLoadingReasonStyles(false));
       }
     }
-  }, [reasonModal, orders]);
+  }, [reasonModal, dateReqModal, orders]);
 
   return (
     <AppShell title={viewTitle} subtitle="v2">
@@ -556,10 +598,196 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           </div>
         );
       })()}
+
+      {/* Supplier Date Request Modal — opened by the orange calendar button.
+          Lets the supplier pick which date field to change + new value +
+          reason + scope, and submits via bulkUpdateDate (which creates
+          PendingDateChange rows for Source Lab to approve). */}
+      {dateReqModal && (() => {
+        const modalOrder = orders.find(o => o.id === dateReqModal.orderId);
+        if (!modalOrder) return null;
+        // Suppliers always request a change to Revised Ex-Factory only —
+        // no field picker. Other date fields are admin/internal-only.
+        const REVISED_EX_FAC_FIELD = 'revised_po_ex_factory';
+        const REVISED_EX_FAC_LABEL = 'Revised Ex-Factory';
+        const currentValue = modalOrder.revised_po_ex_factory;
+        const submit = async () => {
+          if (!changeReason.trim() || !dateReqValue) return;
+          setIsSavingReason(true);
+          try {
+            const orderIdsToUpdate = reasonApplyMode === 'single'
+              ? [modalOrder.id]
+              : reasonApplyMode === 'all'
+                ? [] // empty = all on PO
+                : [modalOrder.id, ...reasonSelectedIds];
+            const res = await ordersApi.bulkUpdateDate(
+              modalOrder.po_number,
+              REVISED_EX_FAC_FIELD,
+              dateReqValue,
+              orderIdsToUpdate,
+              changeReason,
+            );
+            toast.success(res.message || 'Date change submitted for approval');
+            loadOrders();
+            setTrackerRefreshKey(k => k + 1);
+            setDateReqModal(null);
+            setChangeReason('');
+            setDateReqValue('');
+            setReasonApplyMode('single');
+            setReasonSelectedIds([]);
+          } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Failed to submit date change');
+          } finally {
+            setIsSavingReason(false);
+          }
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-xl shadow-xl w-[480px] max-h-[85vh] overflow-y-auto p-6">
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-5 h-5 text-orange-600" strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Request {REVISED_EX_FAC_LABEL} change</h3>
+                  <p className="text-xs text-gray-500">{modalOrder.po_number} · {modalOrder.style_code}</p>
+                </div>
+              </div>
+
+              {/* Approval warning */}
+              <div className="mb-4 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2 text-[12px] text-orange-800">
+                <Clock className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>This change requires approval from Source Lab. They'll be notified once you submit.</span>
+              </div>
+
+              {/* Current value (read-only context) */}
+              <div className="mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between text-[12px]">
+                <span className="text-gray-500">Current {REVISED_EX_FAC_LABEL}</span>
+                <span className="font-semibold text-gray-900">{formatDate(currentValue)}</span>
+              </div>
+
+              {/* New date */}
+              <div className="mb-3">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">New date</label>
+                <DatePickerInput
+                  value={dateReqValue}
+                  onChange={(v) => setDateReqValue(v || '')}
+                  variant="block"
+                />
+              </div>
+
+              {/* Reason */}
+              <div className="mb-4">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">
+                  Reason <span className="text-red-500 normal-case">*</span>
+                </label>
+                <textarea
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Fabric mill delay — knitting starts 1 week late"
+                  className="w-full px-3 py-2 text-sm border-2 border-orange-200 rounded-lg focus:outline-none focus:border-orange-400 placeholder:text-gray-400"
+                />
+              </div>
+
+              {/* Scope */}
+              <div className="mb-5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Apply to</label>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={reasonApplyMode === 'single'}
+                      onChange={() => setReasonApplyMode('single')}
+                      className="text-orange-600 focus:ring-orange-500"
+                    />
+                    This style only
+                  </label>
+                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={reasonApplyMode === 'all'}
+                      onChange={() => setReasonApplyMode('all')}
+                      className="text-orange-600 focus:ring-orange-500"
+                    />
+                    All styles on {modalOrder.po_number}
+                  </label>
+                  <label className="flex items-center gap-2 text-[13px] cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={reasonApplyMode === 'selected'}
+                      onChange={() => setReasonApplyMode('selected')}
+                      className="text-orange-600 focus:ring-orange-500"
+                    />
+                    Specific styles
+                  </label>
+                  {reasonApplyMode === 'selected' && (
+                    <div className="ml-6 mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                      {reasonStylesOnPO
+                        .filter(s => s.id !== modalOrder.id)
+                        .map(s => (
+                          <label key={s.id} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-gray-50 px-2 py-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={reasonSelectedIds.includes(s.id)}
+                              onChange={() => setReasonSelectedIds(prev =>
+                                prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                              )}
+                              className="text-orange-600 focus:ring-orange-500"
+                            />
+                            <span className="font-medium">{s.style_code}</span>
+                            <span className="text-gray-500">{s.colour}</span>
+                          </label>
+                        ))
+                      }
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setDateReqModal(null);
+                    setChangeReason('');
+                    setDateReqValue('');
+                    setReasonApplyMode('single');
+                    setReasonSelectedIds([]);
+                  }}
+                  disabled={isSavingReason}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submit}
+                  disabled={
+                    isSavingReason ||
+                    !changeReason.trim() ||
+                    !dateReqValue ||
+                    (reasonApplyMode === 'selected' && reasonSelectedIds.length === 0)
+                  }
+                  className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingReason ? 'Submitting...' : 'Submit for approval'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 116px)' }}>
 
         {/* ─── Order List ─── */}
         <div className="flex flex-col min-w-0 w-full">
+
+          {/* Supplier date-change tracker — three columns (pending / approved /
+              rejected). Bumps refreshKey after each successful date request so
+              the supplier sees their submission appear immediately. */}
+          {isSupplier && <SupplierChangeTracker refreshKey={trackerRefreshKey} />}
 
           {/* Search + Actions */}
           <div className="flex items-center gap-3 mb-4">
@@ -680,6 +908,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                   onToggle={() => togglePO(group.po_number)}
                   onStyleClick={handleStyleClick}
                   onCommentClick={handleCommentClick}
+                  onDateRequest={openDateRequest}
                   selectedStyleId={selectedStyleId}
                   isSupplier={isSupplier}
                 />
@@ -724,6 +953,7 @@ function POCard({
   onToggle,
   onStyleClick,
   onCommentClick,
+  onDateRequest,
   selectedStyleId,
   isSupplier,
 }: {
@@ -732,6 +962,7 @@ function POCard({
   onToggle: () => void;
   onStyleClick: (order: Order) => void;
   onCommentClick: (order: Order) => void;
+  onDateRequest: (order: Order) => void;
   selectedStyleId: number | null;
   isSupplier: boolean;
 }) {
@@ -886,12 +1117,23 @@ function POCard({
                       )}
                     </button>
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
-                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
+                  {isSupplier ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDateRequest(style); }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-md text-[11px] font-bold transition-colors"
+                      title="Request a date change"
+                    >
+                      <Calendar className="w-3.5 h-3.5" strokeWidth={2.5} />
+                      Date change
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
+                      className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-gray-400" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

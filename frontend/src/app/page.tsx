@@ -9,19 +9,23 @@ import { useStore } from '@/store/useStore';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setUser, isAuthenticated } = useStore();
+  const { setUser, isAuthenticated, user } = useStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Suppliers land on /factory-product; everyone else on /dashboard.
+  const landingPageFor = (role?: string) =>
+    role === 'supplier' ? '/factory-product' : '/dashboard';
+
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token && isAuthenticated) {
-      window.location.href = '/dashboard';
+      window.location.href = landingPageFor(user?.role);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +43,7 @@ export default function LoginPage() {
       localStorage.setItem('access_token', response.access_token);
       setUser(response.user);
       toast.success('Login successful');
-      window.location.href = '/dashboard';
+      window.location.href = landingPageFor(response.user?.role);
     } catch (error: any) {
       const message = getErrorMessage(error);
       setError(message);

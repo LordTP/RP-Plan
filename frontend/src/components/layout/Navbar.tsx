@@ -30,8 +30,8 @@ import { ChevronDown, Check } from 'lucide-react';
 
 // Note: Design dropdown is rendered separately after this map. It appears between Orders/Factory and Tracking.
 const navItemsBefore = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer', 'supplier'] },
-  { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'supplier', 'sourcelab_designer'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'internal', 'sourcelab_designer'] },
+  { href: '/orders', label: 'Orders', icon: ClipboardList, roles: ['admin', 'internal', 'sourcelab_designer'] },
 ];
 const navItemsAfter = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
@@ -138,8 +138,12 @@ export function Navbar() {
   return (
     <>
       <header className="sticky top-0 z-40 flex h-12 items-center border-b border-gray-200 bg-white px-4">
-        {/* Logo */}
-        <Link href="/dashboard" className="flex items-center gap-2.5 mr-8">
+        {/* Logo — links to each role's "home" page (suppliers don't have
+            access to /dashboard so theirs goes to /factory-product instead). */}
+        <Link
+          href={user?.role === 'supplier' ? '/factory-product' : '/dashboard'}
+          className="flex items-center gap-2.5 mr-8"
+        >
           <div className="hidden sm:flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 text-white text-[10px] font-bold flex-shrink-0">
             <Package className="w-3.5 h-3.5" />
           </div>
@@ -151,73 +155,10 @@ export function Navbar() {
 
         {/* Desktop nav links */}
         <nav className="hidden md:flex items-center gap-1">
-          {/* Before-design items */}
+          {/* Before-design items (Dashboard, Orders for non-suppliers) */}
           {navItemsBefore.filter(i => user?.role && i.roles.includes(user.role)).map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
-
-            // Insert Factory dropdown after Orders
-            if (item.href === '/orders' && user?.role && factoryRoles.includes(user.role)) {
-              const factoryActive = pathname.startsWith('/factory-');
-              return (
-                <div key="factory-group" className="flex items-center gap-1">
-                  {/* Current item (Orders) */}
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                      active
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {item.label}
-                  </Link>
-                  {/* Factory dropdown */}
-                  <div className="relative" ref={factoryRef}>
-                    <button
-                      onClick={() => setFactoryMenuOpen(!factoryMenuOpen)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                        factoryActive
-                          ? 'bg-primary-50 text-primary-700'
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                      )}
-                    >
-                      <Package className="h-3.5 w-3.5" />
-                      Factory
-                      <ChevronDown className={cn('h-3 w-3 transition-transform', factoryMenuOpen && 'rotate-180')} />
-                    </button>
-                    {factoryMenuOpen && (
-                      <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden w-44 z-50">
-                        {factorySubItems.map(sub => {
-                          const SubIcon = sub.icon;
-                          const subActive = pathname === sub.href || pathname.startsWith(sub.href + '-v2');
-                          return (
-                            <Link
-                              key={sub.href}
-                              href={sub.href}
-                              className={cn(
-                                'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                                subActive
-                                  ? 'bg-primary-50 text-primary-700'
-                                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                              )}
-                            >
-                              <SubIcon className="h-3.5 w-3.5" />
-                              {sub.label}
-                              {subActive && <Check className="h-3.5 w-3.5 ml-auto text-primary-600" />}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
             return (
               <Link
                 key={item.href}
@@ -234,6 +175,53 @@ export function Navbar() {
               </Link>
             );
           })}
+
+          {/* Factory dropdown — independent so it still shows for suppliers
+              who don't see Dashboard/Orders */}
+          {user?.role && factoryRoles.includes(user.role) && (() => {
+            const factoryActive = pathname.startsWith('/factory-');
+            return (
+              <div className="relative" ref={factoryRef}>
+                <button
+                  onClick={() => setFactoryMenuOpen(!factoryMenuOpen)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                    factoryActive
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                  )}
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  Factory
+                  <ChevronDown className={cn('h-3 w-3 transition-transform', factoryMenuOpen && 'rotate-180')} />
+                </button>
+                {factoryMenuOpen && (
+                  <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden w-44 z-50">
+                    {factorySubItems.map(sub => {
+                      const SubIcon = sub.icon;
+                      const subActive = pathname === sub.href || pathname.startsWith(sub.href + '-v2');
+                      return (
+                        <Link
+                          key={sub.href}
+                          href={sub.href}
+                          className={cn(
+                            'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                            subActive
+                              ? 'bg-primary-50 text-primary-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          )}
+                        >
+                          <SubIcon className="h-3.5 w-3.5" />
+                          {sub.label}
+                          {subActive && <Check className="h-3.5 w-3.5 ml-auto text-primary-600" />}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Design dropdown */}
           {user?.role && designRoles.includes(user.role) && (
@@ -413,47 +401,6 @@ export function Navbar() {
               {visibleItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
-
-                // Insert factory sub-items after Orders
-                if (item.href === '/orders' && user?.role && factoryRoles.includes(user.role)) {
-                  return (
-                    <div key="mobile-factory-group">
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                          active
-                            ? 'bg-primary-50 text-primary-700'
-                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {item.label}
-                      </Link>
-                      <div className="px-4 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Factory</div>
-                      {factorySubItems.map(sub => {
-                        const SubIcon = sub.icon;
-                        const subActive = pathname === sub.href;
-                        return (
-                          <Link
-                            key={sub.href}
-                            href={sub.href}
-                            className={cn(
-                              'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ml-2',
-                              subActive
-                                ? 'bg-primary-50 text-primary-700'
-                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                            )}
-                          >
-                            <SubIcon className="h-4 w-4" />
-                            {sub.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  );
-                }
-
                 return (
                   <Link
                     key={item.href}
@@ -470,6 +417,32 @@ export function Navbar() {
                   </Link>
                 );
               })}
+              {/* Factory sub-items in mobile — independent of nav-before loop
+                  so they still show for suppliers without Dashboard/Orders */}
+              {user?.role && factoryRoles.includes(user.role) && (
+                <>
+                  <div className="px-4 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Factory</div>
+                  {factorySubItems.map(sub => {
+                    const SubIcon = sub.icon;
+                    const subActive = pathname === sub.href;
+                    return (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={cn(
+                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ml-2',
+                          subActive
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                        )}
+                      >
+                        <SubIcon className="h-4 w-4" />
+                        {sub.label}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
               {/* Design sub-items in mobile */}
               {user?.role && designRoles.includes(user.role) && (
                 <>

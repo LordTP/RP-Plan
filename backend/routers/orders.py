@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     User, UserRole, PurchaseOrder, Comment, CommentRead, DateChangeHistory,
-    PendingDateChange, ORDER_STATUSES,
+    PendingDateChange, ORDER_STATUSES, RoleColumnSettings,
 )
 from schemas import (
     PurchaseOrderCreate, PurchaseOrderResponse,
