@@ -23,28 +23,9 @@ type Section = 'product' | 'shipping';
 function FactoryGuideContent() {
   const [section, setSection] = useState<Section>('product');
 
-  useEffect(() => {
-    const handler = () => {
-      const productEl = document.getElementById('section-product');
-      const shippingEl = document.getElementById('section-shipping');
-      if (!productEl || !shippingEl) return;
-      const y = window.scrollY + 120;
-      if (shippingEl.offsetTop <= y) setSection('shipping');
-      else setSection('product');
-    };
-    window.addEventListener('scroll', handler);
-    return () => window.removeEventListener('scroll', handler);
-  }, []);
-
-  const scrollTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    window.scrollTo({ top: el.offsetTop - 80, behavior: 'smooth' });
-  };
-
   return (
     <AppShell title="Factory Guide">
-      <div className="max-w-5xl mx-auto pb-24">
+      <div className="pb-24">
         {/* Hero */}
         <div className="bg-white rounded-xl ring-1 ring-gray-100 px-8 py-7 mb-5 flex items-start gap-5">
           <div className="w-14 h-14 rounded-xl bg-violet-100 flex items-center justify-center flex-shrink-0">
@@ -58,11 +39,12 @@ function FactoryGuideContent() {
           </div>
         </div>
 
-        {/* Section nav (sticky) */}
+        {/* Section tabs (sticky) — switch between Product and Shipping. Only
+            the active section renders below, so it's not a scroll jump. */}
         <div className="sticky top-12 z-20 bg-gray-50/95 backdrop-blur-sm py-2 -mx-6 px-6 mb-5 border-b border-gray-200">
-          <div className="flex items-center gap-2 max-w-5xl mx-auto">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => scrollTo('section-product')}
+              onClick={() => setSection('product')}
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors',
                 section === 'product' ? 'bg-violet-100 text-violet-700' : 'text-gray-600 hover:bg-gray-100'
@@ -71,7 +53,7 @@ function FactoryGuideContent() {
               <ShoppingBag className="w-4 h-4" /> Product
             </button>
             <button
-              onClick={() => scrollTo('section-shipping')}
+              onClick={() => setSection('shipping')}
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors',
                 section === 'shipping' ? 'bg-violet-100 text-violet-700' : 'text-gray-600 hover:bg-gray-100'
@@ -84,7 +66,8 @@ function FactoryGuideContent() {
         </div>
 
         {/* ============== SECTION: PRODUCT ============== */}
-        <section id="section-product" className="mb-12 scroll-mt-24">
+        {section === 'product' && (
+        <section className="mb-12">
           <SectionHeader
             icon={ShoppingBag}
             title="Factory · Product"
@@ -159,21 +142,7 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          <Step number="5" title="When a sample is rejected">
-            <p>
-              When Source Lab rejects a Strike Off or Lab Dip, you'll see it on the order row. Click into the order to see the reason, any notes, and (often) a photo showing the problem.
-            </p>
-            <MockShot caption="Rejection details — reason, notes, and (where given) a photo">
-              <RejectionPanelMock />
-            </MockShot>
-            <Tips>
-              <Tip icon={MessageSquare}>Read the rejection notes carefully before re-submitting. The brand has flagged a specific issue — fix exactly that.</Tip>
-              <Tip icon={AlertTriangle}>If the rejection doesn't make sense, leave a comment on the order (see step 6) rather than guessing.</Tip>
-              <Tip icon={Info}>After you ship the next attempt, the status will move to <strong>Received</strong> when Source Lab gets it. You don't need to mark anything yourself.</Tip>
-            </Tips>
-          </Step>
-
-          <Step number="6" title="Comments &amp; questions">
+          <Step number="5" title="Comments &amp; questions">
             <p>
               Every order has a <strong>comments panel</strong>. Use it for anything that needs a written trail — questions, photos, confirmations.
             </p>
@@ -185,14 +154,12 @@ function FactoryGuideContent() {
               <Tip icon={Info}>Comments save instantly. They appear in Source Lab's dashboard alongside email notifications.</Tip>
             </Tips>
           </Step>
-
-          <Callout type="info" title="What's read-only for factory users">
-            You can request a change to the <strong>Revised Ex-Factory</strong> date (with approval) and add <strong>comments</strong>. Everything else — PO number, customer, sizes, pricing, sample statuses, approval dates, original ex-factory — is set by Source Lab and is read-only. If something looks wrong, leave a comment and they'll fix it.
-          </Callout>
         </section>
+        )}
 
         {/* ============== SECTION: SHIPPING ============== */}
-        <section id="section-shipping" className="scroll-mt-24">
+        {section === 'shipping' && (
+        <section>
           <SectionHeader
             icon={Truck}
             title="Factory · Shipping"
@@ -281,6 +248,7 @@ function FactoryGuideContent() {
             </Table>
           </Step>
         </section>
+        )}
 
         <div className="mt-12 text-center text-[11px] text-gray-400">
           If you spot something wrong or confusing, please email Source Lab — we'd rather know.
