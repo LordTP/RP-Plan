@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquare, Send, Loader2 } from 'lucide-react';
+import { MessageSquare, Send, Loader2, Pencil, X, Check } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow, isToday, isYesterday, startOfDay } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
@@ -154,7 +154,21 @@ export function CommentThread({
                   <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">{group.label}</div>
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
-                {group.comments.map((c) => <CommentCard key={c.id} comment={c} />)}
+                {group.comments.map((c) => (
+                  <CommentCard
+                    key={c.id}
+                    comment={c}
+                    canEdit={!isSupplier}
+                    onUpdated={(updated) => setComments(prev => prev.map(x => x.id === updated.id ? { ...x, comment_text: updated.comment_text } : x))}
+                    onDeleted={(id) => {
+                      setComments(prev => {
+                        const next = prev.filter(x => x.id !== id);
+                        onCommentCountChangeRef.current?.(orderId, next.length, 0);
+                        return next;
+                      });
+                    }}
+                  />
+                ))}
               </div>
             ))}
             <div ref={endRef} />
@@ -223,16 +237,31 @@ export function CommentThread({
   );
 }
 
-function CommentCard({ comment }: { comment: Comment }) {
+function CommentCard({
+  comment,
+  canEdit,
+  onUpdated,
+  onDeleted,
+}: {
+  comment: Comment;
+  canEdit: boolean;
+  onUpdated: (updated: Comment) => void;
+  onDeleted: (id: number) => void;
+}) {
   const isSupplier = comment.source === 'Supplier' || comment.source === 'supplier';
   const isUnread = !comment.read;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(comment.comment_text);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+
   let timeAgo = '';
   let fullDate = '';
   try { timeAgo = formatDistanceToNow(parseISO(comment.created_at), { addSuffix: true }); } catch {}
   try { fullDate = format(parseISO(comment.created_at), 'd MMM · HH:mm'); } catch {}
 
   const cardClass = cn(
-    'rounded-lg overflow-hidden transition-colors',
+    'group rounded-lg overflow-hidden transition-colors',
     isUnread && 'border-2 border-blue-300 ring-2 ring-blue-100/50',
     !isUnread && isSupplier && 'border border-orange-200',
     !isUnread && !isSupplier && 'border border-gray-200',
@@ -241,6 +270,35 @@ function CommentCard({ comment }: { comment: Comment }) {
     'px-3 py-2 border-b flex items-center gap-2.5',
     isUnread ? 'bg-blue-50/60 border-blue-100' : isSupplier ? 'bg-orange-50/60 border-orange-100' : 'bg-gray-50/60 border-gray-100'
   );
+
+  const handleSave = async () => {
+    const text = editText.trim();
+    if (!text) return;
+    if (text === comment.comment_text) { setIsEditing(false); return; }
+    setBusy(true);
+    try {
+      const updated = await ordersApi.updateComment(comment.id, text);
+      onUpdated(updated);
+      setIsEditing(false);
+    } catch {
+      toast.error('Failed to save edit');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true);
+    try {
+      await ordersApi.deleteComment(comment.id);
+      onDeleted(comment.id);
+      toast.success('Comment deleted');
+    } catch {
+      toast.error('Failed to delete comment');
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
 
   return (
     <div className={cardClass}>
@@ -257,12 +315,91 @@ function CommentCard({ comment }: { comment: Comment }) {
             <span className="text-[10px] px-1 py-0 rounded bg-blue-600 text-white font-bold">NEW</span>
           )}
         </div>
+        {canEdit && !isEditing && !confirmDelete && (
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              type="button"
+              onClick={() => { setEditText(comment.comment_text); setIsEditing(true); }}
+              className="p-1 text-gray-300 hover:text-gray-700 hover:bg-white/60 rounded"
+              title="Edit comment"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="p-1 text-gray-300 hover:text-red-600 hover:bg-white/60 rounded"
+              title="Delete comment"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         <span className="text-[10px] text-gray-400 whitespace-nowrap" title={fullDate}>{timeAgo}</span>
       </div>
-      <div className="px-3 py-2 text-[13px] text-gray-800 leading-relaxed bg-white whitespace-pre-wrap break-words">
-        <CommentText text={comment.comment_text} />
-      </div>
-      {comment.read_by_users && comment.read_by_users.length > 0 && (
+
+      {/* Body — editable when isEditing */}
+      {isEditing ? (
+        <div className="px-3 py-2 bg-white">
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={Math.max(2, Math.min(8, (editText.match(/\n/g)?.length || 0) + 2))}
+            className="w-full px-2 py-1.5 text-[13px] border border-gray-200 rounded resize-none focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400"
+            autoFocus
+            disabled={busy}
+          />
+          <div className="flex items-center gap-1.5 justify-end mt-1.5">
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              disabled={busy}
+              className="px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:text-gray-900 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={busy || !editText.trim()}
+              className="px-2.5 py-1 text-[11px] font-semibold text-white bg-gray-900 hover:bg-gray-800 rounded disabled:opacity-50 flex items-center gap-1"
+            >
+              {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="px-3 py-2 text-[13px] text-gray-800 leading-relaxed bg-white whitespace-pre-wrap break-words">
+          <CommentText text={comment.comment_text} />
+        </div>
+      )}
+
+      {/* Delete confirm strip */}
+      {confirmDelete && !isEditing && (
+        <div className="px-3 py-2 bg-red-50 border-t border-red-100 flex items-center gap-2">
+          <span className="text-[11px] text-red-700 flex-1">Delete this comment? This can't be undone.</span>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+            disabled={busy}
+            className="px-2 py-0.5 text-[11px] text-gray-600 hover:text-gray-900 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={busy}
+            className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50 flex items-center gap-1"
+          >
+            {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+            Delete
+          </button>
+        </div>
+      )}
+
+      {comment.read_by_users && comment.read_by_users.length > 0 && !isEditing && !confirmDelete && (
         <div className={cn(
           'px-3 py-1.5 border-t',
           isSupplier ? 'bg-orange-50/30 border-orange-100' : 'bg-gray-50/40 border-gray-100'

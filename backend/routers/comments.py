@@ -221,6 +221,72 @@ async def add_comment(
     )
 
 
+@router.put("/api/comments/{comment_id}", response_model=CommentResponse)
+async def update_comment(
+    comment_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Edit a comment's text. Internal / admin / sourcelab_designer only —
+    suppliers are read-only here. Body: { "comment_text": "..." }."""
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    if role_str == 'supplier':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Suppliers can't edit comments")
+
+    new_text = (data.get("comment_text") or "").strip()
+    if not new_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="comment_text is required")
+
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    comment.comment_text = new_text
+    comment.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(comment)
+
+    author = db.query(User).filter(User.id == comment.user_id).first()
+    return CommentResponse(
+        id=comment.id,
+        po_id=comment.po_id,
+        user_id=comment.user_id,
+        username=author.username if author else "unknown",
+        full_name=author.full_name if author else None,
+        comment_text=comment.comment_text,
+        source=comment.source,
+        read=True,
+        read_by_internal=comment.read_by_internal or False,
+        read_by_supplier=comment.read_by_supplier or False,
+        created_at=comment.created_at,
+    )
+
+
+@router.delete("/api/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_comment(
+    comment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a comment. Internal / admin / sourcelab_designer only.
+    Cascade-deletes the comment's reads and mentions via the relationship."""
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    if role_str == 'supplier':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Suppliers can't delete comments")
+
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    # Mentions don't cascade automatically (no cascade= on that relationship);
+    # remove them explicitly to avoid FK orphan rows.
+    db.query(CommentMention).filter(CommentMention.comment_id == comment_id).delete()
+    db.delete(comment)
+    db.commit()
+    return  # 204
+
+
 @router.get("/api/orders/{order_id}/history", response_model=List[DateChangeResponse])
 async def get_order_history(
     order_id: int,

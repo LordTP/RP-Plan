@@ -186,6 +186,15 @@ export const ordersApi = {
     return response.data;
   },
 
+  updateComment: async (commentId: number, commentText: string): Promise<Comment> => {
+    const response = await api.put<Comment>(`/api/comments/${commentId}`, { comment_text: commentText });
+    return response.data;
+  },
+
+  deleteComment: async (commentId: number): Promise<void> => {
+    await api.delete(`/api/comments/${commentId}`);
+  },
+
   getOrderHistory: async (id: number): Promise<DateHistory[]> => {
     const response = await api.get<DateHistory[]>(`/api/orders/${id}/history`);
     return response.data;
