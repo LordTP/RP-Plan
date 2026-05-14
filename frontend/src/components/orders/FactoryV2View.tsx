@@ -1177,6 +1177,11 @@ const SIZE_GUIDE = [
   { code: '013', label: 'LADIES DUAL', sizes: ['8-10', '12-14', '16-18', '20-22'] },
   { code: '014', label: 'KIDS DRY ROBE', sizes: ['5-9 YRS', '10-13YRS'] },
   { code: '015', label: 'KIDS 3-15', sizes: ['3/4', '4/5', '5/6', '6/7', '7/8', '8/9', '9/10', '10/11', '11/12', '12/13', '13/14', '14/15'] },
+  { code: '016', label: 'KIDS 1-14', sizes: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14'] },
+  { code: '017', label: 'KIDS ALT 3', sizes: ['3-4', '5-6', '7-8', '9-10', '11-12', '13-14', '15-16'] },
+  { code: '018', label: 'SOCKS', sizes: ['K 12-3', 'K 3-6', 'A 3-6', 'A 7-11'] },
+  { code: '019', label: 'BABY SWIM', sizes: ['3-6M', '6-12M', '12-18M', '18-24M'] },
+  { code: '020', label: 'MENS DENIM', sizes: ['28', '30', '32', '34', '36'] },
 ];
 
 function getSizeBreakdown(order: Order): { label: string; value: number }[] {
