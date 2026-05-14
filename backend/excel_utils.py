@@ -1221,15 +1221,36 @@ def export_database_to_excel(
     ws = wb.active
 
     # The CP HEADERS template has:
-    # Row 1: Category row (MERCH, DESIGN, PRODUCT, PRIME, AUTO, ALL)
-    # Row 2: Header row (PO#, SL SYSTEM PO#, etc.) - merged down with size ref rows
-    # Rows 3-18: Size reference data and status options (merged cells)
-    # Row 19: INPUT/CALC indicator row
-    # Row 20-21: Notes/logic rows
-    # Data starts at row 22
+    #   Row 1: Category row (MERCH, DESIGN, PRODUCT, PRIME, AUTO, ALL)
+    #   Row 2: Header row (PO#, SL SYSTEM PO#, etc.) — merged down with size
+    #          reference rows below.
+    #   Rows 3..N: Size reference chart, one row per gender code. The chart
+    #          grows over time as new gender codes are added (017, 018…).
+    #   Rows N+1..: Sample/demo data that we replace with the real export.
+    #
+    # Detect the first sample-data row dynamically by scanning the PO# column
+    # (col 1) — chart rows have no PO#, sample/data rows do. Anything found
+    # at or after that row is replaced with the real export.
+    po_col = TEMPLATE_COLUMN_MAP.get("po_number", 1)
+    sample_start_row = None
+    for r in range(3, min(ws.max_row + 1, 60)):
+        v = ws.cell(r, po_col).value
+        if v is not None and str(v).strip() not in ("", "PO#"):
+            sample_start_row = r
+            break
+    # If no sample data found (rare), default to one row past the last gender
+    # code in col 16. Worst case fall back to 19.
+    if sample_start_row is None:
+        gender_col = TEMPLATE_COLUMN_MAP.get("gender", 16)
+        last_chart_row = 18
+        for r in range(3, min(ws.max_row + 1, 60)):
+            if ws.cell(r, gender_col).value:
+                last_chart_row = r
+        sample_start_row = last_chart_row + 1
 
-    # Delete template rows 19-21 (INPUT/CALC + notes) so data starts clean
-    ws.delete_rows(19, ws.max_row - 18)
+    # Strip out the sample/demo rows so we write real data into clean rows.
+    if sample_start_row <= ws.max_row:
+        ws.delete_rows(sample_start_row, ws.max_row - sample_start_row + 1)
 
     # Query POs with filters
     query = db.query(PurchaseOrder)
@@ -1254,8 +1275,9 @@ def export_database_to_excel(
 
     pos = query.order_by(PurchaseOrder.system_po_number.asc()).all()
 
-    # Data starts right after the header/reference rows (19-21 were deleted)
-    data_start_row = 19
+    # Data starts right after the size reference chart — same row we cleared
+    # the sample/demo data from above.
+    data_start_row = sample_start_row
 
     # Border style for data cells
     thin_border = Border(
