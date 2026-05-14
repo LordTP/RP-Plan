@@ -1300,6 +1300,32 @@ def export_database_to_excel(
             size_cell = ws.cell(target_row, size_col_start + j, size_value)
             _apply_style(style_src_size, size_cell, is_label=False)
 
+    # If the DB chart length differs from what the template originally had,
+    # the single-column header merges (A2:A18 etc.) need to grow/shrink so
+    # they still span the full chart vertically. Without this, the column
+    # headers would be misaligned with the size chart.
+    if new_chart_last != existing_chart_last and existing_chart_last > 2:
+        from openpyxl.utils import get_column_letter as _gcl
+        to_fix = []
+        for r in list(ws.merged_cells.ranges):
+            if (r.min_row == 2 and r.max_row == existing_chart_last
+                    and r.min_col == r.max_col):
+                to_fix.append((r.min_col, r.coord))
+        for col, coord in to_fix:
+            ws.unmerge_cells(coord)
+            new_coord = f"{_gcl(col)}2:{_gcl(col)}{new_chart_last}"
+            ws.merge_cells(new_coord)
+
+        # AutoFilter header sits on the chart's last row (originally row 18,
+        # bumped along with the chart). Move it to new_chart_last.
+        if ws.auto_filter.ref:
+            import re as _re
+            parts = ws.auto_filter.ref.split(':')
+            if len(parts) == 2:
+                m = _re.match(r'([A-Z]+)(\d+)', parts[0])
+                if m and int(m.group(2)) == existing_chart_last:
+                    ws.auto_filter.ref = f"{m.group(1)}{new_chart_last}:{parts[1]}"
+
     # Now find where sample/demo data starts and strip it. Re-scan because the
     # chart rewrite above didn't touch col 1, so the PO# detection still works.
     sample_start_row = None

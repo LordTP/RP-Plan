@@ -643,7 +643,9 @@ function SizeGuideTab() {
   const [isSaving, setIsSaving] = useState<number | 'new' | null>(null);
   const [editingId, setEditingId] = useState<number | 'new' | null>(null);
   // Local edit buffer for the row being added/edited
-  const [draft, setDraft] = useState<{ code: string; label: string; sizesText: string }>({ code: '', label: '', sizesText: '' });
+  const [draft, setDraft] = useState<{ code: string; label: string; sizes: string[] }>({ code: '', label: '', sizes: [] });
+  // The input where new chips are typed before being committed with Enter/comma/blur.
+  const [sizeInput, setSizeInput] = useState('');
 
   const load = async () => {
     setIsLoading(true);
@@ -659,29 +661,54 @@ function SizeGuideTab() {
 
   useEffect(() => { load(); }, []);
 
-  // Parse comma-separated string → sizes array, trimming each entry, drop blanks.
-  const parseSizes = (text: string): string[] =>
-    text.split(',').map(s => s.trim()).filter(Boolean);
+  // Push the current input as a chip, supporting comma-as-separator too
+  // (so a user can paste "S, M, L" and have each become its own chip).
+  const commitSizeInput = () => {
+    const parts = sizeInput.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    setDraft(d => ({ ...d, sizes: [...d.sizes, ...parts] }));
+    setSizeInput('');
+  };
+
+  const removeSize = (idx: number) => {
+    setDraft(d => ({ ...d, sizes: d.sizes.filter((_, i) => i !== idx) }));
+  };
+
+  const moveSize = (idx: number, dir: 'left' | 'right') => {
+    setDraft(d => {
+      const next = [...d.sizes];
+      const target = dir === 'left' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= next.length) return d;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return { ...d, sizes: next };
+    });
+  };
 
   const startEdit = (row: SizeGuideRow) => {
     setEditingId(row.id);
-    setDraft({ code: row.code, label: row.label, sizesText: row.sizes.join(', ') });
+    setDraft({ code: row.code, label: row.label, sizes: [...row.sizes] });
+    setSizeInput('');
   };
 
   const startAdd = () => {
     setEditingId('new');
-    setDraft({ code: '', label: '', sizesText: '' });
+    setDraft({ code: '', label: '', sizes: [] });
+    setSizeInput('');
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setDraft({ code: '', label: '', sizesText: '' });
+    setDraft({ code: '', label: '', sizes: [] });
+    setSizeInput('');
   };
 
   const save = async () => {
     const code = draft.code.trim();
     const label = draft.label.trim();
-    const sizes = parseSizes(draft.sizesText);
+    // Pull in any pending text from the size input so users don't lose a
+    // size they typed but forgot to press Enter on.
+    const trailing = sizeInput.split(',').map(s => s.trim()).filter(Boolean);
+    const sizes = [...draft.sizes, ...trailing];
     if (!code) { toast.error('Code is required'); return; }
     if (!label) { toast.error('Label is required'); return; }
     if (sizes.length === 0) { toast.error('Add at least one size'); return; }
@@ -840,11 +867,13 @@ function SizeGuideTab() {
                   </td>
                   <td className="px-2 py-2 align-top">
                     {isEditing ? (
-                      <input
-                        value={draft.sizesText}
-                        onChange={(e) => setDraft({ ...draft, sizesText: e.target.value })}
-                        placeholder="2XS, XS, S, M, L, XL"
-                        className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                      <SizeChipEditor
+                        sizes={draft.sizes}
+                        sizeInput={sizeInput}
+                        onSizeInputChange={setSizeInput}
+                        onCommit={commitSizeInput}
+                        onRemove={removeSize}
+                        onMove={moveSize}
                       />
                     ) : (
                       <div className="flex flex-wrap gap-1">
@@ -924,11 +953,13 @@ function SizeGuideTab() {
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <input
-                    value={draft.sizesText}
-                    onChange={(e) => setDraft({ ...draft, sizesText: e.target.value })}
-                    placeholder="2XS, XS, S, M, L, XL"
-                    className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                  <SizeChipEditor
+                    sizes={draft.sizes}
+                    sizeInput={sizeInput}
+                    onSizeInputChange={setSizeInput}
+                    onCommit={commitSizeInput}
+                    onRemove={removeSize}
+                    onMove={moveSize}
                   />
                 </td>
                 <td></td>
@@ -958,6 +989,88 @@ function SizeGuideTab() {
       <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 text-[11px] text-gray-500">
         <strong>Tip:</strong> Sizes are comma-separated. Position matters — the first size value sits under column 1 in the order table, second under column 2, etc. Keep up to 14 sizes per code.
       </div>
+    </div>
+  );
+}
+
+// Chip-style editor for the sizes column in the Size Guide table.
+// Each size shows as a removable pill with ←/→ arrows for reordering and a
+// × to delete. Type into the trailing input and press Enter (or comma) to
+// add a new size. Paste-friendly: pasting "S, M, L" splits into 3 chips.
+function SizeChipEditor({
+  sizes,
+  sizeInput,
+  onSizeInputChange,
+  onCommit,
+  onRemove,
+  onMove,
+}: {
+  sizes: string[];
+  sizeInput: string;
+  onSizeInputChange: (v: string) => void;
+  onCommit: () => void;
+  onRemove: (idx: number) => void;
+  onMove: (idx: number, dir: 'left' | 'right') => void;
+}) {
+  return (
+    <div className="border border-gray-300 rounded p-1.5 bg-white min-h-[34px] flex flex-wrap items-center gap-1">
+      {sizes.map((s, i) => (
+        <span
+          key={`${i}-${s}`}
+          className="inline-flex items-center gap-0.5 pl-1.5 pr-0.5 py-0.5 bg-primary-50 border border-primary-200 rounded text-[11px] font-mono group"
+        >
+          <button
+            type="button"
+            onClick={() => onMove(i, 'left')}
+            disabled={i === 0}
+            className="text-gray-400 hover:text-gray-700 disabled:opacity-20 px-0.5 leading-none"
+            title="Move left"
+          >‹</button>
+          <span className="text-primary-700 font-semibold">{s}</span>
+          <button
+            type="button"
+            onClick={() => onMove(i, 'right')}
+            disabled={i === sizes.length - 1}
+            className="text-gray-400 hover:text-gray-700 disabled:opacity-20 px-0.5 leading-none"
+            title="Move right"
+          >›</button>
+          <button
+            type="button"
+            onClick={() => onRemove(i)}
+            className="text-gray-400 hover:text-red-600 hover:bg-white rounded px-0.5 leading-none"
+            title="Remove"
+          >×</button>
+        </span>
+      ))}
+      <input
+        value={sizeInput}
+        onChange={(e) => {
+          const v = e.target.value;
+          // Comma triggers an immediate commit (so paste & split-as-you-type
+          // both work naturally).
+          if (v.includes(',')) {
+            onSizeInputChange(v);
+            // Defer commit to next tick so the comma fully arrives.
+            setTimeout(() => onCommit(), 0);
+          } else {
+            onSizeInputChange(v);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Tab') {
+            if (sizeInput.trim()) {
+              e.preventDefault();
+              onCommit();
+            }
+          } else if (e.key === 'Backspace' && !sizeInput && sizes.length > 0) {
+            // Delete the last chip when backspacing into an empty input.
+            onRemove(sizes.length - 1);
+          }
+        }}
+        onBlur={() => { if (sizeInput.trim()) onCommit(); }}
+        placeholder={sizes.length === 0 ? '2XS, XS, S, M, …' : 'Add another'}
+        className="flex-1 min-w-[80px] px-1 py-0.5 text-[12px] outline-none bg-transparent font-mono"
+      />
     </div>
   );
 }
