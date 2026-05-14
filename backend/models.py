@@ -490,3 +490,24 @@ class QACheck(Base):
     check_id = Column(String(200), primary_key=True)
     checked_by = Column(String(50), nullable=False)
     checked_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SizeGuide(Base):
+    """Single source of truth for gender size codes (e.g. 001-MENS/ ADULTS)
+    and their per-position size labels. Admin / internal users can manage
+    rows from /settings → Size Guide. Drives the size-reference grid in the
+    order tables and the size chart written into Excel exports.
+
+    `sizes` is a JSON array of strings (e.g. ["2XS","XS","S",...,"5XL"]).
+    Stored as Text for SQLite/Postgres portability and parsed at the API
+    boundary."""
+    __tablename__ = "size_guide"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True, nullable=False)  # e.g. "001"
+    label = Column(String(100), nullable=False)             # e.g. "MENS/ ADULTS"
+    sizes = Column(Text, nullable=False, default="[]")      # JSON array
+    sort_order = Column(Integer, default=0, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

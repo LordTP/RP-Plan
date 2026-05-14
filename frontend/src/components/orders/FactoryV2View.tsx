@@ -1161,32 +1161,14 @@ const SIZE_SLOT_KEYS: (keyof Order)[] = [
 ];
 const DEFAULT_SIZE_LABELS = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', 'S11', 'S12', 'S13', 'S14'];
 
-const SIZE_GUIDE = [
-  { code: '001', label: 'MENS/ ADULTS', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'] },
-  { code: '002', label: 'LADIES', sizes: ['6', '8', '10', '12', '14', '16', '18', '20', '22', '24'] },
-  { code: '003', label: 'KIDS LETTER', sizes: ['XSB', 'SB', 'MB', 'LB', 'XLB'] },
-  { code: '004', label: 'KIDS', sizes: ['2-3', '4-5', '6-7', '8-9', '10-11', '12-13', '14-15'] },
-  { code: '005', label: 'KIDS ALT 1', sizes: ['2-3', '3-4', '5-6', '7-8', '9-10', '11-12', '13'] },
-  { code: '006', label: 'LADIES LETTER', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] },
-  { code: '007', label: 'KIDS ALT 2', sizes: ['3-4', '4-5', '6-7', '8-9', '10-11', '12-13'] },
-  { code: '008', label: 'BABY', sizes: ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M/ 18-23M'] },
-  { code: '009', label: 'ACCESSORIES/ HEADWEAR', sizes: ['ONE SIZE', 'BABY', 'JUNIOR', 'ADULT', '6-12 M', '1-3 YRS', 'INFANT'] },
-  { code: '010', label: 'MENS FOOTWEAR', sizes: ['3-6', '7-11', '7-8', '9-10', '11-12'] },
-  { code: '011', label: 'KIDS FOOTWEAR', sizes: ['10-11', '12-13', '1-2', '3-4', '5-6'] },
-  { code: '012', label: 'DOG', sizes: ['XS', 'S', 'M', 'L', 'XL', 'S/M', 'M/L'] },
-  { code: '013', label: 'LADIES DUAL', sizes: ['8-10', '12-14', '16-18', '20-22'] },
-  { code: '014', label: 'KIDS DRY ROBE', sizes: ['5-9 YRS', '10-13YRS'] },
-  { code: '015', label: 'KIDS 3-15', sizes: ['3/4', '4/5', '5/6', '6/7', '7/8', '8/9', '9/10', '10/11', '11/12', '12/13', '13/14', '14/15'] },
-  { code: '016', label: 'KIDS 1-14', sizes: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14'] },
-  { code: '017', label: 'KIDS ALT 3', sizes: ['3-4', '5-6', '7-8', '9-10', '11-12', '13-14', '15-16'] },
-  { code: '018', label: 'SOCKS', sizes: ['K 12-3', 'K 3-6', 'A 3-6', 'A 7-11'] },
-  { code: '019', label: 'BABY SWIM', sizes: ['3-6M', '6-12M', '12-18M', '18-24M'] },
-  { code: '020', label: 'MENS DENIM', sizes: ['28', '30', '32', '34', '36'] },
-];
+// SIZE_GUIDE comes from the DB (admin manages in /settings → Size Guide).
+// Callers pass the rows in to getSizeBreakdown instead of using a global.
+import type { SizeGuideRow } from '@/lib/api';
+import { useSizeGuide } from '@/lib/useSizeGuide';
 
-function getSizeBreakdown(order: Order): { label: string; value: number }[] {
+function getSizeBreakdown(order: Order, sizeGuide: SizeGuideRow[]): { label: string; value: number }[] {
   const genderCode = order.gender ? order.gender.split('-')[0]?.trim() : '';
-  const guide = SIZE_GUIDE.find(g => g.code === genderCode);
+  const guide = sizeGuide.find(g => g.code === genderCode && g.is_active);
   const labels = guide ? guide.sizes : DEFAULT_SIZE_LABELS;
   return SIZE_SLOT_KEYS.map((key, i) => ({
     label: labels[i] || DEFAULT_SIZE_LABELS[i] || `S${i + 1}`,
@@ -1197,6 +1179,8 @@ function getSizeBreakdown(order: Order): { label: string; value: number }[] {
 function SizeGuideTooltip({ gender }: { gender: string | undefined }) {
   const [show, setShow] = useState(false);
   const matchCode = gender ? gender.split('-')[0]?.trim() : '';
+  const { rows: sizeGuideRows } = useSizeGuide();
+  const SIZE_GUIDE = sizeGuideRows.filter(r => r.is_active);
 
   useEffect(() => {
     if (!show) return;
@@ -1400,7 +1384,8 @@ function DetailPanel({
 
   const statusStyle = getStatusStyle(order.status);
 
-  const sizes = getSizeBreakdown(order);
+  const { rows: sizeGuideRows } = useSizeGuide();
+  const sizes = getSizeBreakdown(order, sizeGuideRows);
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
 
   // Hero strip computations (sampling progress + ex-fac countdown).

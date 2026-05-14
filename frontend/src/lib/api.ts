@@ -420,6 +420,39 @@ export const statusesApi = {
   },
 };
 
+// Size guide endpoints — admin manages from /settings → Size Guide.
+export interface SizeGuideRow {
+  id: number;
+  code: string;
+  label: string;
+  sizes: string[];
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const sizeGuideApi = {
+  list: async (): Promise<SizeGuideRow[]> => {
+    const r = await api.get<SizeGuideRow[]>('/api/size-guide');
+    return r.data;
+  },
+  create: async (data: { code: string; label: string; sizes: string[]; sort_order?: number; is_active?: boolean }): Promise<SizeGuideRow> => {
+    const r = await api.post<SizeGuideRow>('/api/size-guide', data);
+    return r.data;
+  },
+  update: async (id: number, data: Partial<{ code: string; label: string; sizes: string[]; sort_order: number; is_active: boolean }>): Promise<SizeGuideRow> => {
+    const r = await api.put<SizeGuideRow>(`/api/size-guide/${id}`, data);
+    return r.data;
+  },
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/size-guide/${id}`);
+  },
+  reorder: async (order: number[]): Promise<void> => {
+    await api.post('/api/size-guide/reorder', { order });
+  },
+};
+
 // Excel endpoints
 export interface ImportConflict {
   order_id: number;

@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState, useEffect, type RefObject } from 'react';
+import { useRef, useState, useEffect, useMemo, type RefObject } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
+import { useSizeGuide } from '@/lib/useSizeGuide';
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import { ComponentSampleHover } from './ComponentSampleHover';
@@ -45,29 +46,13 @@ const COMPONENT_COLUMN_MAP: Record<string, { kind: SampleKind; field: 'status' |
   lab_dip_approved: { kind: 'lab_dip', field: 'approved' },
 };
 
-// Size reference mapping - matches Excel rows 2-14
-const SIZE_REFERENCE = [
-  { gender: '001-MENS/ ADULTS', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '', '', '', ''] },
-  { gender: '002-LADIES', sizes: ['6', '8', '10', '12', '14', '16', '18', '20', '22', '24', '', '', '', ''] },
-  { gender: '003-KIDS LETTER', sizes: ['XSB', 'SB', 'MB', 'LB', 'XLB', '', '', '', '', '', '', '', '', ''] },
-  { gender: '004-KIDS', sizes: ['2-3', '4-5', '6-7', '8-9', '10-11', '12-13', '14-15', '', '', '', '', '', '', ''] },
-  { gender: '005-KIDS ALT 1', sizes: ['2-3', '3-4', '5-6', '7-8', '9-10', '11-12', '13', '', '', '', '', '', '', ''] },
-  { gender: '006-LADIES LETTER', sizes: ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '', '', '', '', '', ''] },
-  { gender: '007-KIDS ALT 2', sizes: ['3-4', '4-5', '6-7', '8-9', '10-11', '12-13', '', '', '', '', '', '', '', ''] },
-  { gender: '008-BABY', sizes: ['0-3M', '3-6M', '6-9M', '9-12M', '12-18M', '18-24M/ 18-23M', '', '', '', '', '', '', '', ''] },
-  { gender: '009-ACCESSORIES/ HEADWEAR', sizes: ['ONE SIZE', 'BABY', 'JUNIOR', 'ADULT', '6-12 M', '1-3 YRS', 'INFANT', '', '', '', '', '', '', ''] },
-  { gender: '010-MENS FOOTWEAR', sizes: ['3-6', '7-11', '7-8', '9-10', '11-12', '', '', '', '', '', '', '', '', ''] },
-  { gender: '011-KIDS FOOTWEAR', sizes: ['10-11', '12-13', '1-2', '3-4', '5-6', '', '', '', '', '', '', '', '', ''] },
-  { gender: '012-DOG', sizes: ['XS', 'S', 'M', 'L', 'XL', 'S/M', 'M/L', '', '', '', '', '', '', ''] },
-  { gender: '013-LADIES DUAL', sizes: ['8-10', '12-14', '16-18', '20-22', '', '', '', '', '', '', '', '', '', ''] },
-  { gender: '014-KIDS DRY ROBE', sizes: ['5-9 YRS', '10-13YRS', '', '', '', '', '', '', '', '', '', '', '', ''] },
-  { gender: '015- KIDS 3-15', sizes: ['3/4', '4/5', '5/6', '6/7', '7/8', '8/9', '9/10', '10/11', '11/12', '12/13', '13/14', '14/15', '', ''] },
-  { gender: '016- KIDS 1-14', sizes: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14'] },
-  { gender: '017- KIDS ALT 3', sizes: ['3-4', '5-6', '7-8', '9-10', '11-12', '13-14', '15-16', '', '', '', '', '', '', ''] },
-  { gender: '018 - SOCKS', sizes: ['K 12-3', 'K 3-6', 'A 3-6', 'A 7-11', '', '', '', '', '', '', '', '', '', ''] },
-  { gender: '019 - BABY SWIM', sizes: ['3-6M', '6-12M', '12-18M', '18-24M', '', '', '', '', '', '', '', '', '', ''] },
-  { gender: '020 - MENS DENIM', sizes: ['28', '30', '32', '34', '36', '', '', '', '', '', '', '', '', ''] },
-];
+// Pads / truncates a sizes array to exactly 14 slots for the reference grid,
+// which has 14 size columns regardless of how many actual sizes a code uses.
+const padSizes = (sizes: string[]): string[] => {
+  const padded = [...sizes];
+  while (padded.length < 14) padded.push('');
+  return padded.slice(0, 14);
+};
 
 interface OrderTableProps {
   orders: Order[];
@@ -90,6 +75,15 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const [bulkStatusUpdate, setBulkStatusUpdate] = useState(false);
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<ColumnSetting[]>([]);
   const [showSizeReference, setShowSizeReference] = useState(false);
+  const { rows: sizeGuideRows } = useSizeGuide();
+  // Build the reference grid from the DB-driven size guide. Active codes only,
+  // padded to 14 size columns. Gender label format matches the historic
+  // "001-MENS/ ADULTS" style used by orders.gender.
+  const SIZE_REFERENCE = useMemo(() => (
+    sizeGuideRows
+      .filter(r => r.is_active)
+      .map(r => ({ gender: `${r.code}-${r.label}`, sizes: padSizes(r.sizes) }))
+  ), [sizeGuideRows]);
   const [pendingChanges, setPendingChanges] = useState<Record<number, Record<string, {
     current_value: string | null;
     proposed_value: string | null;

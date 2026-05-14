@@ -1224,31 +1224,93 @@ def export_database_to_excel(
     #   Row 1: Category row (MERCH, DESIGN, PRODUCT, PRIME, AUTO, ALL)
     #   Row 2: Header row (PO#, SL SYSTEM PO#, etc.) — merged down with size
     #          reference rows below.
-    #   Rows 3..N: Size reference chart, one row per gender code. The chart
-    #          grows over time as new gender codes are added (017, 018…).
+    #   Rows 3..N: Size reference chart, one row per gender code.
     #   Rows N+1..: Sample/demo data that we replace with the real export.
     #
-    # Detect the first sample-data row dynamically by scanning the PO# column
-    # (col 1) — chart rows have no PO#, sample/data rows do. Anything found
-    # at or after that row is replaced with the real export.
+    # Rebuild the size reference chart (rows 3..) from the size_guide DB
+    # table so any code an admin added in /settings → Size Guide flows through
+    # to the exported chart. Only touch cols 16-30 so the vertical merges in
+    # the other columns (status options etc.) stay intact.
+    from models import SizeGuide
+    import json as _json
+    from copy import copy
+    from openpyxl.styles import Font, Alignment, Border, Side
+
+    gender_col = 16  # GENDER
+    size_col_start = 17
+    size_col_end = 30  # 14 size slots: cols 17-30
+
+    guide_rows = (
+        db.query(SizeGuide)
+        .filter(SizeGuide.is_active == True)  # noqa: E712
+        .order_by(SizeGuide.sort_order, SizeGuide.id)
+        .all()
+    )
+
+    # Find the existing template's last chart row by scanning the gender col
+    # before any PO# value appears (sample data starts when PO# becomes set).
     po_col = TEMPLATE_COLUMN_MAP.get("po_number", 1)
+    existing_chart_last = 2  # row 2 is the field-header row
+    for r in range(3, min(ws.max_row + 1, 60)):
+        if ws.cell(r, po_col).value:
+            break
+        if ws.cell(r, gender_col).value:
+            existing_chart_last = r
+
+    # Capture styles for re-application (use existing styled cells if present,
+    # otherwise fall back to a reasonable default).
+    style_src_label = ws.cell(existing_chart_last, gender_col) if existing_chart_last > 2 else None
+    style_src_size = ws.cell(existing_chart_last, size_col_start) if existing_chart_last > 2 else None
+    fallback_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                             top=Side(style='thin'), bottom=Side(style='thin'))
+    fallback_font_label = Font(bold=True, size=11)
+    fallback_font_size = Font(bold=True, size=11)
+
+    def _apply_style(src_cell, dst_cell, is_label: bool):
+        if src_cell and src_cell.has_style:
+            dst_cell.font = copy(src_cell.font)
+            dst_cell.alignment = copy(src_cell.alignment)
+            dst_cell.border = copy(src_cell.border)
+            dst_cell.fill = copy(src_cell.fill)
+        else:
+            dst_cell.font = fallback_font_label if is_label else fallback_font_size
+            dst_cell.alignment = Alignment(horizontal='left' if is_label else 'center', vertical='center')
+            dst_cell.border = fallback_border
+
+    # Clear chart area (cols 16-30, rows 3..max(existing_chart_last, new_count+2))
+    new_chart_last = 2 + len(guide_rows)
+    clear_until = max(existing_chart_last, new_chart_last)
+    for r in range(3, clear_until + 1):
+        for c in range(gender_col, size_col_end + 1):
+            ws.cell(r, c).value = None
+
+    # Write fresh chart rows from DB
+    for i, guide in enumerate(guide_rows):
+        target_row = 3 + i
+        try:
+            sizes = _json.loads(guide.sizes) if guide.sizes else []
+        except (ValueError, TypeError):
+            sizes = []
+        # Gender label cell — keep the historical "NNN-LABEL" format
+        label_cell = ws.cell(target_row, gender_col, f"{guide.code}-{guide.label}")
+        _apply_style(style_src_label, label_cell, is_label=True)
+        # Size label cells — fill the slots and continue empty cells with borders
+        for j in range(size_col_end - size_col_start + 1):
+            size_value = sizes[j] if j < len(sizes) else None
+            size_cell = ws.cell(target_row, size_col_start + j, size_value)
+            _apply_style(style_src_size, size_cell, is_label=False)
+
+    # Now find where sample/demo data starts and strip it. Re-scan because the
+    # chart rewrite above didn't touch col 1, so the PO# detection still works.
     sample_start_row = None
     for r in range(3, min(ws.max_row + 1, 60)):
         v = ws.cell(r, po_col).value
         if v is not None and str(v).strip() not in ("", "PO#"):
             sample_start_row = r
             break
-    # If no sample data found (rare), default to one row past the last gender
-    # code in col 16. Worst case fall back to 19.
     if sample_start_row is None:
-        gender_col = TEMPLATE_COLUMN_MAP.get("gender", 16)
-        last_chart_row = 18
-        for r in range(3, min(ws.max_row + 1, 60)):
-            if ws.cell(r, gender_col).value:
-                last_chart_row = r
-        sample_start_row = last_chart_row + 1
+        sample_start_row = new_chart_last + 1
 
-    # Strip out the sample/demo rows so we write real data into clean rows.
     if sample_start_row <= ws.max_row:
         ws.delete_rows(sample_start_row, ws.max_row - sample_start_row + 1)
 

@@ -68,6 +68,7 @@ from routers import orders as orders_router
 from routers import submissions as submissions_router
 from routers import shipment_drafts as shipment_drafts_router
 from routers import qa as qa_router
+from routers import size_guide as size_guide_router
 app.include_router(users_router.router)
 app.include_router(components_router.router)
 app.include_router(tracking_router.router)
@@ -81,6 +82,7 @@ app.include_router(orders_router.router)
 app.include_router(submissions_router.router)
 app.include_router(shipment_drafts_router.router)
 app.include_router(qa_router.router)
+app.include_router(size_guide_router.router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -181,6 +183,42 @@ async def startup_event():
     seed_db = SessionLocal()
     try:
         app_settings.seed_defaults(seed_db)
+    finally:
+        seed_db.close()
+
+    # Seed size_guide on first boot with the current 20 codes. If the table
+    # already has rows we leave it alone (admins manage it via /settings).
+    from models import SizeGuide
+    import json as _json
+    seed_db = SessionLocal()
+    try:
+        if seed_db.query(SizeGuide).count() == 0:
+            DEFAULTS = [
+                ("001", "MENS/ ADULTS", ["2XS","XS","S","M","L","XL","2XL","3XL","4XL","5XL"]),
+                ("002", "LADIES", ["6","8","10","12","14","16","18","20","22","24"]),
+                ("003", "KIDS LETTER", ["XSB","SB","MB","LB","XLB"]),
+                ("004", "KIDS", ["2-3","4-5","6-7","8-9","10-11","12-13","14-15"]),
+                ("005", "KIDS ALT 1", ["2-3","3-4","5-6","7-8","9-10","11-12","13"]),
+                ("006", "LADIES LETTER", ["2XS","XS","S","M","L","XL","2XL","3XL"]),
+                ("007", "KIDS ALT 2", ["3-4","4-5","6-7","8-9","10-11","12-13"]),
+                ("008", "BABY", ["0-3M","3-6M","6-9M","9-12M","12-18M","18-24M/ 18-23M"]),
+                ("009", "ACCESSORIES/ HEADWEAR", ["ONE SIZE","BABY","JUNIOR","ADULT","6-12 M","1-3 YRS","INFANT"]),
+                ("010", "MENS FOOTWEAR", ["3-6","7-11","7-8","9-10","11-12"]),
+                ("011", "KIDS FOOTWEAR", ["10-11","12-13","1-2","3-4","5-6"]),
+                ("012", "DOG", ["XS","S","M","L","XL","S/M","M/L"]),
+                ("013", "LADIES DUAL", ["8-10","12-14","16-18","20-22"]),
+                ("014", "KIDS DRY ROBE", ["5-9 YRS","10-13YRS"]),
+                ("015", "KIDS 3-15", ["3/4","4/5","5/6","6/7","7/8","8/9","9/10","10/11","11/12","12/13","13/14","14/15"]),
+                ("016", "KIDS 1-14", ["1","2","3","4","5","6","7","8","9","10","11","12","13","14"]),
+                ("017", "KIDS ALT 3", ["3-4","5-6","7-8","9-10","11-12","13-14","15-16"]),
+                ("018", "SOCKS", ["K 12-3","K 3-6","A 3-6","A 7-11"]),
+                ("019", "BABY SWIM", ["3-6M","6-12M","12-18M","18-24M"]),
+                ("020", "MENS DENIM", ["28","30","32","34","36"]),
+            ]
+            for i, (code, label, sizes) in enumerate(DEFAULTS):
+                seed_db.add(SizeGuide(code=code, label=label, sizes=_json.dumps(sizes), sort_order=i, is_active=True))
+            seed_db.commit()
+            print(f"✓ Seeded size_guide with {len(DEFAULTS)} default rows")
     finally:
         seed_db.close()
 

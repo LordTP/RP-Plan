@@ -20,17 +20,20 @@ import {
   Settings as SettingsIcon,
   Mail,
   Bell,
+  Ruler,
+  GripVertical,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
-import { usersApi, factoriesApi, settingsApi, ColumnSetting } from '@/lib/api';
+import { usersApi, factoriesApi, settingsApi, ColumnSetting, sizeGuideApi, type SizeGuideRow } from '@/lib/api';
+import { refreshSizeGuide } from '@/lib/useSizeGuide';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { COLUMNS } from '@/types';
 
-type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications';
+type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes';
 
 export default function SettingsPage() {
   return (
@@ -152,6 +155,7 @@ function SettingsContent() {
     { key: 'account', label: 'My Account', icon: UserIcon, show: true },
     { key: 'users', label: 'Users', icon: Users, show: isFullInternal },
     { key: 'columns', label: 'Supplier Columns', icon: SettingsIcon, show: isFullInternal },
+    { key: 'sizes', label: 'Size Guide', icon: Ruler, show: isFullInternal },
     { key: 'notifications', label: 'Notifications', icon: Bell, show: isAdmin },
     { key: 'fields', label: 'Field Reference', icon: CheckCircle, show: true },
   ];
@@ -220,6 +224,8 @@ function SettingsContent() {
                 setSearch={setColumnSearch}
               />
             )}
+
+            {activeTab === 'sizes' && isFullInternal && <SizeGuideTab />}
 
             {activeTab === 'notifications' && isAdmin && <NotificationsTab />}
 
@@ -620,6 +626,337 @@ function ColumnsTab({ supplierColumns, setSupplierColumns, loadingColumns, savin
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SIZE GUIDE TAB — single source of truth for gender size codes (001-MENS,
+// 002-LADIES, …). Loaded from the DB so the chart in /orders, /factory-product,
+// and Excel exports stays in sync with edits made here.
+// ============================================================================
+
+function SizeGuideTab() {
+  const [rows, setRows] = useState<SizeGuideRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState<number | 'new' | null>(null);
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null);
+  // Local edit buffer for the row being added/edited
+  const [draft, setDraft] = useState<{ code: string; label: string; sizesText: string }>({ code: '', label: '', sizesText: '' });
+
+  const load = async () => {
+    setIsLoading(true);
+    try {
+      const data = await sizeGuideApi.list();
+      setRows(data);
+    } catch {
+      toast.error('Failed to load size guide');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // Parse comma-separated string → sizes array, trimming each entry, drop blanks.
+  const parseSizes = (text: string): string[] =>
+    text.split(',').map(s => s.trim()).filter(Boolean);
+
+  const startEdit = (row: SizeGuideRow) => {
+    setEditingId(row.id);
+    setDraft({ code: row.code, label: row.label, sizesText: row.sizes.join(', ') });
+  };
+
+  const startAdd = () => {
+    setEditingId('new');
+    setDraft({ code: '', label: '', sizesText: '' });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft({ code: '', label: '', sizesText: '' });
+  };
+
+  const save = async () => {
+    const code = draft.code.trim();
+    const label = draft.label.trim();
+    const sizes = parseSizes(draft.sizesText);
+    if (!code) { toast.error('Code is required'); return; }
+    if (!label) { toast.error('Label is required'); return; }
+    if (sizes.length === 0) { toast.error('Add at least one size'); return; }
+
+    setIsSaving(editingId);
+    try {
+      if (editingId === 'new') {
+        await sizeGuideApi.create({ code, label, sizes });
+        toast.success('Size guide row added');
+      } else if (typeof editingId === 'number') {
+        await sizeGuideApi.update(editingId, { code, label, sizes });
+        toast.success('Saved');
+      }
+      cancelEdit();
+      await load();
+      refreshSizeGuide();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Failed to save');
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
+  const toggleActive = async (row: SizeGuideRow) => {
+    setIsSaving(row.id);
+    try {
+      await sizeGuideApi.update(row.id, { is_active: !row.is_active });
+      await load();
+      refreshSizeGuide();
+    } catch {
+      toast.error('Failed to toggle');
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
+  const remove = async (row: SizeGuideRow) => {
+    if (!confirm(`Delete "${row.code}- ${row.label}"? This can't be undone.`)) return;
+    setIsSaving(row.id);
+    try {
+      await sizeGuideApi.delete(row.id);
+      toast.success('Deleted');
+      await load();
+      refreshSizeGuide();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Failed to delete');
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
+  const move = async (id: number, direction: 'up' | 'down') => {
+    const idx = rows.findIndex(r => r.id === id);
+    if (idx < 0) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= rows.length) return;
+    const next = [...rows];
+    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    setRows(next);
+    try {
+      await sizeGuideApi.reorder(next.map(r => r.id));
+      refreshSizeGuide();
+    } catch {
+      toast.error('Failed to reorder — refreshing');
+      load();
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center justify-center">
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Ruler className="w-4 h-4 text-primary-600" />
+            Size Guide
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Codes here drive the size chart in the order list, the V2 detail panel, and the chart written into Excel exports. Edits sync everywhere immediately.
+          </p>
+        </div>
+        <button
+          onClick={startAdd}
+          disabled={editingId !== null}
+          className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 rounded-lg flex items-center gap-1.5"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add code
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr className="text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              <th className="pl-4 pr-2 py-2 w-12">Order</th>
+              <th className="px-2 py-2 w-20">Code</th>
+              <th className="px-2 py-2">Label</th>
+              <th className="px-2 py-2">Sizes (comma-separated)</th>
+              <th className="px-2 py-2 w-20 text-center">Active</th>
+              <th className="px-2 py-2 w-24 text-right pr-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map((row, idx) => {
+              const isEditing = editingId === row.id;
+              return (
+                <tr key={row.id} className={cn('hover:bg-gray-50/60', !row.is_active && 'opacity-50', isEditing && 'bg-primary-50/40')}>
+                  <td className="pl-4 pr-2 py-2 align-top">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => move(row.id, 'up')}
+                        disabled={idx === 0 || editingId !== null}
+                        className="text-gray-300 hover:text-gray-700 disabled:opacity-30 px-0.5"
+                        title="Move up"
+                      >▲</button>
+                      <button
+                        onClick={() => move(row.id, 'down')}
+                        disabled={idx === rows.length - 1 || editingId !== null}
+                        className="text-gray-300 hover:text-gray-700 disabled:opacity-30 px-0.5"
+                        title="Move down"
+                      >▼</button>
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    {isEditing ? (
+                      <input
+                        value={draft.code}
+                        onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                        placeholder="021"
+                        className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="font-mono font-semibold text-gray-900">{row.code}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    {isEditing ? (
+                      <input
+                        value={draft.label}
+                        onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                        placeholder="MENS BIG &amp; TALL"
+                        className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded"
+                      />
+                    ) : (
+                      <span className="text-gray-900">{row.label}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    {isEditing ? (
+                      <input
+                        value={draft.sizesText}
+                        onChange={(e) => setDraft({ ...draft, sizesText: e.target.value })}
+                        placeholder="2XS, XS, S, M, L, XL"
+                        className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {row.sizes.map((s, i) => (
+                          <span key={i} className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px] font-mono">{s}</span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-center align-top">
+                    {!isEditing && (
+                      <Toggle checked={row.is_active} onChange={() => toggleActive(row)} disabled={isSaving === row.id} />
+                    )}
+                  </td>
+                  <td className="px-2 py-2 align-top pr-4">
+                    <div className="flex items-center justify-end gap-1">
+                      {isEditing ? (
+                        <>
+                          <button
+                            onClick={cancelEdit}
+                            disabled={isSaving === row.id}
+                            className="px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-100 rounded"
+                          >Cancel</button>
+                          <button
+                            onClick={save}
+                            disabled={isSaving === row.id}
+                            className="px-2.5 py-1 text-[11px] font-bold text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50 flex items-center gap-1"
+                          >
+                            {isSaving === row.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                            Save
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEdit(row)}
+                            disabled={editingId !== null}
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded disabled:opacity-30"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => remove(row)}
+                            disabled={editingId !== null || isSaving === row.id}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-30"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {/* New row form */}
+            {editingId === 'new' && (
+              <tr className="bg-primary-50/40">
+                <td className="pl-4 pr-2 py-2 text-gray-300 text-center text-[10px]">new</td>
+                <td className="px-2 py-2">
+                  <input
+                    value={draft.code}
+                    onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                    placeholder="021"
+                    className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                    autoFocus
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    value={draft.label}
+                    onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                    placeholder="MENS BIG &amp; TALL"
+                    className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    value={draft.sizesText}
+                    onChange={(e) => setDraft({ ...draft, sizesText: e.target.value })}
+                    placeholder="2XS, XS, S, M, L, XL"
+                    className="w-full px-2 py-1 text-[12px] border border-gray-300 rounded font-mono"
+                  />
+                </td>
+                <td></td>
+                <td className="px-2 py-2 pr-4">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={cancelEdit}
+                      disabled={isSaving === 'new'}
+                      className="px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-100 rounded"
+                    >Cancel</button>
+                    <button
+                      onClick={save}
+                      disabled={isSaving === 'new'}
+                      className="px-2.5 py-1 text-[11px] font-bold text-white bg-primary-600 rounded hover:bg-primary-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {isSaving === 'new' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      Create
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 text-[11px] text-gray-500">
+        <strong>Tip:</strong> Sizes are comma-separated. Position matters — the first size value sits under column 1 in the order table, second under column 2, etc. Keep up to 14 sizes per code.
       </div>
     </div>
   );
