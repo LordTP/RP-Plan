@@ -221,6 +221,19 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     if (columnKeys) {
       const colMap = new Map(COLUMNS.map(c => [c.key, c]));
       columns = columnKeys.map(k => colMap.get(k as keyof Order)).filter((c): c is ColumnDef => !!c);
+      // Suppliers see a restricted slice — same hide-list as the Excel export.
+      // Prefer DB-backed role-column settings; fall back to the static
+      // supplierHidden flag if settings haven't loaded yet.
+      if (isSupplier) {
+        if (supplierColumnSettings.length > 0) {
+          const visibleKeys = new Set(
+            supplierColumnSettings.filter((s) => s.is_visible).map((s) => s.column_key)
+          );
+          columns = columns.filter((col) => visibleKeys.has(col.key as string));
+        } else {
+          columns = columns.filter((col) => !col.supplierHidden);
+        }
+      }
     } else if (isSupplier && supplierColumnSettings.length > 0) {
       // Use dynamic settings from database
       const visibleKeys = supplierColumnSettings

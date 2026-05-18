@@ -55,5 +55,5 @@ print('Done')
 ### New columns on existing tables:
 
 ```bash
-docker exec -it app-db-1 psql -U orderbook_user -d orderbook -c "ALTER TABLE ..."
+docker exec -it app-db-1 psql -U orderbook -d orderbook -c "ALTER TABLE ..."
 ```

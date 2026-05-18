@@ -14,7 +14,6 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
-import { FactoryV2View } from '@/components/orders/FactoryV2View';
 import { useStore } from '@/store/useStore';
 import { ordersApi, OrderFilters } from '@/lib/api';
 import { wsClient } from '@/lib/websocket';
@@ -33,13 +32,10 @@ export default function FactoryProductPage() {
 function PageGuard() {
   const { user } = useStore();
 
-  // Suppliers always see the V2 layout (PO-grouped detail view) — it's their
-  // default workspace. Admin keeps the legacy table for backwards compat.
-  if (user?.role === 'supplier') {
-    return <FactoryV2View viewType="factory-product" />;
-  }
-
-  if (user?.role !== 'admin') {
+  // Both admins and suppliers can use the table view. Suppliers land on V2
+  // by default (it's their workspace) but reach this table by explicitly
+  // clicking "Table View" on V2 — that button has to actually work.
+  if (user?.role !== 'admin' && user?.role !== 'supplier') {
     return (
       <AppShell title="Factory Product">
         <div className="flex items-center justify-center h-[calc(100vh-200px)]">
