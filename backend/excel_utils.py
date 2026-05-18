@@ -1220,6 +1220,14 @@ def export_database_to_excel(
 
     ws = wb.active
 
+    # Strip the external link baked into the template (points to a Z: network
+    # share — Z:\SourceLab\Merchandiser\FACTORIES\CP 26.xlsx). Leaving it in
+    # triggers two warnings for whoever opens the export: Excel's
+    # "Update Links / Trust Center" prompt, and a "We found a problem with
+    # some content… Removed Records: External link" repair dialog caused by
+    # openpyxl not round-tripping the link XML cleanly.
+    wb._external_links = []
+
     # The CP HEADERS template has:
     #   Row 1: Category row (MERCH, DESIGN, PRODUCT, PRIME, AUTO, ALL)
     #   Row 2: Header row (PO#, SL SYSTEM PO#, etc.) — merged down with size
@@ -1403,18 +1411,29 @@ def export_database_to_excel(
             if field_type == "date":
                 cell.alignment = Alignment(horizontal="center")
 
-    # For suppliers, delete columns they shouldn't see
-    # Must delete from right to left to preserve column indices
+    # For suppliers, hide the columns they shouldn't see instead of deleting
+    # them. openpyxl's delete_cols mangles the template's merged cells / size
+    # reference chart, which is why the supplier export used to come out
+    # without the proper size guide + gender rows. Hiding keeps the template
+    # byte-identical for everyone — suppliers just don't see costs/system PO.
     if is_supplier:
+        from openpyxl.utils import get_column_letter as _gcl
         supplier_hidden_columns = [
-            34,  # order_received_date
-            33,  # total_order_value (TOTAL ORDER COST)
-            32,  # trade_price (FACTORY COST PRICE)
-            3,   # is_active
             2,   # system_po_number (SL SYSTEM PO#)
+            3,   # is_active
+            32,  # trade_price (FACTORY COST PRICE)
+            33,  # total_order_value (TOTAL ORDER COST)
+            34,  # order_received_date
+            # Sample tracking block — FIT SAMPLE REQ through EX-FAC FROM PP APPROVAL.
+            # Suppliers shouldn't see sample request/approval dates on the export.
+            *range(41, 57),  # cols 41-56 inclusive: fit sample, strike off, lab dip, PPS, photo sample, ex_factory_from_pp_approval
         ]
-        for col_idx in sorted(supplier_hidden_columns, reverse=True):
-            ws.delete_cols(col_idx)
+        for col_idx in supplier_hidden_columns:
+            # Blank out values in the data rows so the hidden column carries
+            # no sensitive content even if the recipient unhides it.
+            for r in range(data_start_row, data_start_row + len(pos)):
+                ws.cell(r, col_idx).value = None
+            ws.column_dimensions[_gcl(col_idx)].hidden = True
 
     # Save to BytesIO
     output = BytesIO()
