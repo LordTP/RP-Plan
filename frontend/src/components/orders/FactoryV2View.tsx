@@ -144,7 +144,9 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
 
   const isProductView = viewType === 'factory-product';
   const viewTitle = isProductView ? 'Factory Product' : 'Factory Shipping';
-  const tableRoute = isProductView ? '/factory-product' : '/factory-shipping';
+  // ?view=table tells /factory-product's PageGuard to show the legacy table
+  // instead of bouncing suppliers back to V2.
+  const tableRoute = isProductView ? '/factory-product?view=table' : '/factory-shipping';
 
   // Always local state — never touches global store
   const [orders, setOrders] = useState<Order[]>([]);
