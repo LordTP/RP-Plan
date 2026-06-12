@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useMemo, type RefObject } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
@@ -62,12 +62,16 @@ interface OrderTableProps {
   changedFields?: Record<string, string[]>;
   showTrackingRef?: boolean;
   onShippedStatusRequest?: (order: Order) => void;
-  scrollSentinelRef?: RefObject<HTMLDivElement | null>;
+  /** Called when the user scrolls near the end of the loaded rows.
+   *  Parent should fetch the next page; the observer fires only when
+   *  hasMore is true and isLoadingMore is false. */
+  onReachEnd?: () => void;
+  hasMore?: boolean;
   isLoadingMore?: boolean;
   columnKeys?: string[];  // If provided, only show these columns (in this order)
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, scrollSentinelRef, isLoadingMore = false, columnKeys }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -181,6 +185,28 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
         .catch(console.error);
     }
   }, [isSupplier, isFactoryView]);
+
+  // Infinite scroll: observer must be rooted on the inner scroll container
+  // (overflow-auto on tableRef) — not the viewport — otherwise the sentinel
+  // never enters intersection range as the user scrolls within the table,
+  // which leaves the list stuck at the first page.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!onReachEnd) return;
+    const sentinel = sentinelRef.current;
+    const root = tableRef.current;
+    if (!sentinel || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          onReachEnd();
+        }
+      },
+      { root, threshold: 0.1, rootMargin: '200px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onReachEnd, hasMore, isLoadingMore]);
 
   // Fetch pending changes for visible orders (single batch request)
   useEffect(() => {
@@ -741,8 +767,10 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
             )}
           </tbody>
         </table>
-        {/* Infinite scroll sentinel */}
-        {scrollSentinelRef && <div ref={scrollSentinelRef as React.RefObject<HTMLDivElement>} className="h-1" />}
+        {/* Infinite scroll sentinel — only used when the parent provided an
+            onReachEnd callback. The sentinel sits inside the same scroll
+            container the observer is rooted on. */}
+        {onReachEnd && <div ref={sentinelRef} className="h-1" />}
         {isLoadingMore && (
           <div className="flex items-center justify-center py-3">
             <Loader2 className="w-5 h-5 animate-spin text-gray-400" />

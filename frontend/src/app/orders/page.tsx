@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search,
@@ -67,7 +67,6 @@ function OrdersContent() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const scrollSentinelRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -189,23 +188,8 @@ function OrdersContent() {
     return () => unsubscribe();
   }, [updateOrderInList]);
 
-  // Infinite scroll: observe sentinel element
-  useEffect(() => {
-    const sentinel = scrollSentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading && !isLoadingMore) {
-          loadMoreOrders();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, isLoading, isLoadingMore, loadMoreOrders]);
+  // Infinite scroll is handled inside OrderTable now (its observer is
+  // rooted on its inner scroll container so the sentinel actually fires).
 
   const handleRefresh = () => {
     loadOrders(1, filters);
@@ -606,7 +590,8 @@ function OrdersContent() {
               changedFields={highlightChanges ? changedFields : undefined}
               showTrackingRef={isInternal}
               onShippedStatusRequest={isInternal ? handleShippedStatusRequest : undefined}
-              scrollSentinelRef={scrollSentinelRef}
+              onReachEnd={loadMoreOrders}
+              hasMore={hasMore}
               isLoadingMore={isLoadingMore}
             />
           )}
