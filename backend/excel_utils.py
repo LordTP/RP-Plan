@@ -828,8 +828,13 @@ def _build_column_map(sheet) -> Dict[str, int]:
         elif "SHIPMENT SAMPLE" in header_str:
             col_map["shipment_sample_received"] = col_idx
 
-        # Revised ex-factory (must come after EX FACTORY BASED to avoid conflict)
-        elif "REVISED EX-FACTORY" in header_str or "REVISED PO EX" in header_str:
+        # Revised ex-factory (must come after EX FACTORY BASED to avoid conflict).
+        # Also exclude headers containing "ETA" — the ETA TO CUSTOMER header
+        # is "ETA TO CUSTOMER (BASED OFF REVISED EX-FACTORY)", which would
+        # otherwise match the "REVISED EX-FACTORY" substring and clobber the
+        # real revised_po_ex_factory column mapping, causing ETA values to be
+        # imported into the revised ex-factory field.
+        elif ("REVISED EX-FACTORY" in header_str or "REVISED PO EX" in header_str) and "ETA" not in header_str:
             col_map["revised_po_ex_factory"] = col_idx
 
         # Delivery dates (legacy support + new)
