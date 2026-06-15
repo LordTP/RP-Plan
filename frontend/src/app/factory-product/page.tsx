@@ -14,6 +14,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { OrderTable } from '@/components/orders/OrderTable';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
+import { ActiveColumnFiltersBar } from '@/components/orders/ActiveColumnFiltersBar';
 import { FactoryV2View } from '@/components/orders/FactoryV2View';
 import { useStore } from '@/store/useStore';
 import { ordersApi, OrderFilters } from '@/lib/api';
@@ -87,10 +88,15 @@ function PageContent() {
     status: searchParams.get('status') || '',
   });
 
-  const hasActiveFilters = filters.po_number || filters.style_code || filters.factory || filters.customer || filters.status;
+  // Excel-style per-column header dropdown state. Local to this page so
+  // it doesn't leak into the global orders store (factory pages use local
+  // state by convention — see CLAUDE.md).
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+
+  const hasActiveFilters = filters.po_number || filters.style_code || filters.factory || filters.customer || filters.status || Object.keys(columnFilters).length > 0;
   const hasMore = orders.length < totalOrders;
 
-  const buildCleanFilters = useCallback((currentFilters: OrderFilters) => {
+  const buildCleanFilters = useCallback((currentFilters: OrderFilters, currentColumnFilters: Record<string, string[]> = {}) => {
     const cleanFilters: OrderFilters = {};
     if (currentFilters.search) cleanFilters.search = currentFilters.search;
     if (currentFilters.po_number) cleanFilters.po_number = currentFilters.po_number;
@@ -98,13 +104,21 @@ function PageContent() {
     if (currentFilters.factory) cleanFilters.factory = currentFilters.factory;
     if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
     if (currentFilters.status) cleanFilters.status = currentFilters.status;
+    const nonEmpty = Object.fromEntries(
+      Object.entries(currentColumnFilters).filter(([, v]) => v.length > 0),
+    );
+    if (Object.keys(nonEmpty).length > 0) cleanFilters.column_filter = nonEmpty;
     return cleanFilters;
   }, []);
 
-  const loadOrders = useCallback(async (page: number = 1, currentFilters: OrderFilters = filters) => {
+  const loadOrders = useCallback(async (
+    page: number = 1,
+    currentFilters: OrderFilters = filters,
+    currentColumnFilters: Record<string, string[]> = columnFilters,
+  ) => {
     setIsLoading(true);
     try {
-      const cleanFilters = buildCleanFilters(currentFilters);
+      const cleanFilters = buildCleanFilters(currentFilters, currentColumnFilters);
       const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
       setOrders(response.orders);
       setTotalOrders(response.total);
@@ -115,14 +129,14 @@ function PageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [pageSize, buildCleanFilters]);
+  }, [pageSize, buildCleanFilters, filters, columnFilters]);
 
   const loadMoreOrders = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
-      const cleanFilters = buildCleanFilters(filters);
+      const cleanFilters = buildCleanFilters(filters, columnFilters);
       const response = await ordersApi.getOrders(nextPage, pageSize, cleanFilters);
       setOrders(prev => [...prev, ...response.orders]);
       setTotalOrders(response.total);
@@ -132,7 +146,25 @@ function PageContent() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMore, currentPage, pageSize, filters, buildCleanFilters]);
+  }, [isLoadingMore, hasMore, currentPage, pageSize, filters, columnFilters, buildCleanFilters]);
+
+  const handleColumnFilterChange = useCallback((column: string, values: string[]) => {
+    setColumnFilters((prev) => {
+      const next = { ...prev };
+      if (values.length === 0) {
+        delete next[column];
+      } else {
+        next[column] = values;
+      }
+      loadOrders(1, filters, next);
+      return next;
+    });
+  }, [filters, loadOrders]);
+
+  const handleClearAllColumnFilters = useCallback(() => {
+    setColumnFilters({});
+    loadOrders(1, filters, {});
+  }, [filters, loadOrders]);
 
   useEffect(() => {
     loadOrders(1, filters);
@@ -255,6 +287,12 @@ function PageContent() {
           </div>
         )}
 
+        <ActiveColumnFiltersBar
+          columnFilters={columnFilters}
+          onClear={(col) => handleColumnFilterChange(col, [])}
+          onClearAll={handleClearAllColumnFilters}
+        />
+
         {/* Table */}
         <div className="flex-1 min-h-0">
           {isLoading ? (
@@ -272,6 +310,8 @@ function PageContent() {
               onReachEnd={loadMoreOrders}
               hasMore={hasMore}
               isLoadingMore={isLoadingMore}
+              columnFilters={columnFilters}
+              onColumnFilterChange={handleColumnFilterChange}
             />
           )}
         </div>

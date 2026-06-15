@@ -8,6 +8,7 @@ import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, Col
 import { useSizeGuide } from '@/lib/useSizeGuide';
 import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
+import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ComponentSampleHover } from './ComponentSampleHover';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
@@ -46,6 +47,19 @@ const COMPONENT_COLUMN_MAP: Record<string, { kind: SampleKind; field: 'status' |
   lab_dip_approved: { kind: 'lab_dip', field: 'approved' },
 };
 
+// Columns where the Excel-style header filter dropdown isn't useful:
+// individual size buckets (numeric counts per size) would produce a wall
+// of distinct integers without meaningful filter value.
+const FILTER_DROPDOWN_BLOCKLIST = new Set<string>([
+  'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l', 'size_xl',
+  'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
+  'size_11', 'size_12', 'size_13', 'size_14',
+]);
+
+function isColumnFilterable(columnKey: string): boolean {
+  return !FILTER_DROPDOWN_BLOCKLIST.has(columnKey);
+}
+
 // Pads / truncates a sizes array to exactly 14 slots for the reference grid,
 // which has 14 size columns regardless of how many actual sizes a code uses.
 const padSizes = (sizes: string[]): string[] => {
@@ -69,9 +83,14 @@ interface OrderTableProps {
   hasMore?: boolean;
   isLoadingMore?: boolean;
   columnKeys?: string[];  // If provided, only show these columns (in this order)
+  /** Excel-style per-column filter state (snake_case field → selected values). */
+  columnFilters?: Record<string, string[]>;
+  /** Fires when the user applies a column filter via the header dropdown.
+   *  Pass an empty values array to clear that column's filter. */
+  onColumnFilterChange?: (column: string, values: string[]) => void;
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -554,7 +573,18 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       }),
                     }}
                   >
-                    {column.label}
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="truncate flex-1">{column.label}</span>
+                      {onColumnFilterChange && isColumnFilterable(column.key as string) && (
+                        <ColumnFilterDropdown
+                          column={column.key as string}
+                          label={column.label}
+                          selected={columnFilters?.[column.key as string] || []}
+                          allFilters={columnFilters || {}}
+                          onApply={(vals) => onColumnFilterChange(column.key as string, vals)}
+                        />
+                      )}
+                    </div>
                   </th>
                 );
               })}

@@ -139,6 +139,18 @@ export interface OrderFilters {
   customer?: string;
   status?: string;
   tab?: string;
+  /** Excel-style per-column multi-value filter. Keys are PurchaseOrder field
+   *  names (snake_case). Values are arrays of strings (dates as yyyy-mm-dd).
+   *  Use the string "__BLANK__" to include rows where the field is NULL. */
+  column_filter?: Record<string, string[]>;
+}
+
+export interface DistinctValuesResponse {
+  column: string;
+  values: string[];
+  has_blanks: boolean;
+  is_date: boolean;
+  blank_sentinel: string;
 }
 
 export const ordersApi = {
@@ -147,13 +159,32 @@ export const ordersApi = {
     pageSize: number = 50,
     filters?: OrderFilters
   ): Promise<PaginatedResponse<Order>> => {
-    const response = await api.get<PaginatedResponse<Order>>('/api/orders', {
-      params: {
-        page,
-        page_size: pageSize,
-        ...filters
-      },
-    });
+    const { column_filter, ...rest } = filters || {};
+    const params: Record<string, unknown> = {
+      page,
+      page_size: pageSize,
+      ...rest,
+    };
+    // Backend expects column_filter as a JSON-encoded query param —
+    // axios serialises objects as bracket-style query strings otherwise.
+    if (column_filter && Object.keys(column_filter).length > 0) {
+      params.column_filter = JSON.stringify(column_filter);
+    }
+    const response = await api.get<PaginatedResponse<Order>>('/api/orders', { params });
+    return response.data;
+  },
+
+  getDistinctValues: async (
+    column: string,
+    columnFilter?: Record<string, string[]>,
+  ): Promise<DistinctValuesResponse> => {
+    const params: Record<string, unknown> = { column };
+    if (columnFilter && Object.keys(columnFilter).length > 0) {
+      params.column_filter = JSON.stringify(columnFilter);
+    }
+    const response = await api.get<DistinctValuesResponse>(
+      '/api/orders/list/distinct-values', { params }
+    );
     return response.data;
   },
 

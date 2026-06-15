@@ -5,11 +5,12 @@ The PUT endpoint is the big one: supplier pending-change flow, field-change
 history logging, auto-calc chain (total_qty, total_order_value, ETA UK/
 customer, estimated_del_to_customer, month fields, ex_factory_from_pp_approval),
 and the reconcile_sample_status invariant."""
+import json
 from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_
+from sqlalchemy import or_, distinct
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -41,6 +42,110 @@ from realtime import manager
 router = APIRouter()
 
 
+# Sentinel the frontend sends when the user has ticked "(Blanks)" in a
+# column filter dropdown — exact-match IN can't catch NULL otherwise.
+BLANK_SENTINEL = "__BLANK__"
+
+# Columns the frontend can filter on. Anything not in this set is rejected,
+# both for the listing endpoint and the distinct-values endpoint. Keeps the
+# query safe from arbitrary-column SQL exposure.
+FILTERABLE_COLUMNS = {
+    # MERCH
+    'po_number', 'system_po_number', 'is_active', 'customer',
+    'china_orderbook_ref', 'customer_po_number', 'direct_repeat_new',
+    'season', 'factory', 'terms', 'sales_person', 'style_code',
+    'customer_style_code', 'description', 'colour', 'gender',
+    # Status / sample statuses
+    'status', 'fit_sample_required', 'fit_sample_status',
+    'strike_off_status', 'lab_dip_status', 'pps_status',
+    # Dates — ISO formatted on the wire
+    'order_received_date', 'order_sent_to_factory_date',
+    'tech_packs_sent_to_factory', 'specs_sent_to_factory',
+    'barcodes_sent_to_factory', 'original_po_ex_factory',
+    'factory_confirmed_ex_factory', 'fit_sample_received',
+    'fit_sample_approved', 'strike_off_received', 'strike_off_approved',
+    'lab_dip_received', 'lab_dip_approved', 'pps_received',
+    'pps_sent_to_customer', 'pps_approved', 'photo_sample_received',
+    'ex_factory_from_pp_approval', 'revised_po_ex_factory',
+    'shipment_sample_received', 'original_del_date_to_customer',
+    'eta_to_uk', 'eta_to_customer', 'customer_po_open_month',
+    'expected_dispatch_arrive_uk_month',
+    # Shipping
+    'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
+    'revised_vessel_eta_to_port', 'estimated_del_to_customer',
+    # Numerics
+    'total_quantity', 'trade_price', 'total_order_value',
+}
+
+# Columns whose values are dates — frontend sends ISO yyyy-mm-dd strings,
+# we need to compare against the date portion of the DB datetime.
+DATE_COLUMNS = {
+    'order_received_date', 'order_sent_to_factory_date',
+    'tech_packs_sent_to_factory', 'specs_sent_to_factory',
+    'barcodes_sent_to_factory', 'original_po_ex_factory',
+    'factory_confirmed_ex_factory', 'fit_sample_received',
+    'fit_sample_approved', 'strike_off_received', 'strike_off_approved',
+    'lab_dip_received', 'lab_dip_approved', 'pps_received',
+    'pps_sent_to_customer', 'pps_approved', 'photo_sample_received',
+    'ex_factory_from_pp_approval', 'revised_po_ex_factory',
+    'shipment_sample_received', 'original_del_date_to_customer',
+    'eta_to_uk', 'eta_to_customer', 'vessel_etd', 'vessel_eta_to_port',
+    'revised_vessel_eta_to_port', 'estimated_del_to_customer',
+}
+
+
+def _apply_column_filters(query, column_filter_json: str):
+    """Apply per-column multi-value filters parsed from a JSON-encoded
+    string. Each {field: [values]} entry becomes an IN clause; the
+    BLANK_SENTINEL string represents NULL/empty selection. Filters across
+    different columns intersect (AND); values within a column union (OR)."""
+    try:
+        parsed = json.loads(column_filter_json)
+    except (json.JSONDecodeError, TypeError):
+        return query
+    if not isinstance(parsed, dict):
+        return query
+
+    for field, values in parsed.items():
+        if field not in FILTERABLE_COLUMNS:
+            continue
+        if not isinstance(values, list) or not values:
+            continue
+        col = getattr(PurchaseOrder, field, None)
+        if col is None:
+            continue
+
+        wants_blank = BLANK_SENTINEL in values
+        real_values = [v for v in values if v != BLANK_SENTINEL]
+
+        clauses = []
+        if real_values:
+            if field in DATE_COLUMNS:
+                # Compare on the date portion only — DB stores datetimes but
+                # the frontend ticks discrete dates.
+                parsed_dates = []
+                for v in real_values:
+                    try:
+                        parsed_dates.append(datetime.fromisoformat(str(v)).date())
+                    except (ValueError, TypeError):
+                        continue
+                if parsed_dates:
+                    from sqlalchemy import func
+                    clauses.append(func.date(col).in_(parsed_dates))
+            else:
+                clauses.append(col.in_(real_values))
+        if wants_blank:
+            clauses.append(col.is_(None))
+            if not field in DATE_COLUMNS:
+                # Treat empty strings as blank too for text columns
+                clauses.append(col == '')
+
+        if clauses:
+            query = query.filter(or_(*clauses))
+
+    return query
+
+
 @router.get("/api/orders")
 async def get_orders(
     page: int = Query(1, ge=1),
@@ -52,6 +157,11 @@ async def get_orders(
     po_number: Optional[str] = None,
     style_code: Optional[str] = None,
     tab: Optional[str] = None,
+    # Excel-style per-column multi-value filter. JSON-encoded
+    # {"field_name": ["value1", "value2", ...]} — applied as exact-match
+    # IN clauses. None / empty values can be selected via the literal
+    # sentinel string "__BLANK__". Dates should be ISO yyyy-mm-dd.
+    column_filter: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -104,7 +214,13 @@ async def get_orders(
 
     if style_code:
         query = query.filter(PurchaseOrder.style_code.ilike(f"%{style_code}%"))
-    
+
+    # Excel-style per-column filters (multi-value exact match). Skipped
+    # silently if the JSON is malformed or the field doesn't exist on the
+    # model — a typo in the URL shouldn't 500 the listing.
+    if column_filter:
+        query = _apply_column_filters(query, column_filter)
+
     # Get total count
     total = query.count()
     
@@ -981,3 +1097,88 @@ async def get_po_list(
     # Sort by PO number desc so newest-looking ones appear first
     pos = sorted(by_po.values(), key=lambda p: p["po_number"], reverse=True)
     return {"pos": pos}
+
+
+@router.get("/api/orders/list/distinct-values")
+async def get_distinct_values(
+    column: str = Query(..., description="Field name to fetch unique values for"),
+    # Same JSON-encoded filter shape the listing endpoint accepts. When
+    # provided, distinct values are computed AFTER applying every OTHER
+    # column's filter — so the dropdown shows what's reachable given the
+    # filters already in effect, the way Excel does.
+    column_filter: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the unique non-null values for a single column. Used by the
+    Excel-style column-filter dropdowns on the orders table. The result
+    includes a 'has_blanks' flag separately so the frontend can show a
+    "(Blanks)" tick option for NULL/empty rows."""
+    if column not in FILTERABLE_COLUMNS:
+        raise HTTPException(400, f"Column '{column}' is not filterable")
+    col = getattr(PurchaseOrder, column, None)
+    if col is None:
+        raise HTTPException(400, f"Column '{column}' not found on order model")
+
+    query = db.query(PurchaseOrder)
+    query = apply_supplier_filter(query, current_user)
+
+    # Apply every column filter EXCEPT the one we're computing distinct
+    # values for — that lets the user expand the current column's choices
+    # without losing the ones they've already ticked.
+    if column_filter:
+        try:
+            parsed = json.loads(column_filter)
+            if isinstance(parsed, dict):
+                parsed.pop(column, None)
+                if parsed:
+                    query = _apply_column_filters(query, json.dumps(parsed))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    is_date = column in DATE_COLUMNS
+
+    if is_date:
+        from sqlalchemy import func
+        date_col = func.date(col)
+        rows = query.with_entities(date_col).filter(col.isnot(None)).distinct().all()
+        # SQLite's func.date returns a yyyy-mm-dd string; PostgreSQL returns
+        # a date object. Normalise both to ISO strings so the wire format
+        # is stable across local + prod.
+        date_strs = set()
+        for r in rows:
+            v = r[0]
+            if v is None:
+                continue
+            if hasattr(v, 'isoformat'):
+                date_strs.add(v.isoformat())
+            else:
+                date_strs.add(str(v))
+        values = sorted(date_strs)
+    else:
+        rows = query.with_entities(col).distinct().all()
+        raw = {r[0] for r in rows}
+        has_explicit_blank = '' in raw
+        values = sorted(
+            (str(v) for v in raw if v is not None and v != ''),
+            key=lambda s: s.lower(),
+        )
+        # Surface empty strings as blanks too, alongside NULLs.
+        if has_explicit_blank:
+            # has_blanks will be set below from a separate query
+            pass
+
+    # Single quick count for the (Blanks) bucket. Cheap because it short-
+    # circuits on the first NULL hit.
+    if is_date:
+        has_blanks = query.filter(col.is_(None)).limit(1).first() is not None
+    else:
+        has_blanks = query.filter(or_(col.is_(None), col == '')).limit(1).first() is not None
+
+    return {
+        "column": column,
+        "values": values,
+        "has_blanks": has_blanks,
+        "is_date": is_date,
+        "blank_sentinel": BLANK_SENTINEL,
+    }
