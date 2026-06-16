@@ -36,12 +36,13 @@ import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, statusesApi, OrderFilters } from '@/lib/api';
+import { ordersApi, excelApi, statusesApi, submissionsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
+import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { useSizeGuide } from '@/lib/useSizeGuide';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -363,6 +364,23 @@ function OrdersV2Content() {
   };
 
   const handleDetailSave = async (orderId: number, field: string, value: any) => {
+    // Sentinel used by the reject-sample flow to force a fresh fetch of the
+    // order row after the rejection mutation has happened out-of-band. No
+    // actual field change is in play.
+    if (field === '__refresh__') {
+      try {
+        const fresh = await ordersApi.getOrder(orderId);
+        if (isFactoryView) {
+          setLocalOrders(prev => prev.map(o => o.id === fresh.id ? fresh : o));
+        } else {
+          setStoreOrders([...orders.map(o => o.id === fresh.id ? fresh : o)], totalOrders);
+        }
+      } catch {
+        // Silent — stale state is fine if the refetch hiccups.
+      }
+      return;
+    }
+
     try {
       const result = await ordersApi.updateOrder(orderId, { [field]: value });
       if (result && typeof result === 'object' && 'pending_approval' in result && result.pending_approval) {
@@ -961,6 +979,40 @@ function DetailBody({
   const [hasComponents, setHasComponents] = useState(false);
   const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
 
+  // Reject-sample modal state — fires when the user picks REJECTED on an
+  // order-level sample status (Fit / Strike / Lab / PPS). Mirrors the
+  // FactoryV2View pattern so rejections from this page also capture a
+  // structured reason + note and bump the attempt counter.
+  const [rejectModal, setRejectModal] = useState<{ sampleType: SampleType; currentAttemptNo: number } | null>(null);
+  const [orderSubmissions, setOrderSubmissions] = useState<SampleSubmission[]>([]);
+
+  const loadOrderSubmissions = useCallback(async () => {
+    try {
+      const res = await submissionsApi.getForOrder(order.id);
+      setOrderSubmissions(res.submissions);
+    } catch {
+      // Fine to no-op — attempt counter just defaults to 1.
+    }
+  }, [order.id]);
+  useEffect(() => { loadOrderSubmissions(); }, [loadOrderSubmissions]);
+
+  const orderLevelCurrentAttempt = (sampleType: SampleType): number => {
+    const matching = orderSubmissions.filter(s => s.sample_type === sampleType);
+    if (matching.length === 0) return 1;
+    return Math.max(...matching.map(s => s.attempt_no));
+  };
+
+  // Intercept REJECTED on any sample status field — open the modal so the
+  // user has to enter a reason. Everything else passes through to onSave.
+  const handleSampleStatusSave = (field: string, value: any) => {
+    const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[field];
+    if (value === 'REJECTED' && sampleType) {
+      setRejectModal({ sampleType, currentAttemptNo: orderLevelCurrentAttempt(sampleType) });
+      return;
+    }
+    onSave?.(order.id, field, value);
+  };
+
   // Refs to each section so the sticky pill nav can scroll-to + we can flip
   // the active pill based on which section is currently in view.
   const productRef = useRef<HTMLElement>(null);
@@ -1213,14 +1265,14 @@ function DetailBody({
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
                       <SampleCard label="Strike Off">
-                        {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="strike_off_status" onSave={(v) => onSave?.(order.id, 'strike_off_status', v)} />}
+                        {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="strike_off_status" onSave={(v) => handleSampleStatusSave('strike_off_status', v)} />}
                         {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} fieldKey="strike_off_received" onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
                         {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} fieldKey="strike_off_approved" onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
                       </SampleCard>
                     )}
                     {(hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
                       <SampleCard label="Lab Dip">
-                        {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="lab_dip_status" onSave={(v) => onSave?.(order.id, 'lab_dip_status', v)} />}
+                        {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="lab_dip_status" onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} />}
                         {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} fieldKey="lab_dip_received" onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
                         {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} fieldKey="lab_dip_approved" onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
                       </SampleCard>
@@ -1235,7 +1287,7 @@ function DetailBody({
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
                   <SampleCard label="Fit Sample" highlight>
                     {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
-                    {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => onSave?.(order.id, 'fit_sample_status', v)} />}
+                    {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} />}
                     {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
                     {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
                   </SampleCard>
@@ -1247,7 +1299,7 @@ function DetailBody({
                 <>
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS · order-level</div>
                   <SampleCard label="Pre-Production Sample" highlight>
-                    {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => onSave?.(order.id, 'pps_status', v)} />}
+                    {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => handleSampleStatusSave('pps_status', v)} />}
                     {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} fieldKey="pps_received" onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
                     {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} fieldKey="pps_sent_to_customer" onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
                     {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} fieldKey="pps_approved" onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
@@ -1340,6 +1392,25 @@ function DetailBody({
 
       </div>
       </BulkScopeProvider>
+
+      {rejectModal && (
+        <RejectSampleModal
+          orderId={order.id}
+          componentId={null}
+          componentName={null}
+          sampleType={rejectModal.sampleType}
+          currentAttemptNo={rejectModal.currentAttemptNo}
+          onClose={() => setRejectModal(null)}
+          onRejected={() => {
+            setRejectModal(null);
+            loadOrderSubmissions();
+            // Trigger an order refresh so the new OUTSTANDING status reflects
+            // in the cells the user just changed. The DetailBody's onSave
+            // refetches the order itself; we pass a sentinel field name.
+            onSave?.(order.id, '__refresh__', null);
+          }}
+        />
+      )}
     </>
   );
 }

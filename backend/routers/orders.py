@@ -54,6 +54,8 @@ FILTERABLE_COLUMNS = {
     'po_number', 'system_po_number', 'is_active', 'customer',
     'china_orderbook_ref', 'customer_po_number', 'direct_repeat_new',
     'season', 'factory', 'terms', 'sales_person', 'style_code',
+    # Derived field — handled specially below (no real DB column to filter on).
+    'style_base',
     'customer_style_code', 'description', 'colour', 'gender',
     # Status / sample statuses
     'status', 'fit_sample_required', 'fit_sample_status',
@@ -111,6 +113,27 @@ def _apply_column_filters(query, column_filter_json: str):
             continue
         if not isinstance(values, list) or not values:
             continue
+
+        # style_base is a derived field (style_code with everything from the
+        # first dash onwards stripped). Filter by translating selected
+        # prefixes into LIKE clauses on style_code.
+        if field == 'style_base':
+            wants_blank = BLANK_SENTINEL in values
+            real_values = [v for v in values if v != BLANK_SENTINEL]
+            clauses = []
+            for v in real_values:
+                if not isinstance(v, str):
+                    continue
+                # Match either "<v>-..." or exactly "<v>" (no dash).
+                clauses.append(PurchaseOrder.style_code.like(f"{v}-%"))
+                clauses.append(PurchaseOrder.style_code == v)
+            if wants_blank:
+                clauses.append(PurchaseOrder.style_code.is_(None))
+                clauses.append(PurchaseOrder.style_code == '')
+            if clauses:
+                query = query.filter(or_(*clauses))
+            continue
+
         col = getattr(PurchaseOrder, field, None)
         if col is None:
             continue
@@ -1116,8 +1139,9 @@ async def get_distinct_values(
     "(Blanks)" tick option for NULL/empty rows."""
     if column not in FILTERABLE_COLUMNS:
         raise HTTPException(400, f"Column '{column}' is not filterable")
-    col = getattr(PurchaseOrder, column, None)
-    if col is None:
+    # style_base is derived (not a real column); skip the existence check.
+    col = None if column == 'style_base' else getattr(PurchaseOrder, column, None)
+    if col is None and column != 'style_base':
         raise HTTPException(400, f"Column '{column}' not found on order model")
 
     query = db.query(PurchaseOrder)
@@ -1135,6 +1159,28 @@ async def get_distinct_values(
                     query = _apply_column_filters(query, json.dumps(parsed))
         except (json.JSONDecodeError, TypeError):
             pass
+
+    # style_base: derive in Python from distinct style_codes. Cheap because
+    # there are far fewer style_codes than orders, and we'd have to derive
+    # per-row anyway since SQL split-part syntax differs across DB engines.
+    if column == 'style_base':
+        rows = query.with_entities(PurchaseOrder.style_code).distinct().all()
+        bases = set()
+        has_blanks = False
+        for r in rows:
+            sc = r[0]
+            if sc is None or sc == '':
+                has_blanks = True
+                continue
+            bases.add(sc.split('-', 1)[0])
+        values = sorted(bases, key=lambda s: s.lower())
+        return {
+            "column": column,
+            "values": values,
+            "has_blanks": has_blanks,
+            "is_date": False,
+            "blank_sentinel": BLANK_SENTINEL,
+        }
 
     is_date = column in DATE_COLUMNS
 
