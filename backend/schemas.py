@@ -1,7 +1,7 @@
 """
 Pydantic schemas for request/response validation
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
@@ -225,6 +225,18 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     comment_count: Optional[int] = 0
     unread_comment_count: Optional[int] = 0
     components: List[ComponentResponse] = []
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def style_base(self) -> Optional[str]:
+        """Style code with everything from the first dash onwards stripped.
+        Auto-derived from style_code on every response; not stored on the
+        model so it can't get out of sync. Returns the whole code when no
+        dash is present (e.g. "PLAIN" → "PLAIN")."""
+        if not self.style_code:
+            return None
+        return self.style_code.split('-', 1)[0]
+
     # Resubmission rollup per sample area. For orders WITH components this is
     # the max attempt across that order's components for that sample type;
     # for orders WITHOUT components it reflects the order-level submission.
@@ -337,6 +349,14 @@ class PurchaseOrderSupplierResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def style_base(self) -> Optional[str]:
+        """Same derivation as PurchaseOrderResponse.style_base — see there."""
+        if not self.style_code:
+            return None
+        return self.style_code.split('-', 1)[0]
 
     class Config:
         from_attributes = True

@@ -1388,8 +1388,38 @@ def export_database_to_excel(
         bottom=Side(style='thin')
     )
 
+    # Insert a STYLE column between STYLE CODE (col 12) and CUSTOMER STYLE
+    # CODE (col 13) so the export matches the order of columns in the app.
+    # openpyxl shifts cell values + multi-col merges correctly; single-col
+    # merges stay put as empty wrappers around the new column, which works
+    # out perfectly for our new header. Done BEFORE the data write so the
+    # shifted column indices below are applied to a stable layout.
+    STYLE_COL = 13
+    ws.insert_cols(STYLE_COL)
+    style_hdr = ws.cell(2, STYLE_COL, "STYLE")
+    style_hdr.font = Font(bold=True, size=11)
+    style_hdr.alignment = Alignment(horizontal="center", vertical="center")
+    style_hdr.border = thin_border
+    # Match the row 1 "MERCH" category band on the surrounding columns so
+    # the inserted column doesn't visually break the header strip.
+    cat_hdr = ws.cell(1, STYLE_COL, "MERCH")
+    cat_hdr.font = Font(bold=True, size=11)
+    cat_hdr.alignment = Alignment(horizontal="center", vertical="center")
+    cat_hdr.border = thin_border
+
+    def _shift(col_idx: int) -> int:
+        """Translate a TEMPLATE_COLUMN_MAP index to its post-insert position."""
+        return col_idx + 1 if col_idx >= STYLE_COL else col_idx
+
     for row_offset, po in enumerate(pos):
         row_idx = data_start_row + row_offset
+
+        # STYLE column — derived from style_code, never sourced from the row.
+        style_value = None
+        if po.style_code:
+            style_value = po.style_code.split('-', 1)[0]
+        style_cell = ws.cell(row_idx, STYLE_COL, style_value)
+        style_cell.border = thin_border
 
         for field_name, col_idx in TEMPLATE_COLUMN_MAP.items():
             value = getattr(po, field_name, None)
@@ -1405,7 +1435,7 @@ def export_database_to_excel(
             else:
                 cell_value = value
 
-            cell = ws.cell(row_idx, col_idx, cell_value)
+            cell = ws.cell(row_idx, _shift(col_idx), cell_value)
             cell.border = thin_border
 
             # Right-align numbers
@@ -1423,7 +1453,9 @@ def export_database_to_excel(
     # byte-identical for everyone — suppliers just don't see costs/system PO.
     if is_supplier:
         from openpyxl.utils import get_column_letter as _gcl
-        supplier_hidden_columns = [
+        # These are TEMPLATE positions (pre-STYLE-insert). _shift() handles the
+        # +1 needed after the STYLE column was inserted at col 13.
+        supplier_hidden_columns_template = [
             2,   # system_po_number (SL SYSTEM PO#)
             3,   # is_active
             32,  # trade_price (FACTORY COST PRICE)
@@ -1433,6 +1465,7 @@ def export_database_to_excel(
             # Suppliers shouldn't see sample request/approval dates on the export.
             *range(41, 57),  # cols 41-56 inclusive: fit sample, strike off, lab dip, PPS, photo sample, ex_factory_from_pp_approval
         ]
+        supplier_hidden_columns = [_shift(c) for c in supplier_hidden_columns_template]
         for col_idx in supplier_hidden_columns:
             # Blank out values in the data rows so the hidden column carries
             # no sensitive content even if the recipient unhides it.

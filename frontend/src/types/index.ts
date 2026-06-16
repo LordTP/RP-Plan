@@ -26,6 +26,10 @@ export interface Order {
   sales_person?: string;
   // Product details
   style_code?: string;
+  /** Auto-derived from style_code on the backend: everything BEFORE the
+   *  first dash. e.g. "CP-1234-XL" → "CP". When there's no dash, this is
+   *  just the whole style code. Read-only. */
+  style_base?: string;
   customer_style_code?: string;
   description?: string;
   colour?: string;
@@ -300,6 +304,9 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'terms', label: 'Terms', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'sales_person', label: 'SL Sales Person', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'style_code', label: 'Style Code', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  // Auto-derived from style_code (everything before the first dash). Not
+  // editable — backend computes it on every response.
+  { key: 'style_base', label: 'Style', width: 80, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'customer_style_code', label: 'Cust Style Code', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'description', label: 'Description', width: 180, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'colour', label: 'Colour', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },

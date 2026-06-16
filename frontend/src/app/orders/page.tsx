@@ -71,7 +71,11 @@ function OrdersContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Tab state (internal/admin only)
+  // Tab state (internal/admin only) — Orders = tracking_reference IS NULL,
+  // Shipped = tracking_reference IS NOT NULL. Backend honours the `tab`
+  // query param for both.
+  const [activeTab, setActiveTab] = useState<'orders' | 'shipped'>('orders');
+
   // Tracking reference modal state
   const [trackingModalOpen, setTrackingModalOpen] = useState(false);
   const [trackingModalOrder, setTrackingModalOrder] = useState<Order | null>(null);
@@ -103,7 +107,11 @@ function OrdersContent() {
 
   const hasMore = orders.length < totalOrders;
 
-  const buildCleanFilters = useCallback((currentFilters: OrderFilters, currentColumnFilters: Record<string, string[]> = {}) => {
+  const buildCleanFilters = useCallback((
+    currentFilters: OrderFilters,
+    currentColumnFilters: Record<string, string[]> = {},
+    tab?: 'orders' | 'shipped',
+  ) => {
     const cleanFilters: OrderFilters = {};
     if (currentFilters.search) cleanFilters.search = currentFilters.search;
     if (currentFilters.po_number) cleanFilters.po_number = currentFilters.po_number;
@@ -111,6 +119,12 @@ function OrdersContent() {
     if (currentFilters.factory) cleanFilters.factory = currentFilters.factory;
     if (currentFilters.customer) cleanFilters.customer = currentFilters.customer;
     if (currentFilters.status) cleanFilters.status = currentFilters.status;
+    // Only set the tab param for internal/admin — suppliers don't see the
+    // shipped/active distinction and the backend would filter them away.
+    const resolvedTab = tab ?? activeTab;
+    if (isInternal) {
+      cleanFilters.tab = resolvedTab;
+    }
     // Strip out columns whose selection is empty so we don't send useless
     // filter entries that the backend would just ignore anyway.
     const nonEmpty = Object.fromEntries(
@@ -118,16 +132,17 @@ function OrdersContent() {
     );
     if (Object.keys(nonEmpty).length > 0) cleanFilters.column_filter = nonEmpty;
     return cleanFilters;
-  }, []);
+  }, [activeTab, isInternal]);
 
   const loadOrders = useCallback(async (
     page: number = 1,
     currentFilters: OrderFilters = filters,
     currentColumnFilters: Record<string, string[]> = columnFilters,
+    tab?: 'orders' | 'shipped',
   ) => {
     setIsLoading(true);
     try {
-      const cleanFilters = buildCleanFilters(currentFilters, currentColumnFilters);
+      const cleanFilters = buildCleanFilters(currentFilters, currentColumnFilters, tab);
       const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
       setOrders(response.orders, response.total);
       setPage(1);
@@ -154,6 +169,14 @@ function OrdersContent() {
       setIsLoadingMore(false);
     }
   }, [isLoadingMore, hasMore, currentPage, pageSize, filters, columnFilters, appendOrders, setPage, buildCleanFilters]);
+
+  // Switching tabs re-fetches from page 1. Column filters stay active so
+  // e.g. "customer=ABC" + tab=shipped narrows to ABC's shipped orders.
+  const handleTabChange = useCallback((tab: 'orders' | 'shipped') => {
+    setActiveTab(tab);
+    setPage(1);
+    loadOrders(1, filters, columnFilters, tab);
+  }, [setPage, loadOrders, filters, columnFilters]);
 
   // Excel-style header dropdown picked a new value set — apply or clear
   // depending on whether the array is empty.
@@ -342,7 +365,9 @@ function OrdersContent() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">All Orders</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isInternal && activeTab === 'shipped' ? 'Shipped Orders' : 'All Orders'}
+            </h1>
             <p className="text-gray-500 mt-1">
               {totalOrders} total order lines
             </p>
@@ -394,6 +419,35 @@ function OrdersContent() {
             </button>
           </div>
         </div>
+
+        {/* Tab Navigation (internal/admin only) — Orders = no tracking ref
+            yet (still in production / pre-ship), Shipped = tracking ref set. */}
+        {isInternal && (
+          <div className="flex items-center gap-1 mb-4 border-b border-gray-200">
+            <button
+              onClick={() => handleTabChange('orders')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+                activeTab === 'orders'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              )}
+            >
+              Orders
+            </button>
+            <button
+              onClick={() => handleTabChange('shipped')}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+                activeTab === 'shipped'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              )}
+            >
+              Shipped
+            </button>
+          </div>
+        )}
 
         {/* Filter Panel */}
         {showFilters && (
@@ -636,7 +690,7 @@ function OrdersContent() {
               onOrderUpdate={handleOrderUpdate}
               highlightMode={highlightChanges}
               changedFields={highlightChanges ? changedFields : undefined}
-              showTrackingRef={isInternal}
+              showTrackingRef={isInternal && activeTab === 'shipped'}
               onShippedStatusRequest={isInternal ? handleShippedStatusRequest : undefined}
               onReachEnd={loadMoreOrders}
               hasMore={hasMore}

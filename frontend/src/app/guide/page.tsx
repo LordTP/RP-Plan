@@ -448,6 +448,7 @@ const GUIDE_SECTIONS: GuideSection[] = [
             type: 'table',
             headers: ['Field', 'Formula'],
             rows: [
+              ['Style', 'Style Code with everything from the first "-" onwards stripped (e.g. "CP-1234-XL" → "CP"). Falls back to the whole Style Code if there\'s no dash. Shows in the Orders table only; included as a column on Excel exports.'],
               ['Total Qty', 'Sum of all size columns'],
               ['Total Order Cost', 'Trade Price × Total Qty'],
               ['ETA UK', 'Revised Ex-Factory + 60 days'],
