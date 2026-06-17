@@ -164,14 +164,27 @@ class PurchaseOrder(Base):
 
 
 class OrderComponent(Base):
-    """Components for each order style (e.g. Main Fabric, Lining, Trim) with per-component sampling status"""
+    """Components for each order style (e.g. Main Fabric, Lining, Trim) with
+    per-component sampling status.
+
+    As of 2026-06, each component tracks ONE sample type — either Strike Off
+    or Lab Dip, never both. Picked at create time via sample_type. The
+    columns for the "other" type are left in the model so historical data
+    (pre-split) stays addressable, but they're never written to or shown for
+    new-shape components."""
     __tablename__ = "order_components"
 
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)  # e.g. "Main Fabric", "Lining"
 
-    # Samples - Fit
+    # Which sample type this component tracks. 'strike_off' or 'lab_dip'.
+    # The startup migration backfills this for legacy components based on
+    # which sample fields had data; new components must set it explicitly.
+    sample_type = Column(String(20), nullable=False, default='strike_off', index=True)
+
+    # Samples - Fit (legacy; not used — fit is order-level. Kept to avoid a
+    # destructive column drop on prod.)
     fit_sample_status = Column(String(50), nullable=True)
     fit_sample_received = Column(DateTime, nullable=True)
     fit_sample_approved = Column(DateTime, nullable=True)

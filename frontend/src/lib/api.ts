@@ -331,7 +331,10 @@ export const componentsApi = {
     return response.data;
   },
 
-  createComponent: async (orderId: number, data: { name: string }): Promise<OrderComponent> => {
+  createComponent: async (
+    orderId: number,
+    data: { name: string; sample_type: 'strike_off' | 'lab_dip' },
+  ): Promise<OrderComponent> => {
     const response = await api.post<OrderComponent>(`/api/orders/${orderId}/components`, data);
     return response.data;
   },
@@ -375,13 +378,25 @@ export const componentsApi = {
   },
 
   /** Add a single component name to many styles across multiple POs at once.
-   *  Skips orders that already have a component with the same name. */
-  crossPoAdd: async (name: string, orderIds: number[]): Promise<{ success: boolean; components_created: number; skipped_existing: number }> => {
-    const response = await api.post('/api/components/cross-po-add', { name, order_ids: orderIds });
+   *  Dedupes per (name, sample_type) so a "Pocket" Strike Off and a "Pocket"
+   *  Lab Dip can coexist on the same order. */
+  crossPoAdd: async (
+    name: string,
+    orderIds: number[],
+    sampleType: 'strike_off' | 'lab_dip',
+  ): Promise<{ success: boolean; components_created: number; skipped_existing: number }> => {
+    const response = await api.post('/api/components/cross-po-add', {
+      name,
+      order_ids: orderIds,
+      sample_type: sampleType,
+    });
     return response.data;
   },
 
-  bulkAddComponent: async (orderId: number, data: { name: string; order_ids?: number[] }): Promise<{ success: boolean; components_created: number }> => {
+  bulkAddComponent: async (
+    orderId: number,
+    data: { name: string; sample_type: 'strike_off' | 'lab_dip'; order_ids?: number[] },
+  ): Promise<{ success: boolean; components_created: number }> => {
     const response = await api.post(`/api/orders/${orderId}/components/bulk-add`, data);
     return response.data;
   },

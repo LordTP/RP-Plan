@@ -302,9 +302,11 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         </div>
 
 
-        {/* Body — Strike Off + Lab Dip sections */}
+        {/* Body — only the section matching the component's sample_type is
+            shown. Each component tracks one type; the other's fields are
+            either empty (new shape) or legacy data we don't surface here. */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6 bg-gray-50/40">
-          {SAMPLE_AREAS.map(({ type, prefix, label }) => {
+          {SAMPLE_AREAS.filter(({ prefix }) => prefix === comp.sample_type).map(({ type, prefix, label }) => {
             const status = (comp as any)[`${prefix}_status`] as string | null;
             const received = (comp as any)[`${prefix}_received`] as string | null;
             const approved = (comp as any)[`${prefix}_approved`] as string | null;

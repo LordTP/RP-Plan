@@ -55,10 +55,21 @@ export function relativeTimeShort(iso?: string | null): string {
   return d.toLocaleDateString('en-GB');
 }
 
+/** Filter components down to those whose sample_type matches the given kind.
+ *  fit lives at order-level so it's not a component kind — pass-through. */
+export function componentsForKind(components: OrderComponent[], kind: SampleKind): OrderComponent[] {
+  if (kind === 'strike_off') return components.filter(c => c.sample_type === 'strike_off');
+  if (kind === 'lab_dip') return components.filter(c => c.sample_type === 'lab_dip');
+  return components;
+}
+
 export function componentSampleSummary(components: OrderComponent[], kind: SampleKind) {
-  const total = components.length;
+  // Only count components that actually track this sample type — strike-off
+  // components contribute to the Strike Off count, lab-dip to Lab Dip.
+  const filtered = componentsForKind(components, kind);
+  const total = filtered.length;
   let done = 0;
-  const items = components.map((c) => {
+  const items = filtered.map((c) => {
     const status = c[`${kind}_status` as keyof OrderComponent] as string | null | undefined;
     const approved = c[`${kind}_approved` as keyof OrderComponent] as string | null | undefined;
     const isDone = isSampleDone(status, approved);

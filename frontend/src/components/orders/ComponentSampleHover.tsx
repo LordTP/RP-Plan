@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { OrderComponent } from '@/types';
-import { componentSampleSummary, isSampleDone, type SampleKind } from '@/lib/sampleStatus';
+import { componentSampleSummary, componentsForKind, isSampleDone, type SampleKind } from '@/lib/sampleStatus';
 
 type Props = {
   components: OrderComponent[];
@@ -23,6 +23,9 @@ function formatDate(s?: string | null): string {
 export function ComponentSampleHover({ components, kind, field }: Props) {
   const [open, setOpen] = useState(false);
   const { done, total } = componentSampleSummary(components, kind);
+  // Only the components matching this column's kind are listed below — the
+  // rest belong to the "other" sample type and would be misleading here.
+  const relevant = componentsForKind(components, kind);
   const allDone = total > 0 && done === total;
 
   return (
@@ -43,7 +46,7 @@ export function ComponentSampleHover({ components, kind, field }: Props) {
       </span>
       {open && (
         <div className="absolute z-50 left-0 top-full mt-1 min-w-[220px] rounded-md border border-gray-200 bg-white shadow-lg p-2 text-[10px]">
-          {components.map((comp) => {
+          {relevant.map((comp) => {
             const statusVal = comp[`${kind}_status` as keyof OrderComponent] as string | null | undefined;
             const approvedVal = comp[`${kind}_approved` as keyof OrderComponent] as string | null | undefined;
             const receivedVal = comp[`${kind}_received` as keyof OrderComponent] as string | null | undefined;

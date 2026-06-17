@@ -1839,6 +1839,9 @@ export function ComponentsSection({
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [addMode, setAddMode] = useState<'single' | 'all' | 'selected'>('single');
+  // Sample type for the new component — null until the user picks one. The
+  // rest of the add form is hidden until a type is chosen.
+  const [newSampleType, setNewSampleType] = useState<'strike_off' | 'lab_dip' | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [stylesOnPO, setStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
   const [selectedStyleIds, setSelectedStyleIds] = useState<Set<number>>(new Set());
@@ -1928,20 +1931,21 @@ export function ComponentsSection({
   }, [newName, knownNames]);
 
   const handleAdd = async () => {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !newSampleType) return;
     setIsAdding(true);
     try {
       if (addMode === 'all') {
-        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim() });
+        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), sample_type: newSampleType });
         toast.success(`Component added to ${result.components_created} styles`);
       } else if (addMode === 'selected' && selectedStyleIds.size > 0) {
-        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), order_ids: Array.from(selectedStyleIds) });
+        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), sample_type: newSampleType, order_ids: Array.from(selectedStyleIds) });
         toast.success(`Component added to ${result.components_created} styles`);
       } else {
-        await componentsApi.createComponent(orderId, { name: newName.trim() });
+        await componentsApi.createComponent(orderId, { name: newName.trim(), sample_type: newSampleType });
         toast.success('Component added');
       }
       setNewName('');
+      setNewSampleType(null);
       setShowAddForm(false);
       setAddMode('single');
       setSelectedStyleIds(new Set());
@@ -2033,6 +2037,45 @@ export function ComponentsSection({
       {/* Add Form */}
       {showAddForm && (
         <div className="mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+          {/* Step 1: pick sample type. Hides the rest of the form until done. */}
+          {!newSampleType ? (
+            <>
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                What kind of component?
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewSampleType('strike_off')}
+                  className="px-3 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50/40 text-left"
+                >
+                  <div className="text-xs font-bold text-gray-900">Strike Off</div>
+                  <div className="text-[10px] text-gray-500">Fabric / print sample</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewSampleType('lab_dip')}
+                  className="px-3 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50/40 text-left"
+                >
+                  <div className="text-xs font-bold text-gray-900">Lab Dip</div>
+                  <div className="text-[10px] text-gray-500">Colour match sample</div>
+                </button>
+              </div>
+            </>
+          ) : (
+          <>
+          {/* Chosen-type chip with a "change" affordance. */}
+          <button
+            type="button"
+            onClick={() => setNewSampleType(null)}
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary-50 border border-primary-200 rounded text-[10px] font-medium text-primary-800 hover:bg-primary-100"
+            title="Click to change"
+          >
+            <span className="uppercase tracking-wide text-[8px] text-primary-500">Type</span>
+            <span>{newSampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip'}</span>
+            <span className="text-primary-400">·</span>
+            <span className="text-primary-500 text-[9px]">change</span>
+          </button>
           <div className="relative">
             <input
               type="text"
@@ -2115,18 +2158,20 @@ export function ComponentsSection({
           <div className="flex gap-2">
             <button
               onClick={handleAdd}
-              disabled={!newName.trim() || isAdding || (addMode === 'selected' && selectedStyleIds.size === 0)}
+              disabled={!newName.trim() || !newSampleType || isAdding || (addMode === 'selected' && selectedStyleIds.size === 0)}
               className="flex-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
             >
               {isAdding ? 'Adding...' : 'Add'}
             </button>
             <button
-              onClick={() => { setShowAddForm(false); setNewName(''); setAddMode('single'); setSelectedStyleIds(new Set()); }}
+              onClick={() => { setShowAddForm(false); setNewName(''); setNewSampleType(null); setAddMode('single'); setSelectedStyleIds(new Set()); }}
               className="text-xs px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
             >
               Cancel
             </button>
           </div>
+          </>
+          )}
         </div>
       )}
 
@@ -2154,21 +2199,34 @@ export function ComponentsSection({
                 <div className="flex items-center gap-2">
                   <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', expandedId === comp.id && 'rotate-90')} />
                   <span className="text-xs font-semibold text-gray-700">{comp.name}</span>
+                  <span
+                    className={cn(
+                      'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
+                      comp.sample_type === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
+                    )}
+                  >
+                    {comp.sample_type === 'strike_off' ? 'SO' : 'LD'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* Quick status summary with rework indicator. Shows the current attempt
-                      number and prior rejection count when submissions exist. */}
-                  <SampleAreaChip label="SO" done={(comp.strike_off_status || '').toUpperCase() === 'APPROVED' || (comp.strike_off_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.strike_off_approved} submissions={submissions} componentId={comp.id} sampleType="strike" />
-                  <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
+                  {/* Quick status summary — only the component's chosen
+                      sample type renders a chip. */}
+                  {comp.sample_type === 'strike_off' && (
+                    <SampleAreaChip label="SO" done={(comp.strike_off_status || '').toUpperCase() === 'APPROVED' || (comp.strike_off_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.strike_off_approved} submissions={submissions} componentId={comp.id} sampleType="strike" />
+                  )}
+                  {comp.sample_type === 'lab_dip' && (
+                    <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
+                  )}
                 </div>
               </button>
 
               {/* Expanded Content */}
               {expandedId === comp.id && (
                 <div className="px-3 py-2 border-t border-gray-100 space-y-2">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    {/* Strike Off */}
-                    {visibleFields.some(f => f.key.startsWith('strike_off_')) && (
+                  <div>
+                    {/* Strike Off — only when this component IS a strike-off
+                        type. The other section is intentionally hidden. */}
+                    {comp.sample_type === 'strike_off' && visibleFields.some(f => f.key.startsWith('strike_off_')) && (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1.5">
                           Strike Off
@@ -2181,9 +2239,8 @@ export function ComponentsSection({
                         <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="strike" size="sm" />
                       </div>
                     )}
-                    {/* Lab Dip */}
-                    {visibleFields.some(f => f.key.startsWith('lab_dip_')) && (
-                      <div className="space-y-1.5 pt-3">
+                    {comp.sample_type === 'lab_dip' && visibleFields.some(f => f.key.startsWith('lab_dip_')) && (
+                      <div className="space-y-1.5">
                         <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                           Lab Dip
                           <AttemptBadge attemptNo={comp.lab_dip_attempt_no} rejectionCount={comp.lab_dip_rejection_count} size="xs" />

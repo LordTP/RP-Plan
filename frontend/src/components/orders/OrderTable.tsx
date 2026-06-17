@@ -12,7 +12,7 @@ import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ComponentSampleHover } from './ComponentSampleHover';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
-import type { SampleKind } from '@/lib/sampleStatus';
+import { componentsForKind, type SampleKind } from '@/lib/sampleStatus';
 import type { ColumnDef, Order } from '@/types';
 import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import type { SampleType } from '@/lib/api';
@@ -34,11 +34,11 @@ function getOrderAttemptInfo(order: Order, colKey: string): { attemptNo: number;
   return { attemptNo: attemptNo ?? 1, rejectionCount: rejectionCount ?? 0 };
 }
 
-// Map per-component column keys to (kind, field) for the hover summary renderer.
+// Map per-component column keys to (kind, field) for the hover summary
+// renderer. Only Strike Off and Lab Dip live on components — Fit Sample and
+// PPS are order-level so they should NEVER show the multi-component "X/Y
+// done" pill; they fall through to the plain EditableCell below.
 const COMPONENT_COLUMN_MAP: Record<string, { kind: SampleKind; field: 'status' | 'received' | 'approved' }> = {
-  fit_sample_status: { kind: 'fit_sample', field: 'status' },
-  fit_sample_received: { kind: 'fit_sample', field: 'received' },
-  fit_sample_approved: { kind: 'fit_sample', field: 'approved' },
   strike_off_status: { kind: 'strike_off', field: 'status' },
   strike_off_received: { kind: 'strike_off', field: 'received' },
   strike_off_approved: { kind: 'strike_off', field: 'approved' },
@@ -750,7 +750,12 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                             return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" /> : null;
                           })()}
                         </div>
-                      ) : COMPONENT_COLUMN_MAP[column.key] && order.components && order.components.length > 0 ? (
+                      ) : COMPONENT_COLUMN_MAP[column.key] && order.components && componentsForKind(order.components, COMPONENT_COLUMN_MAP[column.key].kind).length > 0 ? (
+                        // Only render the components rollup when there's at
+                        // least one component of THIS column's sample type.
+                        // Mixed lists (e.g. only lab-dip components but
+                        // viewing a strike-off column) fall through to the
+                        // plain EditableCell so the order-level field shows.
                         <div className="px-1 py-1 flex items-center gap-1">
                           <ComponentSampleHover
                             components={order.components}

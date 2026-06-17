@@ -153,10 +153,17 @@ export interface Comment {
   created_at: string;
 }
 
+/** Each component tracks ONE sample type — Strike Off or Lab Dip, never
+ *  both. Picked at create time and immutable afterwards. The fields for the
+ *  "other" type are kept on the API model for historical reasons but should
+ *  not be shown or written for new-shape components. */
+export type ComponentSampleType = 'strike_off' | 'lab_dip';
+
 export interface OrderComponent {
   id: number;
   order_id: number;
   name: string;
+  sample_type: ComponentSampleType;
   fit_sample_status?: string | null;
   fit_sample_received?: string | null;
   fit_sample_approved?: string | null;

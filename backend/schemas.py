@@ -187,6 +187,8 @@ class ComponentResponse(BaseModel):
     id: int
     order_id: int
     name: str
+    # Which sample type this component tracks. 'strike_off' or 'lab_dip'.
+    sample_type: str
     fit_sample_status: Optional[str] = None
     fit_sample_received: Optional[datetime] = None
     fit_sample_approved: Optional[datetime] = None
@@ -418,6 +420,10 @@ class CommentResponse(CommentBase):
 # Order Component Schemas
 class ComponentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    # Required at create-time — every new component is strictly one sample
+    # type. 'strike_off' or 'lab_dip'. Default is 'strike_off' to keep older
+    # API clients (e.g. cross-PO add flow) functional without a code update.
+    sample_type: str = 'strike_off'
     fit_sample_status: Optional[str] = None
     fit_sample_received: Optional[datetime] = None
     fit_sample_approved: Optional[datetime] = None
@@ -430,9 +436,18 @@ class ComponentCreate(BaseModel):
 
     _coerce_date_fields = field_validator(*_COMPONENT_DATE_FIELDS, mode='before')(_coerce_date_only_string)
 
+    @field_validator('sample_type')
+    @classmethod
+    def _validate_sample_type(cls, v: str) -> str:
+        if v not in ('strike_off', 'lab_dip'):
+            raise ValueError("sample_type must be 'strike_off' or 'lab_dip'")
+        return v
+
 
 class ComponentUpdate(BaseModel):
     name: Optional[str] = None
+    # sample_type is immutable post-create — omit it from updates. Switching
+    # would orphan the previously-entered fields and break attempt history.
     fit_sample_status: Optional[str] = None
     fit_sample_received: Optional[datetime] = None
     fit_sample_approved: Optional[datetime] = None

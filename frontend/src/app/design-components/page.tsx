@@ -111,6 +111,7 @@ function orderMatchesQuery(order: Order, q: string): boolean {
 
 type Group = {
   name: string;
+  sampleType: 'strike_off' | 'lab_dip';
   instances: Instance[];
   visibleInstances: Instance[]; // filtered by search
   soDone: number;
@@ -126,7 +127,10 @@ function DesignComponentsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('count');
+  // Composite "<name>|<sample_type>" — a "Pocket" Strike Off and a "Pocket"
+  // Lab Dip are now distinct groups, so identifying by name alone collides.
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const groupKey = (g: { name: string; sampleType: string }) => `${g.name}|${g.sampleType}`;
   const [hideShipped, setHideShipped] = useState(true);
   const [selectedComponentIds, setSelectedComponentIds] = useState<Set<number>>(new Set());
   const [bulkAction, setBulkAction] = useState<{ field: string; fieldLabel: string; value: string | null; valueLabel: string } | null>(null);
@@ -188,19 +192,27 @@ function DesignComponentsContent() {
     );
   }
 
-  // Raw groups (unfiltered by search/sort, but respects the hide-shipped toggle)
+  // Raw groups — keyed by (name, sample_type) so a "Pocket" Strike Off and
+  // a "Pocket" Lab Dip surface as two separate groups, each with the
+  // correct sample-type rollups.
   const rawGroups = useMemo(() => {
-    const byName = new Map<string, Instance[]>();
+    const byKey = new Map<string, { name: string; sampleType: 'strike_off' | 'lab_dip'; instances: Instance[] }>();
     for (const order of orders) {
       if (!order.components || order.components.length === 0) continue;
       if (hideShipped && SHIPPED_STATUSES.has((order.status || '').trim())) continue;
       for (const component of order.components) {
-        const key = component.name || '(unnamed)';
-        if (!byName.has(key)) byName.set(key, []);
-        byName.get(key)!.push({ order, component });
+        const name = component.name || '(unnamed)';
+        const sampleType = component.sample_type;
+        const key = `${name} ${sampleType}`;
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.instances.push({ order, component });
+        } else {
+          byKey.set(key, { name, sampleType, instances: [{ order, component }] });
+        }
       }
     }
-    return Array.from(byName.entries()).map(([name, instances]) => ({ name, instances }));
+    return Array.from(byKey.values());
   }, [orders, hideShipped]);
 
   // Search + sort + compute stats (stats are on the visible instances after search so counts match what's shown)
@@ -208,19 +220,21 @@ function DesignComponentsContent() {
     const q = search.trim().toLowerCase();
     const out: Group[] = [];
 
-    for (const { name, instances } of rawGroups) {
+    for (const { name, sampleType, instances } of rawGroups) {
       const nameMatches = q ? name.toLowerCase().includes(q) : true;
       let visibleInstances = q && !nameMatches
         ? instances.filter(({ order }) => orderMatchesQuery(order, q))
         : instances;
 
-      // In Pending mode, drop any instance that's fully done (Strike + Lab done).
-      // Fit lives on the style now, not the component.
+      // In Pending mode, drop instances that are done for this group's
+      // sample type. Each group is single-type now so we only check the
+      // relevant column.
       if (sort === 'pending') {
         visibleInstances = visibleInstances.filter(({ component }) => {
-          const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
-          const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-          return !(s && l);
+          if (sampleType === 'strike_off') {
+            return !isSampleDone(component.strike_off_status, component.strike_off_approved);
+          }
+          return !isSampleDone(component.lab_dip_status, component.lab_dip_approved);
         });
       }
 
@@ -228,16 +242,21 @@ function DesignComponentsContent() {
       // If Pending mode and nothing pending, also skip (filters out fully-done groups).
       if ((q || sort === 'pending') && visibleInstances.length === 0) continue;
 
+      // soDone/ldDone are per-group totals — only the matching type counts
+      // for this group's sample type; the other stays 0.
       let soDone = 0, ldDone = 0, pending = 0;
       for (const { component } of visibleInstances) {
-        const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
-        const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-        if (s) soDone++;
-        if (l) ldDone++;
-        if (!s || !l) pending++;
+        if (sampleType === 'strike_off') {
+          const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
+          if (s) soDone++; else pending++;
+        } else {
+          const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
+          if (l) ldDone++; else pending++;
+        }
       }
       out.push({
         name,
+        sampleType,
         instances,
         visibleInstances,
         soDone,
@@ -267,12 +286,12 @@ function DesignComponentsContent() {
       if (selectedName !== null) setSelectedName(null);
       return;
     }
-    if (!selectedName || !groups.find((g) => g.name === selectedName)) {
-      setSelectedName(groups[0].name);
+    if (!selectedName || !groups.find((g) => groupKey(g) === selectedName)) {
+      setSelectedName(groupKey(groups[0]));
     }
   }, [groups, selectedName]);
 
-  const selectedGroup = groups.find((g) => g.name === selectedName) || null;
+  const selectedGroup = groups.find((g) => groupKey(g) === selectedName) || null;
   const totalInstancesVisible = groups.reduce((s, g) => s + g.total, 0);
 
   // Bucket the selected group's visible instances for the cards view.
@@ -316,7 +335,13 @@ function DesignComponentsContent() {
       // Reload orders so the groups/clusters update
       const r = await ordersApi.getOrders(1, 500, {});
       setOrders(r.orders);
-      if (fromNames.includes(selectedName || '')) setSelectedName(toName);
+      // selectedName is "<name>|<sampleType>"; if the current selection's
+      // name was part of the merge, point it at the renamed group. Keep the
+      // same sample type so the user stays on the same lane.
+      const [curName, curType] = (selectedName || '|').split('|');
+      if (curName && fromNames.includes(curName)) {
+        setSelectedName(`${toName}|${curType}`);
+      }
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || 'Merge failed');
     }
@@ -409,12 +434,15 @@ function DesignComponentsContent() {
                   </div>
                 ) : (
                   groups.map((g) => {
-                    const isActive = g.name === selectedName;
-                    const allDone = g.total > 0 && g.soDone === g.total && g.ldDone === g.total;
+                    const isActive = groupKey(g) === selectedName;
+                    // Single-type groups now — done means the relevant
+                    // sample type is fully complete across instances.
+                    const done = g.sampleType === 'strike_off' ? g.soDone : g.ldDone;
+                    const allDone = g.total > 0 && done === g.total;
                     return (
                       <button
-                        key={g.name}
-                        onClick={() => { setSelectedName(g.name); setSelectedComponentIds(new Set()); }}
+                        key={groupKey(g)}
+                        onClick={() => { setSelectedName(groupKey(g)); setSelectedComponentIds(new Set()); }}
                         className={cn(
                           'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors rounded-lg',
                           isActive ? 'bg-violet-100 text-violet-700' : 'text-gray-700 hover:bg-gray-100/80'
@@ -425,6 +453,12 @@ function DesignComponentsContent() {
                           allDone ? 'bg-green-400' : g.pending > 0 ? 'bg-amber-400' : 'bg-gray-300'
                         )} />
                         <span className="flex-1 text-sm font-semibold truncate">{g.name}</span>
+                        <span className={cn(
+                          'text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded',
+                          g.sampleType === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
+                        )}>
+                          {g.sampleType === 'strike_off' ? 'SO' : 'LD'}
+                        </span>
                         <span className={cn(
                           'text-[11px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 min-w-[24px] text-center',
                           isActive ? 'bg-white/70' : 'bg-gray-200 text-gray-600'
@@ -549,8 +583,11 @@ function DesignComponentsContent() {
                           <th className="px-3 py-2">Season</th>
                           <th className="px-3 py-2">Ex-fac</th>
                           <th className="px-3 py-2">Updated</th>
-                          <th className="px-2 py-2 text-center">SO</th>
-                          <th className="px-2 py-2 text-center">LD</th>
+                          {/* Single-type groups now — only the relevant
+                              status column shows. The "other" column would
+                              always be empty for components in this group. */}
+                          {selectedGroup.sampleType === 'strike_off' && <th className="px-2 py-2 text-center">SO</th>}
+                          {selectedGroup.sampleType === 'lab_dip' && <th className="px-2 py-2 text-center">LD</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -597,18 +634,22 @@ function DesignComponentsContent() {
                               <td className="px-3 py-2.5 text-gray-500 text-[10px] uppercase tracking-wider">{order.season || '—'}</td>
                               <td className="px-3 py-2.5"><ExFacBadge days={daysToExFac} /></td>
                               <td className="px-3 py-2.5 text-gray-500">{relativeTimeShort(component.updated_at)}</td>
-                              <td className="px-2 py-2.5 text-center">
-                                <div className="inline-flex items-center gap-1">
-                                  <Dot done={so} />
-                                  <AttemptBadge attemptNo={component.strike_off_attempt_no} rejectionCount={component.strike_off_rejection_count} size="xs" />
-                                </div>
-                              </td>
-                              <td className="px-2 py-2.5 text-center">
-                                <div className="inline-flex items-center gap-1">
-                                  <Dot done={ld} />
-                                  <AttemptBadge attemptNo={component.lab_dip_attempt_no} rejectionCount={component.lab_dip_rejection_count} size="xs" />
-                                </div>
-                              </td>
+                              {selectedGroup.sampleType === 'strike_off' && (
+                                <td className="px-2 py-2.5 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    <Dot done={so} />
+                                    <AttemptBadge attemptNo={component.strike_off_attempt_no} rejectionCount={component.strike_off_rejection_count} size="xs" />
+                                  </div>
+                                </td>
+                              )}
+                              {selectedGroup.sampleType === 'lab_dip' && (
+                                <td className="px-2 py-2.5 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    <Dot done={ld} />
+                                    <AttemptBadge attemptNo={component.lab_dip_attempt_no} rejectionCount={component.lab_dip_rejection_count} size="xs" />
+                                  </div>
+                                </td>
+                              )}
                             </tr>
                           );
                         })}
@@ -666,11 +707,13 @@ function DesignComponentsContent() {
         open={addModalOpen}
         onClose={() => setAddModalOpen(false)}
         orders={orders}
-        onCreated={(componentName) => {
-          // Refresh the orders list so the new component shows up, then
-          // pre-select the newly-created component group.
+        onCreated={() => {
+          // Refresh the orders list so the new component shows up. We
+          // clear selection so the auto-select effect picks the freshly-
+          // created group (groups are keyed by name|sample_type now and
+          // we don't have the type here to construct the composite).
           reloadOrders();
-          setSelectedName(componentName);
+          setSelectedName(null);
         }}
       />
 
@@ -1359,24 +1402,29 @@ function InstanceCard({
           className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 cursor-pointer"
         />
       </div>
-      {/* Status block */}
+      {/* Status block — only the row matching this component's sample
+          type renders. Strike Off components show SO; Lab Dip show LD. */}
       <div className="py-2.5 pr-4 pl-2 flex flex-col gap-1.5 min-w-[240px] border-r border-gray-100">
-        <SampleStatusRow
-          label="SO"
-          status={component.strike_off_status}
-          attemptNo={component.strike_off_attempt_no}
-          rejectionCount={component.strike_off_rejection_count}
-          showAge={bucket === 'needs-attention'}
-          updatedDays={updatedDays}
-        />
-        <SampleStatusRow
-          label="LD"
-          status={component.lab_dip_status}
-          attemptNo={component.lab_dip_attempt_no}
-          rejectionCount={component.lab_dip_rejection_count}
-          showAge={bucket === 'needs-attention'}
-          updatedDays={updatedDays}
-        />
+        {component.sample_type === 'strike_off' && (
+          <SampleStatusRow
+            label="SO"
+            status={component.strike_off_status}
+            attemptNo={component.strike_off_attempt_no}
+            rejectionCount={component.strike_off_rejection_count}
+            showAge={bucket === 'needs-attention'}
+            updatedDays={updatedDays}
+          />
+        )}
+        {component.sample_type === 'lab_dip' && (
+          <SampleStatusRow
+            label="LD"
+            status={component.lab_dip_status}
+            attemptNo={component.lab_dip_attempt_no}
+            rejectionCount={component.lab_dip_rejection_count}
+            showAge={bucket === 'needs-attention'}
+            updatedDays={updatedDays}
+          />
+        )}
       </div>
       {/* Style / colour (PO + customer + factory live in the PO sub-header) */}
       <div className="flex-1 py-2.5 px-3 min-w-0">

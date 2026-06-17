@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Loader2, Plus, Search, X } from 'lucide-reac
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { componentsApi } from '@/lib/api';
-import type { Order } from '@/types';
+import type { Order, ComponentSampleType } from '@/types';
 
 /**
  * Cross-PO bulk component-add modal — opened from /design-components.
@@ -31,6 +31,12 @@ interface POGroup {
 }
 
 export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
+  // Step 1: pick the sample type. Step 2 (the rest of the form) only renders
+  // once a type is chosen. Lets the user click out of step 1 if they meant
+  // to switch.
+  const [step, setStep] = useState<1 | 2>(1);
+  const [sampleType, setSampleType] = useState<ComponentSampleType | null>(null);
+
   const [name, setName] = useState('');
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -42,6 +48,8 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
   // Reset state every time the modal opens
   useEffect(() => {
     if (!open) return;
+    setStep(1);
+    setSampleType(null);
     setName('');
     setSearch('');
     setSelectedIds(new Set());
@@ -161,6 +169,10 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
   };
 
   const handleSubmit = async () => {
+    if (!sampleType) {
+      toast.error('Pick a sample type first');
+      return;
+    }
     if (!name.trim()) {
       toast.error('Component name is required');
       return;
@@ -171,10 +183,11 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     }
     setSubmitting(true);
     try {
-      const res = await componentsApi.crossPoAdd(name.trim(), Array.from(selectedIds));
+      const res = await componentsApi.crossPoAdd(name.trim(), Array.from(selectedIds), sampleType);
       const created = res.components_created;
       const skipped = res.skipped_existing;
-      const parts = [`Added "${name.trim()}" to ${created} style${created === 1 ? '' : 's'}`];
+      const typeLabel = sampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip';
+      const parts = [`Added "${name.trim()}" (${typeLabel}) to ${created} style${created === 1 ? '' : 's'}`];
       if (skipped > 0) parts.push(`${skipped} already had it (skipped)`);
       toast.success(parts.join(' · '));
       onCreated(name.trim(), created);
@@ -222,6 +235,51 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
 
         {/* Body */}
         <div className="flex flex-col flex-1 min-h-0">
+          {/* Step 1: pick a sample type. Renders as a big two-button choice
+              until the user picks one, then collapses to a chip in step 2. */}
+          {step === 1 ? (
+            <div className="px-5 pt-5 pb-6 flex flex-col gap-3 flex-1">
+              <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
+                What kind of component?
+              </div>
+              <p className="text-xs text-gray-500 -mt-1">
+                Each component tracks one sample type. Pick which one — you can&apos;t change it later.
+              </p>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => { setSampleType('strike_off'); setStep(2); }}
+                  className="group flex flex-col gap-1 p-4 border-2 border-gray-200 rounded-xl hover:border-violet-400 hover:bg-violet-50/40 transition-colors text-left"
+                >
+                  <div className="text-sm font-bold text-gray-900">Strike Off</div>
+                  <div className="text-[11px] text-gray-500">Fabric / print sample</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSampleType('lab_dip'); setStep(2); }}
+                  className="group flex flex-col gap-1 p-4 border-2 border-gray-200 rounded-xl hover:border-violet-400 hover:bg-violet-50/40 transition-colors text-left"
+                >
+                  <div className="text-sm font-bold text-gray-900">Lab Dip</div>
+                  <div className="text-[11px] text-gray-500">Colour match sample</div>
+                </button>
+              </div>
+            </div>
+          ) : (
+          <>
+          {/* Chip showing the chosen sample type with a back-affordance. */}
+          <div className="px-5 pt-3 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => { setSampleType(null); setStep(1); }}
+              className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-50 border border-violet-200 rounded-md text-[11px] font-medium text-violet-800 hover:bg-violet-100"
+              title="Click to change"
+            >
+              <span className="uppercase tracking-wide text-[9px] text-violet-500">Type</span>
+              <span>{sampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip'}</span>
+              <span className="text-violet-400">·</span>
+              <span className="text-violet-500 text-[10px]">change</span>
+            </button>
+          </div>
           {/* Name input */}
           <div className="px-5 pt-4 pb-2 flex-shrink-0">
             <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">
@@ -361,6 +419,8 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
               </>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}
@@ -374,7 +434,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || !name.trim() || selectedIds.size === 0}
+            disabled={submitting || !sampleType || !name.trim() || selectedIds.size === 0}
             className="px-3 py-1.5 text-xs font-semibold text-white bg-violet-600 rounded-md hover:bg-violet-700 disabled:opacity-50 flex items-center gap-1.5"
           >
             {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

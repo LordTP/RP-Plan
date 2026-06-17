@@ -158,6 +158,77 @@ async def startup_event():
             conn.execute(text("ALTER TABLE date_change_history ADD COLUMN component_name VARCHAR(100)"))
         print("✓ Added component_name column to date_change_history table")
 
+    # Migration: add sample_type column to order_components. Each component is
+    # now strictly Strike Off OR Lab Dip — never both. The data backfill below
+    # classifies existing rows and splits any that had data for both types.
+    component_columns = [c['name'] for c in inspector.get_columns('order_components')]
+    sample_type_just_added = False
+    if 'sample_type' not in component_columns:
+        with engine.begin() as conn:
+            if engine.dialect.name == 'postgresql':
+                conn.execute(text("ALTER TABLE order_components ADD COLUMN sample_type VARCHAR(20) NOT NULL DEFAULT 'strike_off'"))
+            else:
+                # SQLite supports the same syntax for default values
+                conn.execute(text("ALTER TABLE order_components ADD COLUMN sample_type VARCHAR(20) NOT NULL DEFAULT 'strike_off'"))
+        print("✓ Added sample_type column to order_components table")
+        sample_type_just_added = True
+
+    # One-shot data migration: classify each existing component by which
+    # sample fields have data. If both strike off and lab dip have data, split
+    # the row into two (one of each). Gated on an app_settings flag so we only
+    # run this once per environment.
+    from models import OrderComponent, AppSetting
+    MIGRATION_FLAG = 'components_split_strike_lab_v1'
+    migration_db = SessionLocal()
+    try:
+        flag = migration_db.query(AppSetting).filter(AppSetting.key == MIGRATION_FLAG).first()
+        if flag is None:
+            split_count = 0
+            classified_count = 0
+            comps = migration_db.query(OrderComponent).all()
+            for c in comps:
+                has_strike = any([
+                    c.strike_off_status, c.strike_off_received, c.strike_off_approved,
+                ])
+                has_lab = any([
+                    c.lab_dip_status, c.lab_dip_received, c.lab_dip_approved,
+                ])
+                if has_strike and has_lab:
+                    # Clone the lab dip data into a new component, clear the lab
+                    # dip fields on the original, lock both to their type.
+                    new_lab = OrderComponent(
+                        order_id=c.order_id,
+                        name=c.name,
+                        sample_type='lab_dip',
+                        lab_dip_status=c.lab_dip_status,
+                        lab_dip_received=c.lab_dip_received,
+                        lab_dip_approved=c.lab_dip_approved,
+                    )
+                    migration_db.add(new_lab)
+                    c.sample_type = 'strike_off'
+                    c.lab_dip_status = None
+                    c.lab_dip_received = None
+                    c.lab_dip_approved = None
+                    split_count += 1
+                elif has_lab and not has_strike:
+                    c.sample_type = 'lab_dip'
+                    classified_count += 1
+                else:
+                    # Strike-only or empty — default 'strike_off' (already set
+                    # by the column default, but we set it explicitly for the
+                    # legacy data path where the column might be unset).
+                    c.sample_type = 'strike_off'
+                    classified_count += 1
+            migration_db.add(AppSetting(key=MIGRATION_FLAG, value='done'))
+            migration_db.commit()
+            print(f"✓ Components classified: {classified_count} single-type, {split_count} split into pairs")
+        elif sample_type_just_added:
+            # Column was just added but flag already exists — defensive only;
+            # shouldn't happen in a healthy environment.
+            print(f"⚠ sample_type column added but {MIGRATION_FLAG} flag was already set — skipping classification")
+    finally:
+        migration_db.close()
+
     # Migration: ensure users.role is stored as the enum NAME (uppercase), which is
     # SQLAlchemy's default when Column(Enum(UserRole)) has no values_callable.
     # A previous deploy briefly used lowercase values; this normalises any drift.

@@ -244,11 +244,19 @@ async def create_component(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Add a component to an order"""
+    """Add a component to an order. Each component is strictly one sample
+    type (Strike Off or Lab Dip) — fields for the "other" type are ignored
+    on create so a confused client can't seed orphan data."""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     create_data = data.model_dump(exclude_unset=True)
+    # Drop fields that belong to the OTHER sample type so we never persist
+    # stale data outside the component's chosen lane.
+    sample_type = create_data.get('sample_type', 'strike_off')
+    drop_prefix = 'lab_dip' if sample_type == 'strike_off' else 'strike_off'
+    for f in [f'{drop_prefix}_status', f'{drop_prefix}_received', f'{drop_prefix}_approved']:
+        create_data.pop(f, None)
     component = OrderComponent(order_id=order_id, **create_data)
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in create_data]
     reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
@@ -270,6 +278,21 @@ async def update_component(
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
     update_data = data.model_dump(exclude_unset=True)
+    # Reject edits to fields that don't belong to this component's sample
+    # type. Strike-off components can't have lab_dip fields touched, and
+    # vice versa. Returning a clean 400 is easier to debug than silently
+    # writing values that don't belong.
+    if component.sample_type == 'strike_off':
+        bad = [k for k in update_data if k.startswith('lab_dip_')]
+    elif component.sample_type == 'lab_dip':
+        bad = [k for k in update_data if k.startswith('strike_off_')]
+    else:
+        bad = []
+    if bad:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot edit {bad} on a '{component.sample_type}' component",
+        )
 
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
@@ -360,6 +383,14 @@ async def bulk_update_components(
     if not rows:
         raise HTTPException(status_code=404, detail="No matching components found")
 
+    # Drop any rows whose sample_type doesn't match the field being updated.
+    # e.g. trying to set lab_dip_received on strike-off components is a no-op
+    # for them rather than an error — the client is hitting a mixed bunch.
+    if field.startswith('strike_off_'):
+        rows = [c for c in rows if c.sample_type == 'strike_off']
+    elif field.startswith('lab_dip_'):
+        rows = [c for c in rows if c.sample_type == 'lab_dip']
+
     # For the status-vs-date reconciliation logic, only skip reconcile when the
     # user explicitly touched the status field. Here we always touch ONE field.
     touched_status_prefixes = []
@@ -447,8 +478,11 @@ async def cross_po_add_component(
     body = await request.json()
     name = (body.get("name") or "").strip()
     order_ids = body.get("order_ids") or []
+    sample_type = body.get("sample_type", "strike_off")
     if not name:
         raise HTTPException(status_code=400, detail="Component name is required")
+    if sample_type not in ('strike_off', 'lab_dip'):
+        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off' or 'lab_dip'")
     if not isinstance(order_ids, list) or not order_ids:
         raise HTTPException(status_code=400, detail="At least one order id is required")
 
@@ -459,14 +493,18 @@ async def cross_po_add_component(
     created = 0
     skipped = 0
     for o in target_orders:
+        # Same-name dedupe is now PER sample_type — a "Pocket" strike-off and a
+        # "Pocket" lab-dip on the same order are intentional and shouldn't
+        # collide.
         existing = db.query(OrderComponent).filter(
             OrderComponent.order_id == o.id,
-            OrderComponent.name == name
+            OrderComponent.name == name,
+            OrderComponent.sample_type == sample_type,
         ).first()
         if existing:
             skipped += 1
             continue
-        db.add(OrderComponent(order_id=o.id, name=name))
+        db.add(OrderComponent(order_id=o.id, name=name, sample_type=sample_type))
         created += 1
     db.commit()
     return {"success": True, "components_created": created, "skipped_existing": skipped}
@@ -482,8 +520,11 @@ async def bulk_add_component(
     """Add a component to selected styles or all styles on the same PO"""
     body = await request.json()
     name = body.get("name")
+    sample_type = body.get("sample_type", "strike_off")
     if not name:
         raise HTTPException(status_code=400, detail="Component name is required")
+    if sample_type not in ('strike_off', 'lab_dip'):
+        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off' or 'lab_dip'")
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -495,12 +536,15 @@ async def bulk_add_component(
         sibling_orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == order.po_number).all()
     created = 0
     for sib in sibling_orders:
+        # Dedupe per (name, sample_type) so "Pocket" can exist as both Strike
+        # Off and Lab Dip on the same order without clashing.
         existing = db.query(OrderComponent).filter(
             OrderComponent.order_id == sib.id,
-            OrderComponent.name == name
+            OrderComponent.name == name,
+            OrderComponent.sample_type == sample_type,
         ).first()
         if not existing:
-            component = OrderComponent(order_id=sib.id, name=name)
+            component = OrderComponent(order_id=sib.id, name=name, sample_type=sample_type)
             db.add(component)
             created += 1
     db.commit()
@@ -528,9 +572,13 @@ async def apply_component_field_to_po(
         sibling_ids = selected_ids
     else:
         sibling_ids = [o.id for o in db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number).all()]
+    # Match by name AND sample_type so we only apply to siblings of the same
+    # type as the source. e.g. updating a strike-off "Pocket" component
+    # doesn't touch a lab-dip "Pocket" component on a sibling order.
     matching = db.query(OrderComponent).filter(
         OrderComponent.order_id.in_(sibling_ids),
-        OrderComponent.name == component.name
+        OrderComponent.name == component.name,
+        OrderComponent.sample_type == component.sample_type,
     ).all()
     # Remaining keys in body are the fields to update
     allowed_fields = {
