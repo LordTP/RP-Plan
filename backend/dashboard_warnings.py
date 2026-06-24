@@ -1,5 +1,6 @@
 """Dashboard warnings endpoint — per-PO flags for orders needing attention."""
 from fastapi import APIRouter, Depends
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -21,12 +22,27 @@ async def get_dashboard_warnings(
 
     # Drop orders that are no longer in play:
     #   - Status indicates the order's finished (Cancelled / Delivered / Complete).
+    #     NULL or empty status means "no explicit status yet" — those rows
+    #     are still active and must NOT be excluded.
     #   - tracking_reference is set — the order's been confirmed onto a
-    #     shipment, so the sampling/spec/etc. windows the warnings track
-    #     aren't actionable anymore.
+    #     shipment, so the sampling / spec / approval windows aren't
+    #     actionable anymore. Treat NULL and empty string equivalently.
+    #
+    # Important: SQL three-valued logic means `~status.in_(...)` silently
+    #   drops rows where status IS NULL (NULL IN (...) evaluates to NULL,
+    #   NOT NULL is NULL, the row is filtered). The explicit OR with
+    #   IS NULL keeps those rows in the warning population.
+    finished_statuses = ["Cancelled", "Delivered", "Complete", "Completed"]
     all_orders = db.query(PurchaseOrder).filter(
-        ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"]),
-        PurchaseOrder.tracking_reference.is_(None),
+        or_(
+            PurchaseOrder.status.is_(None),
+            PurchaseOrder.status == '',
+            ~PurchaseOrder.status.in_(finished_statuses),
+        ),
+        or_(
+            PurchaseOrder.tracking_reference.is_(None),
+            PurchaseOrder.tracking_reference == '',
+        ),
     ).all()
 
     # Group orders by PO number — warnings are per-PO
