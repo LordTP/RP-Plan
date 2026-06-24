@@ -1374,7 +1374,14 @@ def export_database_to_excel(
         if filters.get('status'):
             query = query.filter(PurchaseOrder.status.ilike(f"%{filters['status']}%"))
 
-    pos = query.order_by(PurchaseOrder.system_po_number.asc()).all()
+    # Match the /orders table sort order so the exported sheet has the same
+    # row layout users see on screen (grouped by PO# → Customer PO# → Style).
+    pos = query.order_by(
+        PurchaseOrder.po_number.asc(),
+        PurchaseOrder.customer_po_number.asc(),
+        PurchaseOrder.style_code.asc(),
+        PurchaseOrder.id.asc(),
+    ).all()
 
     # Data starts right after the size reference chart — same row we cleared
     # the sample/demo data from above.

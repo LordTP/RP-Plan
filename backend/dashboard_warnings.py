@@ -19,8 +19,14 @@ async def get_dashboard_warnings(
     """Warnings/flags for orders needing attention — grouped by PO"""
     now = datetime.utcnow()
 
+    # Drop orders that are no longer in play:
+    #   - Status indicates the order's finished (Cancelled / Delivered / Complete).
+    #   - tracking_reference is set — the order's been confirmed onto a
+    #     shipment, so the sampling/spec/etc. windows the warnings track
+    #     aren't actionable anymore.
     all_orders = db.query(PurchaseOrder).filter(
-        ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"])
+        ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"]),
+        PurchaseOrder.tracking_reference.is_(None),
     ).all()
 
     # Group orders by PO number — warnings are per-PO

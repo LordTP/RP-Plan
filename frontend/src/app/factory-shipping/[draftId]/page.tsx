@@ -740,11 +740,21 @@ function StyleRow({
       'px-3 pl-9 py-1.5 text-xs',
       isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'
     )}>
-      <div className="flex items-center gap-2">
+      {/* Whole row toggles selection — checkbox is tiny and was annoying to
+          aim at. The qty input below stops propagation so editing the
+          number doesn't accidentally untick the row. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(); } }}
+        className="flex items-center gap-2 cursor-pointer select-none"
+      >
         <input
           type="checkbox"
           checked={isSelected}
           onChange={onToggle}
+          onClick={(e) => e.stopPropagation()}
           className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
         />
         <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -757,16 +767,21 @@ function StyleRow({
           )}
         </div>
         {isSelected ? (
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div
+            className="flex items-center gap-1 flex-shrink-0"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <input
               type="number"
               min={1}
-              max={total}
               value={localQty}
               onChange={(e) => setLocalQty(e.target.value)}
               onBlur={() => {
+                // No upper cap — factories sometimes ship over the PO line
+                // (overage runs, replacements). Backend allows any qty > 0.
                 const num = parseInt(localQty, 10);
-                if (!isNaN(num) && num !== quantityInDraft && num > 0 && (!total || num <= total)) {
+                if (!isNaN(num) && num !== quantityInDraft && num > 0) {
                   onQuantityChange(num);
                 } else if (isNaN(num) || num <= 0) {
                   setLocalQty(quantityInDraft != null ? String(quantityInDraft) : '');
@@ -848,6 +863,10 @@ function ConfirmShipmentModal({
   const totalUnits = draft.orders.reduce((s, o) => s + (o.quantity || 0), 0);
 
   const partials = draft.orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity);
+  // Over-line SKUs — ship qty exceeds the PO line total. Factories do this
+  // legitimately (overage / replacements) but flagging it gives the user a
+  // sanity-check before they confirm.
+  const overs = draft.orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity > o.total_quantity);
 
   // Cross-reference picker data to find SKUs in this draft that are ALSO already
   // confirmed in another shipment — confirming this draft will overwrite the
@@ -961,6 +980,16 @@ function ConfirmShipmentModal({
             </div>
           )}
 
+          {/* Over-line shipment warning */}
+          {overs.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-[11px] text-amber-900 leading-relaxed">
+                <strong>{overs.length} SKU{overs.length === 1 ? '' : 's'}</strong> ship{overs.length === 1 ? 's' : ''} MORE than the original PO line quantity (overage or replacements). Make sure that's intentional.
+              </div>
+            </div>
+          )}
+
           {/* PO-grouped SKU list */}
           <div>
             <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">SKUs being confirmed</div>
@@ -976,6 +1005,7 @@ function ConfirmShipmentModal({
                   <div className="divide-y divide-gray-100">
                     {g.orders.map((o) => {
                       const isPartial = o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity;
+                      const isOver = o.quantity != null && o.total_quantity != null && o.quantity > o.total_quantity;
                       const overwrite = overwriteByOrderId.get(o.order_id);
                       return (
                         <div key={o.link_id} className={cn('px-3 py-1.5 flex items-center gap-2 text-[11px]', overwrite && 'bg-red-50/40')}>
@@ -991,10 +1021,11 @@ function ConfirmShipmentModal({
                               overwrites {overwrite.reference}
                             </span>
                           )}
-                          <span className={cn('flex items-center gap-1 flex-shrink-0', isPartial ? 'text-amber-700' : 'text-gray-700')}>
+                          <span className={cn('flex items-center gap-1 flex-shrink-0', isPartial || isOver ? 'text-amber-700' : 'text-gray-700')}>
                             {(o.quantity || 0).toLocaleString()}
                             <span className="text-gray-400">/{(o.total_quantity || 0).toLocaleString()}</span>
                             {isPartial && <span className="text-[9px] uppercase tracking-wide font-semibold ml-1">partial</span>}
+                            {isOver && <span className="text-[9px] uppercase tracking-wide font-semibold ml-1">over</span>}
                           </span>
                         </div>
                       );

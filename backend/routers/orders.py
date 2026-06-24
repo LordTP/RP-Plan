@@ -249,7 +249,17 @@ async def get_orders(
     
     # Apply pagination
     offset = (page - 1) * page_size
-    orders = query.order_by(PurchaseOrder.system_po_number.asc()).offset(offset).limit(page_size).all()
+    # Deterministic multi-tier sort: PO# → Customer PO# → Style Code → id.
+    # The previous single-field sort on system_po_number tied on "TBC" for
+    # most rows and let PostgreSQL return them in physical order, which
+    # interleaved POs as rows got updated. This guarantees rows for the
+    # same PO always sit together and never shuffle on edit.
+    orders = query.order_by(
+        PurchaseOrder.po_number.asc(),
+        PurchaseOrder.customer_po_number.asc(),
+        PurchaseOrder.style_code.asc(),
+        PurchaseOrder.id.asc(),
+    ).offset(offset).limit(page_size).all()
     
     # Add comment count and unread count per user
     for order in orders:

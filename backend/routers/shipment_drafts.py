@@ -345,9 +345,10 @@ async def update_order_link(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Update the quantity stored against an SKU in this draft. Validated as
-    > 0 and ≤ the order's total_quantity so factories can't ship more than
-    the PO line."""
+    """Update the quantity stored against an SKU in this draft. Must be > 0
+    but is allowed to exceed the PO line total — factories sometimes ship
+    over (overage runs, replacement units, etc.) and the cap was blocking
+    legitimate shipments."""
     draft = db.query(ShipmentDraft).filter(ShipmentDraft.id == draft_id).first()
     if not draft:
         raise HTTPException(404, "Draft not found")
@@ -363,11 +364,8 @@ async def update_order_link(
         raise HTTPException(404, "Order is not in this draft")
 
     if body.quantity is not None:
-        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
         if body.quantity <= 0:
             raise HTTPException(400, "Quantity must be greater than zero")
-        if order and order.total_quantity is not None and body.quantity > order.total_quantity:
-            raise HTTPException(400, f"Quantity exceeds PO line total of {order.total_quantity}")
     link.quantity = body.quantity
     db.commit()
     return {'ok': True, 'quantity': link.quantity}
