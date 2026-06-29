@@ -42,12 +42,14 @@ const factorySubItems = [
   { href: '/factory-product', label: 'Product', icon: ShoppingBag },
   { href: '/factory-shipping', label: 'Shipping', icon: Truck },
   { href: '/factory-guide', label: 'Guide', icon: BookOpen },
+  { href: '/components-guide', label: 'Components Guide', icon: Layers },
 ];
 
 const designSubItems = [
   { href: '/design-overview', label: 'Overview', icon: BarChart3 },
   { href: '/design', label: 'Orders', icon: Palette },
   { href: '/design-components', label: 'Components', icon: Layers },
+  { href: '/components-guide', label: 'Components Guide', icon: BookOpen },
   { href: '/resubmissions', label: 'Resubmissions', icon: RefreshCcw },
 ];
 

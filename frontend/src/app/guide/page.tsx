@@ -142,32 +142,39 @@ const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: 'What Are Components?',
         content: [
-          'Components represent the individual materials or trims in a style — Main Fabric, Lining, Zip, Woven Labels, Badges, etc.',
-          'Each component has its own Fit Sample, Strike Off, and Lab Dip tracking. This means you can track sampling progress independently for each material.',
-          'When a style has components, the order-level sampling fields are hidden — the data lives inside each component instead.',
+          'Components represent the individual materials or trims in a style — Main Fabric, Lining, Zip, Woven Labels, Badges, Embroidered Logo, Pocket Fabric, etc.',
+          'Each component tracks ONE sample type — Strike Off OR Lab Dip, never both. The type is picked at create time and is locked once saved.',
+          'Fit Sample and PPS are NOT components — they live at the order/style level since they cover the whole garment.',
         ],
+        tips: ['Strike Off (SO) = fabric / print sample; Lab Dip (LD) = colour-match sample. The same name can exist as both types on the same style — "Pocket" SO and "Pocket" LD are treated separately.'],
       },
       {
         title: 'Adding Components',
         content: [
-          'In the style detail modal, find the Components section (above Samples). Click the "+" button or the dashed "Add Component" area. Enter a name and choose where to add it.',
+          'In the style detail modal, find the Components section. Click + Add Component. The flow is type → name → scope:',
           {
             type: 'fields',
             items: [
-              { name: 'This style only', desc: 'Just the current row.' },
-              { name: 'All styles on PO', desc: 'Every style on this purchase order gets the component.' },
-              { name: 'Selected styles', desc: 'Open a picker to tick which specific styles to add it to.' },
+              { name: '1. Pick the type', desc: 'Strike Off or Lab Dip. Locked once saved — pick the right one.' },
+              { name: '2. Name it', desc: 'Type the name. As you type, existing names auto-suggest. A near-match warning catches casing/spacing dupes.' },
+              { name: '3. Scope', desc: 'This style only / All styles on PO / Selected styles (picker).' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'Typing an existing name auto-suggests it and warns you if a near-match exists (e.g. "Main fabric" when "Main Fabric" already exists) so you don\'t accidentally create duplicates.' },
+          { type: 'callout', tone: 'info', text: 'Dedupe is per (name, sample_type). A Strike Off "Pocket" and a Lab Dip "Pocket" can coexist on the same style — they\'re different things.' },
         ],
-        tips: ['Common names: Main Fabric, Lining, Rib Fabric, Zip, Buttons, Woven Label, Badges, Trim, Drawstring, Pocket Fabric.'],
+        tips: ['Common names: Main Fabric, Lining, Rib Fabric, Pocket Fabric, Zip, Buttons, Drawstring, Woven Label, Badges, Chest Emb, Print.'],
       },
       {
         title: 'Editing & Bulk Applying',
         content: [
-          'Expand a component to see its sampling fields laid out in a 2-column grid (Fit Sample | Strike Off, Lab Dip below). All fields are editable.',
-          'When you save a field change, you get three options: this style only, all styles on the PO with this component, or select specific styles from a picker.',
+          'Expand a component to see its sample tracking fields — Status, Received, Approved. Only the section matching the component\'s sample type renders; the other type\'s fields are hidden.',
+          'When you save a field change, you get three options: this style only, all styles on the PO with the same name AND same sample type, or select specific styles from a picker.',
+        ],
+      },
+      {
+        title: 'Full reference',
+        content: [
+          'For a top-to-bottom walkthrough — type picker, scope rules, the full sample lifecycle, the rework / v2 flow, the Design → Components catalogue, and every dashboard warning threshold — see the dedicated Components Guide at Design → Components Guide.',
         ],
       },
     ],
