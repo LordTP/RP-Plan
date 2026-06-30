@@ -425,15 +425,12 @@ function FactoryGuideContent() {
               The dashboard Warnings Centre fires automatically based on business-day thresholds:
             </p>
             <Table>
-              <TableRow label="Tech Packs Need Sending" value="Order sent to factory 3+ business days ago, tech packs not sent." />
-              <TableRow label="Specs Need Sending" value="Order sent to factory 3+ business days ago, specs not sent." />
               <TableRow label="Strike Off Overdue" value="Tech packs sent 20+ business days ago (25 for badge / woven label / woven tape), Strike Off not received." />
               <TableRow label="Strike Off Needs Approval" value="Strike Off received 5+ business days ago, not approved." />
               <TableRow label="Lab Dip Overdue" value="Tech packs sent 15+ business days ago, Lab Dip not received." />
               <TableRow label="Lab Dip Needs Approval" value="Lab Dip received 5+ business days ago, not approved." />
               <TableRow label="Fit Sample Overdue" value="Tech packs sent 15+ business days ago, no Fit Sample received. Order-level." />
-              <TableRow label="PPS Overdue" value="40+ business days since Lab Dip approved, PPS not received. Order-level." />
-              <TableRow label="PPS Needs Approval" value="PPS sent to customer 7+ business days ago, not approved. Order-level." />
+              <TableRow label="PPS Overdue" value="40+ days from the latest Lab Dip / Strike Off approval, PPS not received — roughly 5–6 weeks including weekends. Order-level." />
             </Table>
             <MockShot caption="A warning entry on the Source Lab dashboard — each row shows the PO, style, the affected component, and how long it's been overdue.">
               <WarningEntryMock />

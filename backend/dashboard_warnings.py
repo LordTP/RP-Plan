@@ -367,22 +367,33 @@ async def get_dashboard_warnings(
         })
 
     # --- Warning 8: PPS Received Overdue ---
-    # 8 business weeks (40 business days) after lab dip approved, no PPS received
+    # 40 CALENDAR days (~5-6 weeks including weekends) from the latest of
+    # Lab Dip or Strike Off approval, no PPS received yet. Either approval
+    # opens the PPS clock — whichever was most recent. Per-component when
+    # components exist, otherwise the order-level fields.
     pps_received_overdue = []
     for o in all_orders:
         components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
 
-        # PPS is order-level, but we check lab_dip_approved per component if components exist
-        # Use latest lab_dip_approved from components, or order-level
+        candidate_dates = []
         if components:
-            lab_dip_dates = [c.lab_dip_approved for c in components if c.lab_dip_approved]
-            latest_lab_dip = max(lab_dip_dates) if lab_dip_dates else None
+            for c in components:
+                if c.lab_dip_approved:
+                    candidate_dates.append(c.lab_dip_approved)
+                if c.strike_off_approved:
+                    candidate_dates.append(c.strike_off_approved)
         else:
-            latest_lab_dip = o.lab_dip_approved
+            if o.lab_dip_approved:
+                candidate_dates.append(o.lab_dip_approved)
+            if o.strike_off_approved:
+                candidate_dates.append(o.strike_off_approved)
 
-        if not latest_lab_dip:
+        if not candidate_dates:
             continue
-        days_since = business_days_between(latest_lab_dip, now)
+        latest_approval = max(candidate_dates)
+        # Calendar days, not business days — Mimi's request: "5/6 weeks
+        # including weekends" maps to 40 calendar days from the approval.
+        days_since = (now - latest_approval).days
         if days_since < 40:
             continue
 
@@ -403,7 +414,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "pps_received_overdue",
             "title": "PPS Overdue",
-            "description": "8+ business weeks since lab dip approved, no PPS received",
+            "description": "40+ days from the latest Lab Dip / Strike Off approval, no PPS received",
             "severity": "amber",
             "count": len(pps_received_overdue),
             "items": pps_received_overdue,
