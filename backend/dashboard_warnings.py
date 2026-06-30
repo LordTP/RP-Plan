@@ -27,12 +27,17 @@ async def get_dashboard_warnings(
     #   - tracking_reference is set — the order's been confirmed onto a
     #     shipment, so the sampling / spec / approval windows aren't
     #     actionable anymore. Treat NULL and empty string equivalently.
+    #   - PPS is done (status APPROVED / NOT REQUIRED or pps_approved date
+    #     is set). Once PPS is signed off the order's past the sampling
+    #     phase entirely — every other warning we fire on it would be
+    #     stale.
     #
     # Important: SQL three-valued logic means `~status.in_(...)` silently
     #   drops rows where status IS NULL (NULL IN (...) evaluates to NULL,
     #   NOT NULL is NULL, the row is filtered). The explicit OR with
     #   IS NULL keeps those rows in the warning population.
     finished_statuses = ["Cancelled", "Delivered", "Complete", "Completed"]
+    pps_done_statuses = ["APPROVED", "NOT REQUIRED"]
     all_orders = db.query(PurchaseOrder).filter(
         or_(
             PurchaseOrder.status.is_(None),
@@ -42,6 +47,12 @@ async def get_dashboard_warnings(
         or_(
             PurchaseOrder.tracking_reference.is_(None),
             PurchaseOrder.tracking_reference == '',
+        ),
+        # PPS-done filter: order falls off the warnings centre once PPS
+        # is APPROVED / NOT REQUIRED or an approval date has been set.
+        ~or_(
+            PurchaseOrder.pps_status.in_(pps_done_statuses),
+            PurchaseOrder.pps_approved.isnot(None),
         ),
     ).all()
 
