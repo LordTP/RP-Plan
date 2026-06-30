@@ -1832,6 +1832,12 @@ export function ComponentsSection({
   canEdit: (key: string) => boolean;
   onComponentsLoaded?: (count: number) => void;
 }) {
+  // Suppliers manage the component catalogue (add / delete) but never write
+  // sample-lifecycle fields — that's Source Lab's call. We read the role
+  // direct from the store so this stays correct without threading another
+  // prop from every call site.
+  const { user: currentUser } = useStore();
+  const isSupplierUser = currentUser?.role === 'supplier';
   const [components, setComponents] = useState<OrderComponent[]>([]);
   const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -2234,7 +2240,7 @@ export function ComponentsSection({
                         </p>
                         <RejectionContextBanner rejection={comp.strike_off_last_rejection} attemptNo={comp.strike_off_attempt_no} sampleAreaLabel="Strike Off" size="sm" />
                         {visibleFields.filter(f => f.key.startsWith('strike_off_')).map(field => (
-                          <ComponentFieldRow key={field.key} label={field.label.replace('Strike Off ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Strike Off ', '')} value={(comp as any)[field.key]} type={field.type} editable={!isSupplierUser} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
                         ))}
                         <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="strike" size="sm" />
                       </div>
@@ -2247,7 +2253,7 @@ export function ComponentsSection({
                         </p>
                         <RejectionContextBanner rejection={comp.lab_dip_last_rejection} attemptNo={comp.lab_dip_attempt_no} sampleAreaLabel="Lab Dip" size="sm" />
                         {visibleFields.filter(f => f.key.startsWith('lab_dip_')).map(field => (
-                          <ComponentFieldRow key={field.key} label={field.label.replace('Lab Dip ', '')} value={(comp as any)[field.key]} type={field.type} editable={true} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Lab Dip ', '')} value={(comp as any)[field.key]} type={field.type} editable={!isSupplierUser} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
                         ))}
                         <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="lab" size="sm" />
                       </div>

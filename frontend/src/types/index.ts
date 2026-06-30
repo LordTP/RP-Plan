@@ -196,6 +196,8 @@ export interface LastRejection {
   notes: string | null;
   rejected_at: string | null;
   photo_url: string | null;
+  /** Username of who rejected. Optional — older API responses may omit it. */
+  rejected_by?: string | null;
 }
 
 export interface DateHistory {

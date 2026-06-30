@@ -5,6 +5,7 @@ import {
   ShoppingBag, Truck, BookOpen, CheckCircle2, AlertTriangle, Info, Search, Calendar,
   FileSpreadsheet, Edit3, Lock, MessageSquare, X, Plus, ChevronDown, ChevronRight,
   Image as ImageIcon, Ship, ArrowRight, Clock, CheckCircle, XCircle, RefreshCw, Package,
+  Layers, Trash2, Tag, FileText,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
@@ -18,7 +19,7 @@ export default function FactoryGuidePage() {
   );
 }
 
-type Section = 'product' | 'shipping';
+type Section = 'product' | 'shipping' | 'components';
 
 function FactoryGuideContent() {
   const [section, setSection] = useState<Section>('product');
@@ -60,6 +61,15 @@ function FactoryGuideContent() {
               )}
             >
               <Truck className="w-4 h-4" /> Shipping
+            </button>
+            <button
+              onClick={() => setSection('components')}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors',
+                section === 'components' ? 'bg-violet-100 text-violet-700' : 'text-gray-600 hover:bg-gray-100'
+              )}
+            >
+              <Layers className="w-4 h-4" /> Components
             </button>
             <span className="ml-auto text-[11px] text-gray-400">Need help? Reply to any rejection email and we'll respond.</span>
           </div>
@@ -246,6 +256,189 @@ function FactoryGuideContent() {
               <TableRow label="Vessel got delayed" value="Open the confirmed shipment, click Edit shipping fields, update the dates." />
               <TableRow label="Don't have a tracking number yet" value="Leave it blank for now. Update once the freight forwarder sends it." />
             </Table>
+          </Step>
+        </section>
+        )}
+
+        {/* ============== SECTION: COMPONENTS ============== */}
+        {section === 'components' && (
+        <section className="mb-12">
+          <SectionHeader
+            icon={Layers}
+            title="Factory · Components"
+            blurb="What components are, how to add them, how the sample lifecycle works, and exactly when the dashboard warns you. Same content for both Source Lab and factory users."
+          />
+
+          {/* 1. Basics — start with the SO vs LD distinction; factory users
+              already know what a component is. */}
+          <Step number="1.1" title="Strike Off vs Lab Dip">
+            <p>
+              Every component tracks <strong>one</strong> sample type — Strike Off OR Lab Dip. Not both. You pick the type when you create it, and it can't change afterwards.
+            </p>
+            <Table>
+              <TableRow
+                label="Strike Off (SO)"
+                value="A physical printed/woven sample of the fabric or trim, to sign off the pattern, weave, or print quality."
+              />
+              <TableRow
+                label="Lab Dip (LD)"
+                value="A colour-match sample, to sign off the specific shade. Same swatch in three different colourways = three Lab Dip components."
+              />
+            </Table>
+            <MockShot caption="Strike Off and Lab Dip live in separate columns and have their own SO / LD badge.">
+              <TypeComparisonMock />
+            </MockShot>
+            <Callout type="info" title="The same name can be both types">
+              "Pocket" might exist as a Strike Off component (sample the fabric) AND as a Lab Dip component (match the colour) on the same style. They're treated as separate, with their own statuses and dates.
+            </Callout>
+          </Step>
+
+          <Step number="1.2" title="Fit Sample and PPS are NOT components">
+            <p>
+              Fit Sample and PPS (Pre-Production Sample) are <em>whole-garment</em> concerns and live at the order/style level, not on individual components. You'll see them in their own section of the style detail — not inside the Components list.
+            </p>
+          </Step>
+
+          {/* 2. Adding */}
+          <Step number="2.1" title="Adding a component — Step 1: pick the type">
+            <p>
+              From a style's detail view, click the <strong>+ Add Component</strong> button (top-right of the Components section). The first thing you'll see is a two-card chooser:
+            </p>
+            <MockShot caption="Step 1 of the Add Component flow. The form for name + scope is hidden until you pick a type.">
+              <AddTypePickerMock />
+            </MockShot>
+            <Callout type="warn" title="Type is locked once you save">
+              Pick the right one. You can't change a Strike Off component to a Lab Dip later — you'd need to delete and re-add it.
+            </Callout>
+          </Step>
+
+          <Step number="2.2" title="Step 2: name it">
+            <p>
+              Once you've picked the type, the rest of the form opens. Type the component name in the field. As you type, the app suggests existing names that match — pick from the dropdown to keep things consistent across the catalogue.
+            </p>
+            <Tips>
+              <Tip icon={Tag}>If you type something that already exists with different casing or spacing (e.g. "Main fabric" when "Main Fabric" is already used), you'll get an amber warning. Click "use existing" to avoid duplicates.</Tip>
+              <Tip icon={Tag}>Common names: Main Fabric, Lining, Rib Fabric, Pocket Fabric, Zip, Buttons, Drawstring, Woven Label, Badges, Chest Emb, Print.</Tip>
+            </Tips>
+          </Step>
+
+          <Step number="2.3" title="Step 3: pick the scope">
+            <p>
+              By default the component is added to just the style you're on. If the same component exists on other styles in the same PO, you can apply it to those at the same time:
+            </p>
+            <Table>
+              <TableRow label="This style only" value="Just the current row. Quickest." />
+              <TableRow label="All styles on PO" value="Every style on this purchase order gets a copy of the component." />
+              <TableRow label="Selected styles" value="Opens a picker so you tick which specific styles to add it to." />
+            </Table>
+            <MockShot caption="Step 2: name + scope. The type chip at the top is a click-to-change shortcut back to step 1.">
+              <AddFormMock />
+            </MockShot>
+            <Callout type="info" title="Dedupe is per type">
+              Adding "Pocket" Strike Off to a style that already has "Pocket" Strike Off is skipped. But a Strike Off "Pocket" and a Lab Dip "Pocket" are treated as separate — both can coexist.
+            </Callout>
+          </Step>
+
+          {/* 3. Tracking */}
+          <Step number="3.1" title="Tracking the sample">
+            <p>
+              Once a component exists, expand it to see its sample tracking. There are three fields:
+            </p>
+            <Table>
+              <TableRow label="Status" value="OUTSTANDING (default — sample requested, not back yet), RECEIVED, APPROVED, REJECTED, or NOT REQUIRED." />
+              <TableRow label="Received" value="The date the sample physically arrived back at Source Lab / customer for inspection." />
+              <TableRow label="Approved" value="The date the sample was signed off. Setting this date moves the component to done." />
+            </Table>
+            <MockShot caption="A component card expanded — type badge, status chip, three field tiles, Remove at the bottom.">
+              <ComponentCardMock
+                name="Main Fabric"
+                type="strike_off"
+                status="APPROVED"
+                received="14 May 2026"
+                approved="20 May 2026"
+              />
+            </MockShot>
+            <Callout type="info" title="Factory users see these read-only">
+              Suppliers can add / delete components and rename them, but the Status / Received / Approved fields are managed by Source Lab. You'll see them but won't be able to edit them.
+            </Callout>
+          </Step>
+
+          <Step number="3.2" title="The lifecycle">
+            <div className="my-3 flex items-center gap-2 text-[11px] flex-wrap">
+              <StatusPill tone="gray">OUTSTANDING</StatusPill>
+              <span className="text-gray-400">→</span>
+              <StatusPill tone="blue">RECEIVED</StatusPill>
+              <span className="text-gray-400">→</span>
+              <StatusPill tone="green">APPROVED</StatusPill>
+              <span className="text-gray-400 ml-2">or</span>
+              <StatusPill tone="red">REJECTED</StatusPill>
+              <span className="text-gray-400">→ opens v2</span>
+            </div>
+            <p>
+              <strong>OUTSTANDING</strong> is the default when a component is first created — Source Lab is waiting on the sample. Once it physically arrives, the Received date is set (this auto-bumps the status to RECEIVED). After review, either approved (signed off) or rejected.
+            </p>
+            <p>
+              <strong>NOT REQUIRED</strong> is a special status that says "we don't need this sample at all." Use it when, say, a Lab Dip isn't relevant because the colour's already a standard. NOT REQUIRED suppresses warnings and counts as done.
+            </p>
+          </Step>
+
+          {/* 4. Rejections */}
+          <Step number="4.1" title="Rejections and v2 (rework)">
+            <p>
+              When Source Lab rejects a sample, they pick a structured <strong>reason</strong> (Colour / Placement / Stitch / Material / Spec / Print / Other), add an optional <strong>note</strong>, and optionally a <strong>photo</strong>. Confirming closes the current attempt as REJECTED and opens v2 at OUTSTANDING. The Received and Approved dates are cleared on the new attempt — the clock starts fresh.
+            </p>
+            <MockShot caption="Same component on v2 with the rejection context banner. Factories see the reason + note read-only so they know what to fix.">
+              <ComponentCardMock
+                name="CHEST EMB"
+                type="strike_off"
+                attempt="v2 ·1"
+                status="OUTSTANDING"
+                rejected={{
+                  reason: 'Placement',
+                  note: "Logo sitting 2cm too low — please raise to spec position.",
+                }}
+              />
+            </MockShot>
+            <Callout type="warn" title="Stuck components need direct attention">
+              Anything on v3+ shows up on the Source Lab Resubmissions dashboard. There's usually a comms issue worth a phone call when things hit a third attempt.
+            </Callout>
+          </Step>
+
+          {/* 5. Catalogue */}
+          <Step number="5.1" title="The Components catalogue">
+            <p>
+              Reachable from <strong>Factory → Components</strong> in the nav. Two-pane layout: the sidebar lists every distinct (name, sample type) combination across your orders. The right pane shows the detail for whichever one you've selected.
+            </p>
+            <MockShot caption="Catalogue sidebar — same name with different SO / LD types appears as separate entries.">
+              <CatalogueSidebarMock />
+            </MockShot>
+            <Tips>
+              <Tip icon={Search}>Search matches name, PO, customer, and Chinese orderbook reference simultaneously.</Tip>
+              <Tip icon={Tag}>Sort by Used (most common at top), Pending (anything unresolved), or A–Z.</Tip>
+              <Tip icon={Tag}>Hide shipped to drop components whose orders are all on a shipment already.</Tip>
+            </Tips>
+          </Step>
+
+          {/* 6. Warnings */}
+          <Step number="6.1" title="When things go overdue">
+            <p>
+              The dashboard Warnings Centre fires automatically based on business-day thresholds:
+            </p>
+            <Table>
+              <TableRow label="Tech Packs Need Sending" value="Order sent to factory 3+ business days ago, tech packs not sent." />
+              <TableRow label="Specs Need Sending" value="Order sent to factory 3+ business days ago, specs not sent." />
+              <TableRow label="Strike Off Overdue" value="Tech packs sent 20+ business days ago (25 for badge / woven label / woven tape), Strike Off not received." />
+              <TableRow label="Strike Off Needs Approval" value="Strike Off received 5+ business days ago, not approved." />
+              <TableRow label="Lab Dip Overdue" value="Tech packs sent 15+ business days ago, Lab Dip not received." />
+              <TableRow label="Lab Dip Needs Approval" value="Lab Dip received 5+ business days ago, not approved." />
+              <TableRow label="Fit Sample Overdue" value="Tech packs sent 15+ business days ago, no Fit Sample received. Order-level." />
+              <TableRow label="PPS Overdue" value="40+ business days since Lab Dip approved, PPS not received. Order-level." />
+              <TableRow label="PPS Needs Approval" value="PPS sent to customer 7+ business days ago, not approved. Order-level." />
+            </Table>
+            <MockShot caption="A warning entry on the Source Lab dashboard — each row shows the PO, style, the affected component, and how long it's been overdue.">
+              <WarningEntryMock />
+            </MockShot>
+            <p className="mt-3"><strong>A warning won't show</strong> when the order is Cancelled / Delivered / Complete, or has a tracking reference (already on a shipment), or the component is NOT REQUIRED / APPROVED.</p>
           </Step>
         </section>
         )}
@@ -902,6 +1095,298 @@ function ConfirmedShipmentMock() {
             <div className="flex items-center justify-between"><span className="text-gray-500">ETA port</span><span className="font-semibold num">9 Jun 2026</span></div>
             <div className="flex items-center justify-between"><span className="text-gray-500">Tracking</span><span className="font-mono text-[10px]">MAEU4892017</span></div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ============== Component mocks (for the Components tab) ============== */
+
+function TypeBadge({ type }: { type: 'strike_off' | 'lab_dip' }) {
+  return (
+    <span
+      className={cn(
+        'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
+        type === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
+      )}
+    >
+      {type === 'strike_off' ? 'SO' : 'LD'}
+    </span>
+  );
+}
+
+function TypeComparisonMock() {
+  return (
+    <div className="p-5 grid grid-cols-2 gap-4">
+      <div className="bg-amber-50/50 rounded-xl ring-1 ring-amber-200 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <TypeBadge type="strike_off" />
+          <span className="text-sm font-bold text-gray-900">Strike Off</span>
+        </div>
+        <p className="text-[11px] text-gray-600 mb-3">Physical fabric / print sample. Sign off the pattern, weave, or print quality.</p>
+        <div className="space-y-1.5">
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Main Fabric</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Rib Fabric</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Chest Print</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Woven Label</div>
+        </div>
+      </div>
+      <div className="bg-cyan-50/50 rounded-xl ring-1 ring-cyan-200 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <TypeBadge type="lab_dip" />
+          <span className="text-sm font-bold text-gray-900">Lab Dip</span>
+        </div>
+        <p className="text-[11px] text-gray-600 mb-3">Colour-match sample. Sign off the exact shade.</p>
+        <div className="space-y-1.5">
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-emerald-500" /> Main Fabric — Bottle Green
+          </div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-amber-400" /> Main Fabric — Mustard
+          </div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-rose-400" /> Trim — Coral
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddTypePickerMock() {
+  return (
+    <div className="p-6">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 max-w-md mx-auto overflow-hidden shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center">
+              <Plus className="w-3.5 h-3.5 text-violet-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-900">Add component</p>
+              <p className="text-[10px] text-gray-500">Pick a type to get started</p>
+            </div>
+          </div>
+          <X className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+        <div className="p-5">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-3">What kind of component?</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-4 border-2 border-violet-300 bg-violet-50/40 rounded-xl">
+              <p className="text-sm font-bold text-gray-900">Strike Off</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Fabric / print sample</p>
+            </div>
+            <div className="p-4 border-2 border-gray-200 rounded-xl">
+              <p className="text-sm font-bold text-gray-900">Lab Dip</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Colour match sample</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddFormMock() {
+  return (
+    <div className="p-6">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 max-w-md mx-auto overflow-hidden shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center">
+              <Plus className="w-3.5 h-3.5 text-violet-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-900">Add component</p>
+              <p className="text-[10px] text-gray-500">2 styles selected</p>
+            </div>
+          </div>
+          <X className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-50 border border-violet-200 rounded text-[10px] font-medium text-violet-800">
+            <span className="uppercase tracking-wide text-[8px] text-violet-500">Type</span>
+            <span>Strike Off</span>
+            <span className="text-violet-400">·</span>
+            <span className="text-violet-500 text-[9px]">change</span>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Component name</p>
+            <div className="px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700">Main Fabric</div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Apply to</p>
+            <div className="space-y-1 text-xs">
+              <div className="px-3 py-1.5 rounded ring-1 ring-violet-300 bg-violet-50/40 text-violet-800 font-medium flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full ring-1 ring-violet-400 bg-violet-300" />
+                All styles on PO 5050 (7 styles)
+              </div>
+              <div className="px-3 py-1.5 rounded text-gray-600 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full ring-1 ring-gray-300" />
+                This style only
+              </div>
+              <div className="px-3 py-1.5 rounded text-gray-600 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full ring-1 ring-gray-300" />
+                Selected styles…
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
+          <button className="px-3 py-1.5 text-[11px] font-medium text-gray-600 border border-gray-300 rounded-md">Cancel</button>
+          <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Add to 7 styles</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComponentCardMock({ name, type, attempt, status, received, approved, rejected }: {
+  name: string;
+  type: 'strike_off' | 'lab_dip';
+  attempt?: string;
+  status: string;
+  received?: string;
+  approved?: string;
+  rejected?: { reason: string; note: string };
+}) {
+  const statusTone: 'green' | 'amber' | 'red' | 'gray' =
+    status.toUpperCase() === 'APPROVED' ? 'green' :
+    status.toUpperCase() === 'REJECTED' ? 'red' :
+    status.toUpperCase() === 'OUTSTANDING' ? 'amber' : 'gray';
+  return (
+    <div className="p-4 bg-gray-50/40">
+      <div className="border border-gray-200 rounded-xl bg-white max-w-xl mx-auto overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ChevronRight className="w-3.5 h-3.5 text-gray-400 rotate-90" />
+            <span className="text-xs font-semibold text-gray-700">{name}</span>
+            <TypeBadge type={type} />
+            {attempt && (
+              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                {attempt}
+              </span>
+            )}
+          </div>
+          <StatusPill tone={statusTone}>
+            {type === 'strike_off' ? 'SO' : 'LD'} {status}
+          </StatusPill>
+        </div>
+        <div className="px-3 py-3 space-y-1.5">
+          <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">{type === 'strike_off' ? 'Strike Off' : 'Lab Dip'}</p>
+          {rejected && (
+            <div className="px-3 py-2 bg-red-50 ring-1 ring-red-200 rounded-md text-[11px] my-2">
+              <p className="font-semibold text-red-900 flex items-center gap-1.5">
+                <RefreshCw className="w-3 h-3" /> v1 rejected — {rejected.reason}
+              </p>
+              <p className="text-red-700 mt-0.5">"{rejected.note}"</p>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
+            <div className="rounded-md px-2 py-1.5 bg-gray-50 ring-1 ring-gray-200">
+              <p className="text-[9px] text-gray-500 uppercase tracking-wide">Status</p>
+              <p className="text-gray-800 font-medium mt-0.5">{status}</p>
+            </div>
+            <div className="rounded-md px-2 py-1.5 bg-gray-50 ring-1 ring-gray-200">
+              <p className="text-[9px] text-gray-500 uppercase tracking-wide">Received</p>
+              <p className="text-gray-800 font-medium mt-0.5">{received || <span className="text-gray-400 italic">—</span>}</p>
+            </div>
+            <div className="rounded-md px-2 py-1.5 bg-gray-50 ring-1 ring-gray-200">
+              <p className="text-[9px] text-gray-500 uppercase tracking-wide">Approved</p>
+              <p className="text-gray-800 font-medium mt-0.5">{approved || <span className="text-gray-400 italic">—</span>}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-3 py-2 border-t border-gray-100 flex justify-end">
+          <span className="text-[10px] text-red-500 flex items-center gap-1">
+            <Trash2 className="w-3 h-3" />
+            Remove
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogueSidebarMock() {
+  const groups: { name: string; type: 'strike_off' | 'lab_dip'; count: number; dot: 'green' | 'amber' | 'gray'; active?: boolean }[] = [
+    { name: 'Main Fabric', type: 'strike_off', count: 12, dot: 'amber' },
+    { name: 'Main Fabric', type: 'lab_dip', count: 12, dot: 'green', active: true },
+    { name: 'Lining', type: 'strike_off', count: 8, dot: 'gray' },
+    { name: 'Chest Emb', type: 'strike_off', count: 5, dot: 'amber' },
+    { name: 'Woven Label', type: 'strike_off', count: 14, dot: 'green' },
+    { name: 'Pocket', type: 'strike_off', count: 3, dot: 'amber' },
+    { name: 'Pocket', type: 'lab_dip', count: 3, dot: 'gray' },
+  ];
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-sm mx-auto">
+        <div className="px-3 py-2 border-b border-gray-100">
+          <div className="relative">
+            <Search className="w-3 h-3 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+            <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[11px] text-gray-400">Search components…</div>
+          </div>
+        </div>
+        <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100 flex items-center gap-2">
+          <span>Sort:</span>
+          <span className="font-semibold text-gray-700">Used</span>
+          <span className="text-gray-300">·</span>
+          <span>Pending</span>
+          <span className="text-gray-300">·</span>
+          <span>A–Z</span>
+        </div>
+        <div className="py-1">
+          {groups.map((g, i) => (
+            <div key={i} className={cn(
+              'px-3 py-2 flex items-center gap-2 text-[11px]',
+              g.active ? 'bg-violet-100/60 text-violet-700' : 'hover:bg-gray-50 text-gray-700'
+            )}>
+              <span className={cn(
+                'w-2 h-2 rounded-full',
+                g.dot === 'green' ? 'bg-green-400' : g.dot === 'amber' ? 'bg-amber-400' : 'bg-gray-300'
+              )} />
+              <span className="flex-1 font-semibold truncate">{g.name}</span>
+              <TypeBadge type={g.type} />
+              <span className={cn(
+                'text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center',
+                g.active ? 'bg-white/70' : 'bg-gray-200 text-gray-600'
+              )}>{g.count}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WarningEntryMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-amber-200 overflow-hidden max-w-2xl mx-auto">
+        <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600" />
+          <div>
+            <p className="text-sm font-bold text-gray-900">Strike Off Needs Approval</p>
+            <p className="text-[11px] text-gray-600">Received 5+ business days ago, not approved</p>
+          </div>
+          <span className="ml-auto text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">3</span>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {[
+            { po: '5098', style: 'S004000A-0003-NEW', cust: 'COLLEGIATE', factory: 'PRIME-23', comp: 'CHEST EMB', days: 18 },
+            { po: '5050', style: 'S005940K-0014-BUB', cust: 'STICHD', factory: 'PRIME-23', comp: 'Main Fabric', days: 12 },
+            { po: '4992', style: 'S004810A-1234-NEW', cust: 'BARBOUR', factory: 'BEIJING TEX', comp: 'Lining', days: 7 },
+          ].map((r, i) => (
+            <div key={i} className="px-4 py-2 flex items-center gap-2 text-[11px]">
+              <span className="font-mono font-semibold text-gray-700 w-12 flex-shrink-0">{r.po}</span>
+              <span className="font-mono text-gray-600 truncate w-44">{r.style}</span>
+              <span className="text-gray-500 truncate flex-1">{r.cust} · {r.factory}</span>
+              <span className="text-gray-700 font-medium">{r.comp}</span>
+              <span className="ml-2 text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">{r.days}d</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

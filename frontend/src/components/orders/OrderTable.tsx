@@ -10,29 +10,12 @@ import { cn, getStatusColor } from '@/lib/utils';
 import { EditableCell } from './EditableCell';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ComponentSampleHover } from './ComponentSampleHover';
-import { AttemptBadge } from '@/components/samples/AttemptBadge';
+import { AttemptBadgeWithTooltip } from '@/components/samples/AttemptBadgeWithTooltip';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { componentsForKind, type SampleKind } from '@/lib/sampleStatus';
 import type { ColumnDef, Order } from '@/types';
 import { COLUMNS, DASHBOARD_COLUMNS, TRACKING_REF_COLUMN, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
 import type { SampleType } from '@/lib/api';
-
-// Status columns that participate in the resubmission flow. The map gives
-// the field-name prefix used to look up the order-level rollup ("v2 ·1") info.
-const SAMPLE_STATUS_COLS_TO_PREFIX: Record<string, 'fit_sample' | 'strike_off' | 'lab_dip' | 'pps'> = {
-  fit_sample_status: 'fit_sample',
-  strike_off_status: 'strike_off',
-  lab_dip_status: 'lab_dip',
-  pps_status: 'pps',
-};
-
-function getOrderAttemptInfo(order: Order, colKey: string): { attemptNo: number; rejectionCount: number } | null {
-  const prefix = SAMPLE_STATUS_COLS_TO_PREFIX[colKey];
-  if (!prefix) return null;
-  const attemptNo = (order as any)[`${prefix}_attempt_no`] as number | undefined;
-  const rejectionCount = (order as any)[`${prefix}_rejection_count`] as number | undefined;
-  return { attemptNo: attemptNo ?? 1, rejectionCount: rejectionCount ?? 0 };
-}
 
 // Map per-component column keys to (kind, field) for the hover summary
 // renderer. Only Strike Off and Lab Dip live on components — Fit Sample and
@@ -745,10 +728,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                       ) : isDashboard ? (
                         <div className="px-1 py-1 truncate text-[10px] flex items-center gap-1">
                           <span className="truncate">{formatCellValue(order[column.key as keyof Order], column)}</span>
-                          {(() => {
-                            const info = getOrderAttemptInfo(order, column.key);
-                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" /> : null;
-                          })()}
+                          <AttemptBadgeWithTooltip order={order} columnKey={column.key as string} />
                         </div>
                       ) : COMPONENT_COLUMN_MAP[column.key] && order.components && componentsForKind(order.components, COMPONENT_COLUMN_MAP[column.key].kind).length > 0 ? (
                         // Only render the components rollup when there's at
@@ -762,10 +742,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                             kind={COMPONENT_COLUMN_MAP[column.key].kind}
                             field={COMPONENT_COLUMN_MAP[column.key].field}
                           />
-                          {(() => {
-                            const info = getOrderAttemptInfo(order, column.key);
-                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" /> : null;
-                          })()}
+                          <AttemptBadgeWithTooltip order={order} columnKey={column.key as string} />
                         </div>
                       ) : (
                         <div className="flex items-center gap-1">
@@ -786,10 +763,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                               pendingChange={pendingChanges[order.id]?.[column.key]}
                             />
                           </div>
-                          {(() => {
-                            const info = getOrderAttemptInfo(order, column.key);
-                            return info ? <AttemptBadge attemptNo={info.attemptNo} rejectionCount={info.rejectionCount} size="xs" className="mr-1 flex-shrink-0" /> : null;
-                          })()}
+                          <AttemptBadgeWithTooltip order={order} columnKey={column.key as string} className="mr-1 flex-shrink-0" />
                         </div>
                       )}
                     </td>

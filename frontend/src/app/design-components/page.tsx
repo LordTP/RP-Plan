@@ -122,6 +122,10 @@ type Group = {
 
 function DesignComponentsContent() {
   const { user } = useStore();
+  // Suppliers reach this page via the Factory dropdown. They can use the
+  // catalogue to browse + add components on their own orders, but bulk
+  // sample-field updates are admin-only.
+  const isSupplier = user?.role === 'supplier';
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -524,8 +528,10 @@ function DesignComponentsContent() {
                       </div>
                     </div>
                   </div>
-                  {/* Bulk action bar (appears when rows are selected) */}
-                  {selectedComponentIds.size > 0 && (
+                  {/* Bulk action bar (appears when rows are selected).
+                      Hidden for suppliers — every action it offers writes
+                      sample-lifecycle fields which Source Lab owns. */}
+                  {!isSupplier && selectedComponentIds.size > 0 && (
                     <BulkActionBar
                       count={selectedComponentIds.size}
                       onClear={() => setSelectedComponentIds(new Set())}

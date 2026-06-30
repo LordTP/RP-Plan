@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { componentsApi, submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
 import { SAMPLE_STATUS_OPTIONS } from '@/types';
 import type { Order, OrderComponent } from '@/types';
+import { useStore } from '@/store/useStore';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
@@ -38,6 +39,11 @@ const SAMPLE_AREAS: { type: SampleType; prefix: string; label: string; }[] = [
 ];
 
 export function ComponentEditModal({ open, order, component, onClose, onUpdated, onOpenFullOrder }: Props) {
+  // Suppliers see the modal in read-only mode for sample fields. They get
+  // the full context (status, dates, attempt history, rejection reason)
+  // but can't change the lifecycle — Source Lab owns sign-off.
+  const { user: currentUser } = useStore();
+  const isSupplierUser = currentUser?.role === 'supplier';
   const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
@@ -333,31 +339,49 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
 
                 <div className="px-4 py-3 grid grid-cols-3 gap-3">
                   <FieldBlock label="Status" saving={savingField === `${prefix}_status`}>
-                    <select
-                      value={status || ''}
-                      onChange={(e) => onStatusChange(type, prefix, e.target.value)}
-                      disabled={savingField === `${prefix}_status`}
-                      className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50"
-                    >
-                      <option value="">— Not set —</option>
-                      {SAMPLE_STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    {isSupplierUser ? (
+                      <div className="w-full text-xs px-2 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700">
+                        {status || <span className="text-gray-400 italic">— Not set —</span>}
+                      </div>
+                    ) : (
+                      <select
+                        value={status || ''}
+                        onChange={(e) => onStatusChange(type, prefix, e.target.value)}
+                        disabled={savingField === `${prefix}_status`}
+                        className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50"
+                      >
+                        <option value="">— Not set —</option>
+                        {SAMPLE_STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    )}
                   </FieldBlock>
                   <FieldBlock label="Received" saving={savingField === `${prefix}_received`}>
-                    <DatePickerInput
-                      value={received ? received.split('T')[0] : ''}
-                      onChange={(v) => saveField(`${prefix}_received`, v || null)}
-                      variant="block"
-                      size="sm"
-                    />
+                    {isSupplierUser ? (
+                      <div className="w-full text-xs px-2 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700">
+                        {received ? format(parseISO(received), 'd MMM yyyy') : <span className="text-gray-400 italic">—</span>}
+                      </div>
+                    ) : (
+                      <DatePickerInput
+                        value={received ? received.split('T')[0] : ''}
+                        onChange={(v) => saveField(`${prefix}_received`, v || null)}
+                        variant="block"
+                        size="sm"
+                      />
+                    )}
                   </FieldBlock>
                   <FieldBlock label="Approved" saving={savingField === `${prefix}_approved`}>
-                    <DatePickerInput
-                      value={approved ? approved.split('T')[0] : ''}
-                      onChange={(v) => saveField(`${prefix}_approved`, v || null)}
-                      variant="block"
-                      size="sm"
-                    />
+                    {isSupplierUser ? (
+                      <div className="w-full text-xs px-2 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700">
+                        {approved ? format(parseISO(approved), 'd MMM yyyy') : <span className="text-gray-400 italic">—</span>}
+                      </div>
+                    ) : (
+                      <DatePickerInput
+                        value={approved ? approved.split('T')[0] : ''}
+                        onChange={(v) => saveField(`${prefix}_approved`, v || null)}
+                        variant="block"
+                        size="sm"
+                      />
+                    )}
                   </FieldBlock>
                 </div>
 

@@ -16,6 +16,22 @@ from sample_helpers import (
     reconcile_sample_status,
     SAMPLE_PREFIXES_COMPONENT,
 )
+from supplier_access import assert_supplier_can_access, apply_supplier_filter
+
+
+# Sample-tracking fields suppliers cannot touch — those belong to the
+# sign-off lifecycle Source Lab owns. Suppliers manage the catalogue
+# (add / rename / delete) but never write Status / Received / Approved.
+SUPPLIER_FORBIDDEN_FIELDS = {
+    'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
+    'strike_off_status', 'strike_off_received', 'strike_off_approved',
+    'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+}
+
+
+def _is_supplier(user: User) -> bool:
+    role_str = str(user.role.value if hasattr(user.role, 'value') else user.role).lower()
+    return role_str == 'supplier'
 
 
 router = APIRouter()
@@ -75,6 +91,13 @@ def _last_rejection_by_key(
     else:
         q = q.filter(SampleSubmission.order_id.in_(order_ids))
     rows = q.order_by(SampleSubmission.attempt_no.asc()).all()
+    # Resolve actioned_by_id → username in one shot for the tooltip's
+    # "who rejected" line. Map lookup is cheap; no per-row query needed.
+    user_ids = {r.actioned_by_id for r in rows if r.actioned_by_id is not None}
+    usernames_by_id: Dict[int, str] = {}
+    if user_ids:
+        for uid, uname in db.query(User.id, User.username).filter(User.id.in_(user_ids)).all():
+            usernames_by_id[uid] = uname
     out: Dict[Tuple[int, Optional[int], str], dict] = {}
     for r in rows:
         # Latest wins — keep overwriting, end up with highest attempt_no per key.
@@ -84,6 +107,7 @@ def _last_rejection_by_key(
             'notes': r.notes,
             'rejected_at': r.resolved_at.isoformat() if r.resolved_at else None,
             'photo_url': r.photo_url,
+            'rejected_by': usernames_by_id.get(r.actioned_by_id) if r.actioned_by_id else None,
         }
     return out
 
@@ -246,11 +270,22 @@ async def create_component(
 ):
     """Add a component to an order. Each component is strictly one sample
     type (Strike Off or Lab Dip) — fields for the "other" type are ignored
-    on create so a confused client can't seed orphan data."""
+    on create so a confused client can't seed orphan data.
+
+    Suppliers can create components on their own factory's orders. They
+    can't seed sample-lifecycle fields (status / received / approved) on
+    creation — those stay Source Lab's call."""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    assert_supplier_can_access(order, current_user)
     create_data = data.model_dump(exclude_unset=True)
+    # Strip sample-lifecycle fields from supplier creates — they manage
+    # the catalogue, not the sample sign-off.
+    if _is_supplier(current_user):
+        for f in list(create_data.keys()):
+            if f in SUPPLIER_FORBIDDEN_FIELDS:
+                create_data.pop(f, None)
     # Drop fields that belong to the OTHER sample type so we never persist
     # stale data outside the component's chosen lane.
     sample_type = create_data.get('sample_type', 'strike_off')
@@ -277,7 +312,22 @@ async def update_component(
     component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
+    # Supplier scoping — they can only update components on their own
+    # factory's orders.
+    parent_order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
+    if parent_order is None:
+        raise HTTPException(status_code=404, detail="Parent order not found")
+    assert_supplier_can_access(parent_order, current_user)
     update_data = data.model_dump(exclude_unset=True)
+    # Suppliers can rename and re-scope but not touch sample lifecycle
+    # fields — those are Source Lab's call.
+    if _is_supplier(current_user):
+        forbidden = [k for k in update_data if k in SUPPLIER_FORBIDDEN_FIELDS]
+        if forbidden:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Suppliers can't edit sample lifecycle fields: {forbidden}. Only Source Lab can mark received / approved / rejected.",
+            )
     # Reject edits to fields that don't belong to this component's sample
     # type. Strike-off components can't have lab_dip fields touched, and
     # vice versa. Returning a clean 400 is easier to debug than silently
@@ -349,7 +399,15 @@ async def bulk_update_components(
     }
 
     Returns a row-level summary (what changed vs what stayed the same).
+
+    Suppliers can't call this — every field it allows is a sample-lifecycle
+    field, which Source Lab owns. They get a clean 403.
     """
+    if _is_supplier(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Suppliers can't bulk-update sample fields. Sample sign-off (received / approved) is managed by Source Lab.",
+        )
     component_ids = data.get("component_ids") or []
     field = data.get("field")
     value = data.get("value")
@@ -453,10 +511,14 @@ async def delete_component(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a component"""
+    """Delete a component. Suppliers can only delete components on their
+    own factory's orders."""
     component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
+    parent_order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
+    if parent_order is not None:
+        assert_supplier_can_access(parent_order, current_user)
     db.delete(component)
     db.commit()
 
@@ -468,13 +530,11 @@ async def cross_po_add_component(
     current_user: User = Depends(get_current_user)
 ):
     """Add a component (by name) to any set of styles, regardless of which PO
-    they belong to. Used by the /design-components page's bulk "Add component"
-    modal. Designers + internal/admin only — suppliers can't manage components.
-    Skips orders that already have a component with the same name (no dupes)."""
-    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
-    if role_str == 'supplier':
-        raise HTTPException(status_code=403, detail="Suppliers can't manage components")
-
+    they belong to. Used by the /design-components page and /factory-components
+    page's bulk "Add component" modal. Suppliers can use this against their own
+    factory's orders only — non-matching target IDs are silently dropped from
+    the set rather than rejecting the whole request, so a stale picker doesn't
+    fail awkwardly. Skips orders that already have a (name, sample_type) match."""
     body = await request.json()
     name = (body.get("name") or "").strip()
     order_ids = body.get("order_ids") or []
@@ -486,7 +546,11 @@ async def cross_po_add_component(
     if not isinstance(order_ids, list) or not order_ids:
         raise HTTPException(status_code=400, detail="At least one order id is required")
 
-    target_orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+    # Apply supplier factory filter so they can only ever land components on
+    # their own orders — no leakage even if the picker sends stale IDs.
+    target_orders_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
+    target_orders_q = apply_supplier_filter(target_orders_q, current_user)
+    target_orders = target_orders_q.all()
     if not target_orders:
         raise HTTPException(status_code=404, detail="No matching orders found")
 
@@ -517,7 +581,8 @@ async def bulk_add_component(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Add a component to selected styles or all styles on the same PO"""
+    """Add a component to selected styles or all styles on the same PO.
+    Suppliers can only target their own factory's orders."""
     body = await request.json()
     name = body.get("name")
     sample_type = body.get("sample_type", "strike_off")
@@ -528,12 +593,16 @@ async def bulk_add_component(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    # If order_ids provided, use those; otherwise all styles on PO
+    assert_supplier_can_access(order, current_user)
+    # If order_ids provided, use those; otherwise all styles on PO. Either
+    # way, supplier_filter trims to their factory so a stale picker can't
+    # leak components onto another factory's orders.
     order_ids = body.get("order_ids")
     if order_ids:
-        sibling_orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+        sibling_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
     else:
-        sibling_orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == order.po_number).all()
+        sibling_q = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == order.po_number)
+    sibling_orders = apply_supplier_filter(sibling_q, current_user).all()
     created = 0
     for sib in sibling_orders:
         # Dedupe per (name, sample_type) so "Pocket" can exist as both Strike
@@ -558,7 +627,10 @@ async def apply_component_field_to_po(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Apply a component field update to matching components (same name) on selected or all styles on the PO"""
+    """Apply a component field update to matching components (same name) on
+    selected or all styles on the PO. Suppliers can apply rename / scope-add
+    operations on their own factory's siblings but can't push sample-lifecycle
+    field changes through this endpoint."""
     body = await request.json()
     component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
     if not component:
@@ -566,12 +638,25 @@ async def apply_component_field_to_po(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    # If order_ids provided, scope to those; otherwise all on PO
+    assert_supplier_can_access(order, current_user)
+    # Suppliers can't push sample-lifecycle field updates through here either
+    # — same rule as the single-component PUT.
+    if _is_supplier(current_user):
+        forbidden = [k for k in body if k in SUPPLIER_FORBIDDEN_FIELDS]
+        if forbidden:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Suppliers can't apply sample lifecycle fields to siblings: {forbidden}.",
+            )
+    # If order_ids provided, scope to those; otherwise all on PO.
+    # Factory-scope the sibling list so suppliers can't reach other
+    # factories' orders via a stale id list.
     selected_ids = body.pop("order_ids", None)
     if selected_ids:
-        sibling_ids = selected_ids
+        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.id.in_(selected_ids))
     else:
-        sibling_ids = [o.id for o in db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number).all()]
+        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number)
+    sibling_ids = [r[0] for r in apply_supplier_filter(sibling_ids_q, current_user).all()]
     # Match by name AND sample_type so we only apply to siblings of the same
     # type as the source. e.g. updating a strike-off "Pocket" component
     # doesn't touch a lab-dip "Pocket" component on a sibling order.

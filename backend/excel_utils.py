@@ -1418,6 +1418,52 @@ def export_database_to_excel(
         """Translate a TEMPLATE_COLUMN_MAP index to its post-insert position."""
         return col_idx + 1 if col_idx >= STYLE_COL else col_idx
 
+    # Pre-load components per order so the cell-write loop doesn't N+1.
+    # Grouped by (order_id, sample_type) — strike_off cells only get
+    # strike_off components, lab_dip cells only get lab_dip components.
+    from models import OrderComponent as _OrderComponent
+    from collections import defaultdict
+    _po_ids = [p.id for p in pos]
+    _components_by_order_and_type: dict = defaultdict(list)
+    if _po_ids:
+        _all_comps = (
+            db.query(_OrderComponent)
+            .filter(_OrderComponent.order_id.in_(_po_ids))
+            .order_by(_OrderComponent.name.asc(), _OrderComponent.id.asc())
+            .all()
+        )
+        for _c in _all_comps:
+            _components_by_order_and_type[(_c.order_id, _c.sample_type)].append(_c)
+
+    # Field-name → (sample_type, component-attribute) lookup. Cells for these
+    # fields are component-rolled-up for orders that HAVE components of the
+    # matching type; orders without components fall through to the regular
+    # order-level value.
+    _COMPONENT_ROLLUP_FIELDS = {
+        'strike_off_status':   ('strike_off', 'strike_off_status'),
+        'strike_off_received': ('strike_off', 'strike_off_received'),
+        'strike_off_approved': ('strike_off', 'strike_off_approved'),
+        'lab_dip_status':      ('lab_dip',    'lab_dip_status'),
+        'lab_dip_received':    ('lab_dip',    'lab_dip_received'),
+        'lab_dip_approved':    ('lab_dip',    'lab_dip_approved'),
+    }
+
+    def _component_rollup_cell(po, field_name: str, field_type: str) -> str:
+        """Build the cell content for a component-rolled-up field. Returns
+        a string like 'Main Fabric: APPROVED · Lining: OUTSTANDING' so the
+        user can read the per-component detail straight from Excel."""
+        sample_type, attr = _COMPONENT_ROLLUP_FIELDS[field_name]
+        comps = _components_by_order_and_type.get((po.id, sample_type), [])
+        parts = []
+        for c in comps:
+            val = getattr(c, attr, None)
+            if field_type == 'date':
+                display = format_date(val) or '—'
+            else:
+                display = str(val) if val else '—'
+            parts.append(f"{c.name}: {display}")
+        return ' · '.join(parts)
+
     for row_offset, po in enumerate(pos):
         row_idx = data_start_row + row_offset
 
@@ -1429,8 +1475,21 @@ def export_database_to_excel(
         style_cell.border = thin_border
 
         for field_name, col_idx in TEMPLATE_COLUMN_MAP.items():
-            value = getattr(po, field_name, None)
             field_type = FIELD_TYPES.get(field_name, "text")
+
+            # Strike Off / Lab Dip cells: if this order has components of
+            # the matching type, write the per-component rollup string
+            # instead of the order-level value (which is usually blank).
+            if field_name in _COMPONENT_ROLLUP_FIELDS:
+                sample_type, _ = _COMPONENT_ROLLUP_FIELDS[field_name]
+                if _components_by_order_and_type.get((po.id, sample_type)):
+                    cell_value = _component_rollup_cell(po, field_name, field_type)
+                    cell = ws.cell(row_idx, _shift(col_idx), cell_value)
+                    cell.border = thin_border
+                    cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                    continue
+
+            value = getattr(po, field_name, None)
 
             # Format value based on type
             if field_type == "date":

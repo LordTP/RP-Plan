@@ -174,7 +174,7 @@ const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: 'Full reference',
         content: [
-          'For a top-to-bottom walkthrough — type picker, scope rules, the full sample lifecycle, the rework / v2 flow, the Design → Components catalogue, and every dashboard warning threshold — see the dedicated Components Guide at Design → Components Guide.',
+          'For a top-to-bottom walkthrough — type picker, scope rules, the full sample lifecycle, the rework / v2 flow, the Design → Components catalogue, and every dashboard warning threshold — see the Components tab inside Factory → Guide. Same content, written so both Source Lab and factory users get it.',
         ],
       },
     ],
