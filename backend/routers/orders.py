@@ -942,11 +942,12 @@ async def bulk_update_date(
     # Text fields with dropdown options that support bulk update
     dropdown_text_fields = [
         'fcl_lcl',
+        'fit_sample_required',
         'fit_sample_status', 'strike_off_status', 'lab_dip_status', 'pps_status',
     ]
 
     if field_name not in date_fields and field_name not in dropdown_text_fields:
-        raise HTTPException(status_code=400, detail=f"Invalid field for bulk update")
+        raise HTTPException(status_code=400, detail=f"Field '{field_name}' is not enabled for bulk update")
 
     # Parse the new value — date or text
     is_text_field = field_name in dropdown_text_fields

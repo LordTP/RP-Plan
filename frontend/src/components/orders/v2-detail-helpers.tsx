@@ -85,7 +85,10 @@ export function InlineBulkScopeEditor({
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel, saving]);
 
-  // Fetch siblings on the same PO (excluding the current order)
+  // Fetch siblings on the same PO (excluding the current order). Start
+  // with NOTHING pre-selected — otherwise switching to 'Select specific
+  // styles' opens with every sibling already ticked, and the user has to
+  // untick the ones they don't want (the opposite of what they expect).
   useEffect(() => {
     if (!ctx) return;
     let cancelled = false;
@@ -95,7 +98,7 @@ export function InlineBulkScopeEditor({
         if (cancelled) return;
         const others = res.orders.filter((o) => o.id !== ctx.currentOrderId);
         setSiblings(others);
-        setSelectedIds(new Set(others.map((o) => o.id)));
+        setSelectedIds(new Set());
       })
       .catch(() => { /* silent */ })
       .finally(() => { if (!cancelled) setLoading(false); });
