@@ -125,6 +125,11 @@ async def get_dashboard_warnings(
     for o in all_orders:
         if not o.tech_packs_sent_to_factory:
             continue
+        # Explicit Required=N drops the row from fit-sample warnings even if
+        # the status auto-flip to NOT REQUIRED never ran (legacy data /
+        # direct DB writes). is_sample_done alone can't catch that case.
+        if (o.fit_sample_required or '').strip().upper() == 'N':
+            continue
         days_since = business_days_between(o.tech_packs_sent_to_factory, now)
         if days_since < 15:
             continue
