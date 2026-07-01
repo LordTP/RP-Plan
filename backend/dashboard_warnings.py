@@ -121,47 +121,29 @@ async def get_dashboard_warnings(
         })
 
     # --- Warning 3: Fit Sample Overdue ---
+    # Fit samples are order-level only — the earlier per-component version
+    # is legacy from before we moved fit to the style/order. Components
+    # (Strike Off / Lab Dip) have their own separate warnings below.
     fit_sample_overdue = []
     for o in all_orders:
         if not o.tech_packs_sent_to_factory:
             continue
-        # Explicit Required=N drops the row from fit-sample warnings even if
-        # the status auto-flip to NOT REQUIRED never ran (legacy data /
-        # direct DB writes). is_sample_done alone can't catch that case.
         if (o.fit_sample_required or '').strip().upper() == 'N':
             continue
         days_since = business_days_between(o.tech_packs_sent_to_factory, now)
         if days_since < 15:
             continue
-
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
-
-        if components:
-            for comp in components:
-                if is_sample_done(comp.fit_sample_status, comp.fit_sample_approved):
-                    continue
-                if not comp.fit_sample_received:
-                    fit_sample_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if is_sample_done(o.fit_sample_status, o.fit_sample_approved):
-                continue
-            if not o.fit_sample_received:
-                fit_sample_overdue.append({
-                    "order_id": o.id,
-                    "po_number": o.po_number,
-                    "style_code": o.style_code,
-                    "customer": o.customer,
-                    "factory": o.factory,
-                    "days_since": days_since,
-                })
+        if is_sample_done(o.fit_sample_status, o.fit_sample_approved):
+            continue
+        if not o.fit_sample_received:
+            fit_sample_overdue.append({
+                "order_id": o.id,
+                "po_number": o.po_number,
+                "style_code": o.style_code,
+                "customer": o.customer,
+                "factory": o.factory,
+                "days_since": days_since,
+            })
     fit_sample_overdue.sort(key=lambda x: x["days_since"], reverse=True)
 
     if fit_sample_overdue:
