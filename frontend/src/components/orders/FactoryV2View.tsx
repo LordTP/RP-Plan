@@ -154,7 +154,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('open');
   const [statuses, setStatuses] = useState<string[]>([]);
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
@@ -225,7 +225,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       );
     }
 
-    if (statusFilter !== 'all') {
+    // 'open' = anything not shipped/done, so mixed POs still surface via
+    // their non-shipped lines. 'shipped' isolates shipped only.
+    const TERMINAL_STATUSES = new Set(['Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled']);
+    if (statusFilter === 'open') {
+      filtered = filtered.filter(o => !TERMINAL_STATUSES.has(o.status || ''));
+    } else if (statusFilter === 'shipped') {
+      filtered = filtered.filter(o => o.status === 'Shipped');
+    } else if (statusFilter !== 'all') {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
@@ -275,10 +282,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   }, [orders, searchQuery, statusFilter]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: orders.length };
+    // Line-level counts (this view aggregates by line, not PO).
+    const TERMINAL_STATUSES = new Set(['Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled']);
+    const counts: Record<string, number> = { all: orders.length, open: 0, shipped: 0 };
     for (const o of orders) {
       const s = o.status || 'Unknown';
       counts[s] = (counts[s] || 0) + 1;
+      if (!TERMINAL_STATUSES.has(o.status || '')) counts.open += 1;
+      if (o.status === 'Shipped') counts.shipped += 1;
     }
     return counts;
   }, [orders]);
@@ -850,16 +861,16 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           {/* Status Chips */}
           <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
             <button
-              onClick={() => setStatusFilter('all')}
+              onClick={() => setStatusFilter('open')}
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                statusFilter === 'all'
+                statusFilter === 'open'
                   ? 'bg-gray-900 text-white border-gray-900'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
               )}
             >
-              All Orders
-              <span className="ml-1.5 opacity-70">{statusCounts.all || 0}</span>
+              Open Orders
+              <span className="ml-1.5 opacity-70">{statusCounts.open || 0}</span>
             </button>
             {statuses.filter(s => s !== 'Shipped').map(status => {
               const style = getStatusStyle(status);
@@ -868,7 +879,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
               return (
                 <button
                   key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'all' : status)}
+                  onClick={() => setStatusFilter(statusFilter === status ? 'open' : status)}
                   className={cn(
                     'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
                     statusFilter === status
@@ -882,6 +893,24 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                 </button>
               );
             })}
+            {(statusCounts.shipped || 0) > 0 && (() => {
+              const style = getStatusStyle('Shipped');
+              return (
+                <button
+                  onClick={() => setStatusFilter(statusFilter === 'shipped' ? 'open' : 'shipped')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
+                    statusFilter === 'shipped'
+                      ? `${style.bg} ${style.text} border-current`
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
+                  Shipped
+                  <span className="ml-1.5 opacity-70">{statusCounts.shipped}</span>
+                </button>
+              );
+            })()}
           </div>
 
           {/* Summary Bar */}

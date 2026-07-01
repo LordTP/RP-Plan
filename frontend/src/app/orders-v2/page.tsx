@@ -154,7 +154,7 @@ function OrdersV2Content() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('open');
   const [statuses, setStatuses] = useState<string[]>([]);
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
@@ -249,8 +249,16 @@ function OrdersV2Content() {
       );
     }
 
-    // Status filter
-    if (statusFilter !== 'all') {
+    // Status filter — 'open' hides shipped/done lines so mixed POs still
+    // appear in Open (their non-shipped lines form the group). 'shipped'
+    // is the counterpart chip. 'all' is unreachable from the UI but kept
+    // as a defensive escape hatch.
+    const TERMINAL_STATUSES = new Set(['Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled']);
+    if (statusFilter === 'open') {
+      filtered = filtered.filter(o => !TERMINAL_STATUSES.has(o.status || ''));
+    } else if (statusFilter === 'shipped') {
+      filtered = filtered.filter(o => o.status === 'Shipped');
+    } else if (statusFilter !== 'all') {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
@@ -308,13 +316,17 @@ function OrdersV2Content() {
 
   // Status counts for chips
   const statusCounts = useMemo(() => {
-    // Count unique POs per status, not individual lines
-    const posByStatus: Record<string, Set<string>> = { all: new Set() };
+    // Count unique POs per status, not individual lines. 'open' and
+    // 'shipped' are synthetic buckets driving the top-level chips.
+    const TERMINAL_STATUSES = new Set(['Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled']);
+    const posByStatus: Record<string, Set<string>> = { all: new Set(), open: new Set(), shipped: new Set() };
     for (const o of orders) {
       posByStatus.all.add(o.po_number);
       const s = o.status || 'Unknown';
       if (!posByStatus[s]) posByStatus[s] = new Set();
       posByStatus[s].add(o.po_number);
+      if (!TERMINAL_STATUSES.has(o.status || '')) posByStatus.open.add(o.po_number);
+      if (o.status === 'Shipped') posByStatus.shipped.add(o.po_number);
     }
     const counts: Record<string, number> = {};
     for (const [k, v] of Object.entries(posByStatus)) {
@@ -462,16 +474,16 @@ function OrdersV2Content() {
           {/* Status Chips */}
           <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
             <button
-              onClick={() => setStatusFilter('all')}
+              onClick={() => setStatusFilter('open')}
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                statusFilter === 'all'
+                statusFilter === 'open'
                   ? 'bg-gray-900 text-white border-gray-900'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
               )}
             >
-              All Orders
-              <span className="ml-1.5 opacity-70">{statusCounts.all || 0}</span>
+              Open Orders
+              <span className="ml-1.5 opacity-70">{statusCounts.open || 0}</span>
             </button>
             {statuses.filter(s => s !== 'Shipped').map(status => {
               const style = getStatusStyle(status);
@@ -480,7 +492,7 @@ function OrdersV2Content() {
               return (
                 <button
                   key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'all' : status)}
+                  onClick={() => setStatusFilter(statusFilter === status ? 'open' : status)}
                   className={cn(
                     'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
                     statusFilter === status
@@ -494,6 +506,24 @@ function OrdersV2Content() {
                 </button>
               );
             })}
+            {(statusCounts.shipped || 0) > 0 && (() => {
+              const style = getStatusStyle('Shipped');
+              return (
+                <button
+                  onClick={() => setStatusFilter(statusFilter === 'shipped' ? 'open' : 'shipped')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
+                    statusFilter === 'shipped'
+                      ? `${style.bg} ${style.text} border-current`
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
+                  Shipped
+                  <span className="ml-1.5 opacity-70">{statusCounts.shipped}</span>
+                </button>
+              );
+            })()}
           </div>
 
           {/* Summary Bar */}
