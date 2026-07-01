@@ -718,6 +718,29 @@ async def update_order(
             if key in STATUS_FIELD_TO_SAMPLE_TYPE:
                 sync_submission_on_status_change(db, order, None, key, value, current_user.id)
 
+    # Auto-flip status to 'Shipped' whenever a tracking_reference is written.
+    # The /orders Shipped tab filters purely on tracking_reference IS NOT NULL,
+    # so status must follow or rows drift into a state where they show as
+    # shipped in one place and OUTSTANDING elsewhere (warning centre, analytics).
+    # Only fires when tracking_reference is in THIS payload — avoids silently
+    # mutating status on unrelated edits.
+    _TERMINAL_STATUSES = {'Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled'}
+    if 'tracking_reference' in order_data:
+        _incoming_tr = order_data.get('tracking_reference')
+        if _incoming_tr and str(_incoming_tr).strip() and order.status not in _TERMINAL_STATUSES:
+            _old_status = order.status
+            _role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+            _change_source = "Sourcelab" if _role_val != 'supplier' else "Supplier"
+            db.add(DateChangeHistory(
+                po_id=order.id,
+                user_id=current_user.id,
+                field_name='status',
+                old_value=str(_old_status) if _old_status is not None else None,
+                new_value='Shipped',
+                source=_change_source,
+            ))
+            order.status = 'Shipped'
+
     # Fit Sample Required = N → force fit_sample_status to NOT REQUIRED.
     # Records the derived status change in history so the activity feed
     # reflects it. No-op when status is already NOT REQUIRED.
