@@ -194,7 +194,9 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const loadOrders = useCallback(async (filters?: OrderFilters) => {
     setIsLoading(true);
     try {
-      const response = await ordersApi.getOrders(1, 500, filters || {});
+      // Same reason as /orders-v2 — client-side grouping + search need the
+      // full working set so cross-book search always finds a matching PO.
+      const response = await ordersApi.getOrders(1, 5000, filters || {});
       setOrders(response.orders);
       setTotalOrders(response.total);
     } catch (error) {

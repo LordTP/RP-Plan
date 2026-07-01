@@ -177,7 +177,10 @@ function OrdersV2Content() {
   const loadOrders = useCallback(async (filters?: OrderFilters) => {
     setIsLoading(true);
     try {
-      const response = await ordersApi.getOrders(1, 500, filters || {});
+      // V2 groups POs client-side and lets users search across every order,
+      // so we need the full working set on load — lazy load would silently
+      // hide POs that match a search. Bumped once we crossed ~700 orders.
+      const response = await ordersApi.getOrders(1, 5000, filters || {});
       if (isFactoryView) {
         setLocalOrders(response.orders);
         setLocalTotal(response.total);
