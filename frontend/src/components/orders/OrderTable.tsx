@@ -204,7 +204,11 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           onReachEnd();
         }
       },
-      { root, threshold: 0.1, rootMargin: '200px' },
+      // Vertical margin = pre-load trigger distance. Horizontal is inflated
+      // to effectively infinity so the sentinel is always considered in-view
+      // horizontally — otherwise scrolling right shifts the sentinel out of
+      // the viewport and vertical scroll stops triggering the next page.
+      { root, threshold: 0, rootMargin: '200px 9999px 200px 9999px' },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
