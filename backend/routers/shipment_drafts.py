@@ -506,6 +506,23 @@ async def update_confirmed_shipping(
             days = 7 if mode == 'LCL' else 2 if mode == 'AIR' else 5
             order.estimated_del_to_customer = vessel_eta + timedelta(days=days)
 
+        # Auto-flip status to 'Shipped' whenever tracking_reference is applied.
+        # Same guard as /confirm — keeps status in sync with the Shipped tab
+        # filter (which is purely tracking_reference IS NOT NULL).
+        _TERMINAL_STATUSES = {'Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled'}
+        _tr = draft.tracking_reference
+        if _tr and str(_tr).strip() and order.status not in _TERMINAL_STATUSES:
+            _old_status = order.status
+            db.add(DateChangeHistory(
+                po_id=order.id,
+                user_id=current_user.id,
+                field_name='status',
+                old_value=str(_old_status) if _old_status is not None else None,
+                new_value='Shipped',
+                source=role_label,
+            ))
+            order.status = 'Shipped'
+
     db.commit()
     db.refresh(draft)
     return _serialize_draft(db, draft, include_orders=True)
@@ -572,6 +589,23 @@ async def confirm_draft(
             mode = (order.fcl_lcl or '').strip().upper()
             days = 7 if mode == 'LCL' else 2 if mode == 'AIR' else 5
             order.estimated_del_to_customer = vessel_eta + timedelta(days=days)
+
+        # Auto-flip status to 'Shipped' whenever the draft pushed a
+        # tracking_reference onto the order. The /orders Shipped tab filters
+        # purely on tracking_reference IS NOT NULL, so status must follow.
+        _TERMINAL_STATUSES = {'Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled'}
+        _tr = draft.tracking_reference
+        if _tr and str(_tr).strip() and order.status not in _TERMINAL_STATUSES:
+            _old_status = order.status
+            db.add(DateChangeHistory(
+                po_id=order.id,
+                user_id=current_user.id,
+                field_name='status',
+                old_value=str(_old_status) if _old_status is not None else None,
+                new_value='Shipped',
+                source=role_label,
+            ))
+            order.status = 'Shipped'
 
     draft.status = 'confirmed'
     draft.confirmed_at = now
