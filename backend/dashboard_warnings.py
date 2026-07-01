@@ -157,6 +157,10 @@ async def get_dashboard_warnings(
         })
 
     # --- Warning 4: Lab Dip Overdue ---
+    # Only components with sample_type == 'lab_dip' can produce a lab dip
+    # warning. An order without any lab-dip components has nothing to be
+    # overdue on — the earlier order-level fallback is legacy from the
+    # pre-component-split shape.
     lab_dip_overdue = []
     for o in all_orders:
         if not o.tech_packs_sent_to_factory:
@@ -165,32 +169,22 @@ async def get_dashboard_warnings(
         if days_since < 15:
             continue
 
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        components = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.sample_type == 'lab_dip',
+        ).all()
 
-        if components:
-            for comp in components:
-                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
-                    continue
-                if not comp.lab_dip_received:
-                    lab_dip_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
+        for comp in components:
+            if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
                 continue
-            if not o.lab_dip_received:
+            if not comp.lab_dip_received:
                 lab_dip_overdue.append({
                     "order_id": o.id,
                     "po_number": o.po_number,
                     "style_code": o.style_code,
                     "customer": o.customer,
                     "factory": o.factory,
+                    "component": comp.name,
                     "days_since": days_since,
                 })
     lab_dip_overdue.sort(key=lambda x: x["days_since"], reverse=True)
@@ -206,33 +200,20 @@ async def get_dashboard_warnings(
         })
 
     # --- Warning 5: Lab Dip Needs Approval ---
-    # Lab dip received 5+ business days ago, not yet approved
-    # Skip if status = NOT REQUIRED
+    # Lab dip received 5+ business days ago, not yet approved.
+    # Same scope rule as Overdue — only sample_type='lab_dip' components.
     lab_dip_approval = []
     for o in all_orders:
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        components = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.sample_type == 'lab_dip',
+        ).all()
 
-        if components:
-            for comp in components:
-                if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
-                    continue
-                if comp.lab_dip_received and not comp.lab_dip_approved:
-                    days_since = business_days_between(comp.lab_dip_received, now)
-                    if days_since >= 5:
-                        lab_dip_approval.append({
-                            "order_id": o.id,
-                            "po_number": o.po_number,
-                            "style_code": o.style_code,
-                            "customer": o.customer,
-                            "factory": o.factory,
-                            "component": comp.name,
-                            "days_since": days_since,
-                        })
-        else:
-            if is_sample_done(o.lab_dip_status, o.lab_dip_approved):
+        for comp in components:
+            if is_sample_done(comp.lab_dip_status, comp.lab_dip_approved):
                 continue
-            if o.lab_dip_received and not o.lab_dip_approved:
-                days_since = business_days_between(o.lab_dip_received, now)
+            if comp.lab_dip_received and not comp.lab_dip_approved:
+                days_since = business_days_between(comp.lab_dip_received, now)
                 if days_since >= 5:
                     lab_dip_approval.append({
                         "order_id": o.id,
@@ -240,6 +221,7 @@ async def get_dashboard_warnings(
                         "style_code": o.style_code,
                         "customer": o.customer,
                         "factory": o.factory,
+                        "component": comp.name,
                         "days_since": days_since,
                     })
     lab_dip_approval.sort(key=lambda x: x["days_since"], reverse=True)
@@ -265,43 +247,33 @@ async def get_dashboard_warnings(
             return 25
         return 20
 
+    # Only sample_type='strike_off' components can produce a strike off
+    # warning — same rationale as the lab dip warnings.
     strike_off_overdue = []
     for o in all_orders:
         if not o.tech_packs_sent_to_factory:
             continue
         days_since = business_days_between(o.tech_packs_sent_to_factory, now)
 
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        components = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.sample_type == 'strike_off',
+        ).all()
 
-        if components:
-            for comp in components:
-                threshold = strike_off_threshold(comp.name)
-                if days_since < threshold:
-                    continue
-                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
-                    continue
-                if not comp.strike_off_received:
-                    strike_off_overdue.append({
-                        "order_id": o.id,
-                        "po_number": o.po_number,
-                        "style_code": o.style_code,
-                        "customer": o.customer,
-                        "factory": o.factory,
-                        "component": comp.name,
-                        "days_since": days_since,
-                    })
-        else:
-            if days_since < 20:
+        for comp in components:
+            threshold = strike_off_threshold(comp.name)
+            if days_since < threshold:
                 continue
-            if is_sample_done(o.strike_off_status, o.strike_off_approved):
+            if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
                 continue
-            if not o.strike_off_received:
+            if not comp.strike_off_received:
                 strike_off_overdue.append({
                     "order_id": o.id,
                     "po_number": o.po_number,
                     "style_code": o.style_code,
                     "customer": o.customer,
                     "factory": o.factory,
+                    "component": comp.name,
                     "days_since": days_since,
                 })
     strike_off_overdue.sort(key=lambda x: x["days_since"], reverse=True)
@@ -317,32 +289,19 @@ async def get_dashboard_warnings(
         })
 
     # --- Warning 7: Strike Off Needs Approval ---
-    # Strike off received 5+ business days ago, not yet approved
+    # Strike off received 5+ business days ago, not yet approved.
     strike_off_approval = []
     for o in all_orders:
-        components = db.query(OrderComponent).filter(OrderComponent.order_id == o.id).all()
+        components = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.sample_type == 'strike_off',
+        ).all()
 
-        if components:
-            for comp in components:
-                if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
-                    continue
-                if comp.strike_off_received and not comp.strike_off_approved:
-                    days_since = business_days_between(comp.strike_off_received, now)
-                    if days_since >= 5:
-                        strike_off_approval.append({
-                            "order_id": o.id,
-                            "po_number": o.po_number,
-                            "style_code": o.style_code,
-                            "customer": o.customer,
-                            "factory": o.factory,
-                            "component": comp.name,
-                            "days_since": days_since,
-                        })
-        else:
-            if is_sample_done(o.strike_off_status, o.strike_off_approved):
+        for comp in components:
+            if is_sample_done(comp.strike_off_status, comp.strike_off_approved):
                 continue
-            if o.strike_off_received and not o.strike_off_approved:
-                days_since = business_days_between(o.strike_off_received, now)
+            if comp.strike_off_received and not comp.strike_off_approved:
+                days_since = business_days_between(comp.strike_off_received, now)
                 if days_since >= 5:
                     strike_off_approval.append({
                         "order_id": o.id,
@@ -350,6 +309,7 @@ async def get_dashboard_warnings(
                         "style_code": o.style_code,
                         "customer": o.customer,
                         "factory": o.factory,
+                        "component": comp.name,
                         "days_since": days_since,
                     })
     strike_off_approval.sort(key=lambda x: x["days_since"], reverse=True)
