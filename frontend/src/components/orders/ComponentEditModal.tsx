@@ -123,7 +123,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         // mirror the change locally so the user sees it.
         setComp((prev) => ({ ...prev, [field]: value } as OrderComponent));
         const n = res.components_updated;
-        toast.success(`Updated ${n} ${n === 1 ? 'style' : 'styles'}`);
+        toast.success(`Updated "${comp.name}" on ${n} ${n === 1 ? 'style' : 'styles'}`);
       } else {
         const updated = await componentsApi.updateComponent(component.id, { [field]: value } as any);
         setComp(updated);

@@ -1971,7 +1971,7 @@ export function ComponentsSection({
         const payload: any = { ...update };
         if (selectedIds && selectedIds.length > 0) payload.order_ids = selectedIds;
         const result = await componentsApi.applyFieldToPO(component.id, payload);
-        toast.success(`Updated ${result.components_updated} styles`);
+        toast.success(`Updated "${component.name}" on ${result.components_updated} ${result.components_updated === 1 ? 'style' : 'styles'}`);
       } else {
         await componentsApi.updateComponent(component.id, update);
         toast.success('Updated');
