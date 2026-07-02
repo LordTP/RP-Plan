@@ -9,9 +9,13 @@ import type { Order, ComponentSampleType } from '@/types';
 
 /**
  * Cross-PO bulk component-add modal — opened from /design-components.
- * Pick a component name (autocomplete from existing names) + tick which
- * styles to apply it to across any POs. Submits to the cross-po-add
- * backend endpoint which skips dupes per-style.
+ *
+ * Split-panel layout:
+ *   Left rail  — sample type + component name + popular names.
+ *   Right col  — search input + filter chips + PO-grouped style list.
+ *   Bottom     — sticky selection tray + submit footer.
+ *
+ * Submits via componentsApi.crossPoAdd, which skips duplicates per-style.
  */
 
 interface Props {
@@ -30,11 +34,11 @@ interface POGroup {
   styles: Order[];
 }
 
+// Which filter dropdown (if any) is currently open. Simple UI state — the
+// three chips share a single popover slot so only one is visible at once.
+type OpenFilter = null | 'customer' | 'season' | 'style';
+
 export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
-  // Step 1: pick the sample type. Step 2 (the rest of the form) only renders
-  // once a type is chosen. Lets the user click out of step 1 if they meant
-  // to switch.
-  const [step, setStep] = useState<1 | 2>(1);
   const [sampleType, setSampleType] = useState<ComponentSampleType | null>(null);
 
   const [name, setName] = useState('');
@@ -45,33 +49,47 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Filter chips — each is either null (no filter) or a specific value.
+  const [customerFilter, setCustomerFilter] = useState<string | null>(null);
+  const [seasonFilter, setSeasonFilter] = useState<string | null>(null);
+  const [styleFilter, setStyleFilter] = useState<string | null>(null);
+  const [openFilter, setOpenFilter] = useState<OpenFilter>(null);
+
   // Reset state every time the modal opens
   useEffect(() => {
     if (!open) return;
-    setStep(1);
     setSampleType(null);
     setName('');
     setSearch('');
     setSelectedIds(new Set());
     setCollapsedPOs(new Set());
     setShowNameSuggestions(false);
+    setCustomerFilter(null);
+    setSeasonFilter(null);
+    setStyleFilter(null);
+    setOpenFilter(null);
     componentsApi.getComponentNames()
       .then((res) => setKnownNames(res.names))
       .catch(() => { /* silent */ });
   }, [open]);
 
-  // Esc to close
+  // Esc to close (unless a filter popover is open — that takes priority).
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !submitting) onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || submitting) return;
+      if (openFilter) {
+        setOpenFilter(null);
+      } else {
+        onClose();
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, submitting, onClose]);
+  }, [open, submitting, onClose, openFilter]);
 
   // Drop styles that are past the point where adding a component makes
-  // sense — shipped orders (tracking ref set) and PP-approved lines. The
-  // parent hands us the raw order pool; this modal is the right place
-  // for the filter since it's a modal-specific concern.
+  // sense — shipped orders (tracking ref set) and PP-approved lines.
   const isPPDone = (o: Order) => {
     const s = (o.pps_status || '').trim().toUpperCase();
     return s === 'APPROVED' || s === 'NOT REQUIRED' || !!o.pps_approved;
@@ -81,18 +99,59 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     return tr.length > 0;
   };
 
-  // Group orders by PO
+  const eligibleOrders = useMemo(
+    () => orders.filter((o) => o.po_number && !isShipped(o) && !isPPDone(o)),
+    [orders],
+  );
+
+  // Distinct-value lists for the filter chips. Sorted for stable UI.
+  const customerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of eligibleOrders) if (o.customer) set.add(o.customer);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [eligibleOrders]);
+
+  const seasonOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of eligibleOrders) if (o.season) set.add(o.season);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [eligibleOrders]);
+
+  const styleOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of eligibleOrders) {
+      // style_base is auto-derived on the backend (everything before the
+      // first dash). Fall back to style_code if base isn't set.
+      const s = o.style_base || o.style_code;
+      if (s) set.add(s);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [eligibleOrders]);
+
+  // Apply filter chips first, THEN search — this way the search is scoped
+  // to the currently-visible chip filters (search inside e.g. "Chelsea").
+  const filteredOrders = useMemo(() => {
+    return eligibleOrders.filter((o) => {
+      if (customerFilter && o.customer !== customerFilter) return false;
+      if (seasonFilter && o.season !== seasonFilter) return false;
+      if (styleFilter) {
+        const base = o.style_base || o.style_code;
+        if (base !== styleFilter) return false;
+      }
+      return true;
+    });
+  }, [eligibleOrders, customerFilter, seasonFilter, styleFilter]);
+
+  // Group filtered orders by PO
   const poGroups = useMemo<POGroup[]>(() => {
     const map = new Map<string, POGroup>();
-    for (const o of orders) {
-      if (!o.po_number) continue;
-      if (isShipped(o) || isPPDone(o)) continue;
-      const v = map.get(o.po_number);
+    for (const o of filteredOrders) {
+      const v = map.get(o.po_number!);
       if (v) {
         v.styles.push(o);
       } else {
-        map.set(o.po_number, {
-          po_number: o.po_number,
+        map.set(o.po_number!, {
+          po_number: o.po_number!,
           customer: o.customer || '',
           factory: o.factory || '',
           styles: [o],
@@ -100,10 +159,9 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.po_number.localeCompare(b.po_number));
-  }, [orders]);
+  }, [filteredOrders]);
 
-  // Apply search filter — match on PO number, customer refs (customer PO#,
-  // China Orderbook ref), factory, or any style code/desc/colour.
+  // Apply search filter on top of chip filters.
   const visibleGroups = useMemo<POGroup[]>(() => {
     const q = search.trim().toLowerCase();
     if (!q) return poGroups;
@@ -112,8 +170,6 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
         const poMatches = g.po_number.toLowerCase().includes(q) ||
                           g.customer.toLowerCase().includes(q) ||
                           g.factory.toLowerCase().includes(q) ||
-                          // Refs live per-style on the Order rows — surface a
-                          // PO if *any* of its styles carry a matching ref.
                           g.styles.some((s) =>
                             (s.customer_po_number || '').toLowerCase().includes(q) ||
                             (s.china_orderbook_ref || '').toLowerCase().includes(q)
@@ -192,19 +248,23 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     });
   };
 
+  // Ordered list of selected orders, used by the sticky tray. Same order
+  // as they appear in the list (PO number → style code) so the tray
+  // matches user mental model of what they picked.
+  const selectedOrders = useMemo(() => {
+    const list = eligibleOrders.filter((o) => selectedIds.has(o.id));
+    list.sort((a, b) => {
+      const p = (a.po_number || '').localeCompare(b.po_number || '');
+      if (p !== 0) return p;
+      return (a.style_code || '').localeCompare(b.style_code || '');
+    });
+    return list;
+  }, [eligibleOrders, selectedIds]);
+
   const handleSubmit = async () => {
-    if (!sampleType) {
-      toast.error('Pick a sample type first');
-      return;
-    }
-    if (!name.trim()) {
-      toast.error('Component name is required');
-      return;
-    }
-    if (selectedIds.size === 0) {
-      toast.error('Pick at least one style');
-      return;
-    }
+    if (!sampleType) { toast.error('Pick a sample type first'); return; }
+    if (!name.trim()) { toast.error('Component name is required'); return; }
+    if (selectedIds.size === 0) { toast.error('Pick at least one style'); return; }
     setSubmitting(true);
     try {
       const res = await componentsApi.crossPoAdd(name.trim(), Array.from(selectedIds), sampleType);
@@ -230,10 +290,11 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
       onClick={submitting ? undefined : onClose}
     >
       <div
-        className="w-full max-w-5xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-100 overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-6xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-100 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+
+        {/* ─── Header ─── */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center">
@@ -241,11 +302,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
             </div>
             <div>
               <h3 className="text-lg font-bold text-gray-900">Add component</h3>
-              <p className="text-xs text-gray-500">
-                {selectedIds.size === 0
-                  ? 'Pick a name + which styles to apply it to'
-                  : `${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'} selected`}
-              </p>
+              <p className="text-xs text-gray-500">Pick a type + name, then choose the styles to apply it to.</p>
             </div>
           </div>
           <button
@@ -257,129 +314,187 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex flex-col flex-1 min-h-0">
-          {/* Step 1: pick a sample type. Renders as a big two-button choice
-              until the user picks one, then collapses to a chip in step 2. */}
-          {step === 1 ? (
-            <div className="px-8 pt-8 pb-10 flex flex-col gap-4 flex-1">
-              <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                What kind of component?
+        {/* ─── Body: left rail + right column ─── */}
+        <div className="flex flex-1 min-h-0">
+
+          {/* Left rail — type + name + popular names */}
+          <div className="w-80 flex-shrink-0 border-r border-gray-100 bg-gray-50/40 flex flex-col overflow-y-auto">
+            <div className="px-5 pt-5 pb-4">
+              <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                Sample type
               </div>
-              <p className="text-sm text-gray-500 -mt-1">
-                Each component tracks one sample type. Pick which one — you can&apos;t change it later.
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSampleType('strike_off')}
+                  className={cn(
+                    'p-3 rounded-lg border-2 text-left transition-colors',
+                    sampleType === 'strike_off'
+                      ? 'border-violet-500 bg-violet-50 text-violet-900'
+                      : 'border-gray-200 bg-white hover:border-violet-300 text-gray-700'
+                  )}
+                >
+                  <div className="text-sm font-bold">Strike Off</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">Fabric / print</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSampleType('lab_dip')}
+                  className={cn(
+                    'p-3 rounded-lg border-2 text-left transition-colors',
+                    sampleType === 'lab_dip'
+                      ? 'border-violet-500 bg-violet-50 text-violet-900'
+                      : 'border-gray-200 bg-white hover:border-violet-300 text-gray-700'
+                  )}
+                >
+                  <div className="text-sm font-bold">Lab Dip</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">Colour match</div>
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
+                Each component tracks one type — can&apos;t be changed later.
               </p>
-              <div className="grid grid-cols-2 gap-4 mt-2">
-                <button
-                  type="button"
-                  onClick={() => { setSampleType('strike_off'); setStep(2); }}
-                  className="group flex flex-col gap-1.5 p-6 border-2 border-gray-200 rounded-xl hover:border-violet-400 hover:bg-violet-50/40 transition-colors text-left"
-                >
-                  <div className="text-base font-bold text-gray-900">Strike Off</div>
-                  <div className="text-xs text-gray-500">Fabric / print sample</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setSampleType('lab_dip'); setStep(2); }}
-                  className="group flex flex-col gap-1.5 p-6 border-2 border-gray-200 rounded-xl hover:border-violet-400 hover:bg-violet-50/40 transition-colors text-left"
-                >
-                  <div className="text-base font-bold text-gray-900">Lab Dip</div>
-                  <div className="text-xs text-gray-500">Colour match sample</div>
-                </button>
-              </div>
             </div>
-          ) : (
-          <>
-          {/* Chip showing the chosen sample type with a back-affordance. */}
-          <div className="px-6 pt-4 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => { setSampleType(null); setStep(1); }}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-md text-xs font-medium text-violet-800 hover:bg-violet-100"
-              title="Click to change"
-            >
-              <span className="uppercase tracking-wide text-[10px] text-violet-500">Type</span>
-              <span>{sampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip'}</span>
-              <span className="text-violet-400">·</span>
-              <span className="text-violet-500 text-[11px]">change</span>
-            </button>
-          </div>
-          {/* Name input */}
-          <div className="px-6 pt-5 pb-3 flex-shrink-0">
-            <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2 block">
-              Component name
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => { setName(e.target.value); setShowNameSuggestions(true); }}
-                onFocus={() => setShowNameSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
-                placeholder="e.g. Outer Shell, Lining, Trim, Zipper"
-                autoFocus
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-              />
-              {showNameSuggestions && nameSuggestions.length > 0 && (
-                <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
-                  {nameSuggestions.map((s) => (
-                    <button
-                      key={s.name}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => { setName(s.name); setShowNameSuggestions(false); }}
-                      className="w-full text-left px-3.5 py-2 text-sm hover:bg-violet-50 flex items-center justify-between"
-                    >
-                      <span className="text-gray-800">{s.name}</span>
-                      <span className="text-gray-400 text-xs">used on {s.count} {s.count === 1 ? 'style' : 'styles'}</span>
-                    </button>
-                  ))}
+
+            <div className="px-5 pt-1 pb-4">
+              <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-2 block">
+                Component name
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setShowNameSuggestions(true); }}
+                  onFocus={() => setShowNameSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
+                  placeholder="e.g. Main Fabric, Lining"
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                />
+                {showNameSuggestions && nameSuggestions.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                    {nameSuggestions.map((s) => (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setName(s.name); setShowNameSuggestions(false); }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 flex items-center justify-between"
+                      >
+                        <span className="text-gray-800">{s.name}</span>
+                        <span className="text-gray-400 text-[10px]">{s.count}×</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {existingExact && (
+                <div className="mt-2 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
+                  <div className="mb-1">Looks like <strong>&quot;{existingExact.name}&quot;</strong> already exists.</div>
+                  <button
+                    type="button"
+                    onClick={() => setName(existingExact.name)}
+                    className="font-semibold text-amber-700 hover:text-amber-900"
+                  >
+                    Use existing name →
+                  </button>
                 </div>
               )}
             </div>
-            {existingExact && (
-              <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center justify-between gap-2">
-                <span>Looks like <strong>"{existingExact.name}"</strong> already exists — pick it to avoid duplicates.</span>
-                <button
-                  type="button"
-                  onClick={() => setName(existingExact.name)}
-                  className="text-xs font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
-                >
-                  Use it →
-                </button>
+
+            {knownNames.length > 0 && (
+              <div className="px-5 pt-1 pb-5 border-t border-gray-100 mt-2">
+                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Popular names
+                </div>
+                <div className="flex flex-col gap-1">
+                  {knownNames.slice(0, 8).map((s) => (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => setName(s.name)}
+                      className={cn(
+                        'text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between transition-colors',
+                        name === s.name
+                          ? 'bg-violet-100 text-violet-900 font-semibold'
+                          : 'text-gray-700 hover:bg-white'
+                      )}
+                    >
+                      <span className="truncate">{s.name}</span>
+                      <span className="text-gray-400 text-[10px] flex-shrink-0 ml-2">{s.count}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
-          {/* Search + select-all-visible */}
-          <div className="px-6 pt-4 pb-3 flex-shrink-0">
-            <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2 block">
-              Apply to
-            </label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search PO, style, customer, factory, refs…"
-                className="w-full pl-10 pr-3.5 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-violet-500"
-              />
-            </div>
-          </div>
+          {/* Right column — search, filter chips, list */}
+          <div className="flex-1 flex flex-col min-h-0">
 
-          {/* SKU picker — list */}
-          <div className="px-6 pb-3 flex-1 min-h-0 flex flex-col">
-            {visibleGroups.length === 0 ? (
-              <div className="text-center py-16 text-sm text-gray-400 italic">
-                {search ? 'No matches' : 'No styles available'}
+            {/* Search */}
+            <div className="px-6 pt-5 pb-3 flex-shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search PO, style, customer, refs, description…"
+                  className="w-full pl-10 pr-3.5 py-2.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                />
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-t-md text-xs text-gray-600 flex-shrink-0">
+
+              {/* Filter chips */}
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mr-1">Filter</span>
+
+                <FilterChip
+                  label="Customer"
+                  value={customerFilter}
+                  options={customerOptions}
+                  open={openFilter === 'customer'}
+                  onToggle={() => setOpenFilter(openFilter === 'customer' ? null : 'customer')}
+                  onPick={(v) => { setCustomerFilter(v); setOpenFilter(null); }}
+                  onClear={() => setCustomerFilter(null)}
+                />
+                <FilterChip
+                  label="Season"
+                  value={seasonFilter}
+                  options={seasonOptions}
+                  open={openFilter === 'season'}
+                  onToggle={() => setOpenFilter(openFilter === 'season' ? null : 'season')}
+                  onPick={(v) => { setSeasonFilter(v); setOpenFilter(null); }}
+                  onClear={() => setSeasonFilter(null)}
+                />
+                <FilterChip
+                  label="Style"
+                  value={styleFilter}
+                  options={styleOptions}
+                  open={openFilter === 'style'}
+                  onToggle={() => setOpenFilter(openFilter === 'style' ? null : 'style')}
+                  onPick={(v) => { setStyleFilter(v); setOpenFilter(null); }}
+                  onClear={() => setStyleFilter(null)}
+                />
+
+                {(customerFilter || seasonFilter || styleFilter) && (
+                  <button
+                    type="button"
+                    onClick={() => { setCustomerFilter(null); setSeasonFilter(null); setStyleFilter(null); }}
+                    className="text-[11px] text-gray-500 hover:text-red-600 font-medium ml-1"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Select-all bar */}
+            {visibleGroups.length > 0 && (
+              <div className="px-6 pb-2 flex-shrink-0">
+                <div className="flex items-center gap-3 px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-md text-xs text-gray-600">
                   <input
                     type="checkbox"
-                    className="w-4 h-4 rounded border-gray-300"
+                    className="w-4 h-4 rounded border-gray-300 cursor-pointer accent-violet-600"
                     checked={allVisibleSelected}
                     onChange={toggleAllVisible}
                   />
@@ -390,7 +505,19 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                     <span className="ml-auto text-violet-700 font-semibold">{selectedIds.size} chosen</span>
                   )}
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto border border-t-0 border-gray-200 rounded-b-md divide-y divide-gray-100">
+              </div>
+            )}
+
+            {/* List */}
+            <div className="px-6 pb-3 flex-1 min-h-0 flex flex-col">
+              {visibleGroups.length === 0 ? (
+                <div className="text-center py-16 text-sm text-gray-400 italic">
+                  {search || customerFilter || seasonFilter || styleFilter
+                    ? 'No matches'
+                    : 'No styles available'}
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
                   {visibleGroups.map((g) => {
                     const collapsed = collapsedPOs.has(g.po_number);
                     const groupIds = g.styles.map((s) => s.id);
@@ -399,10 +526,10 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                     return (
                       <div key={g.po_number}>
                         {/* PO header row */}
-                        <div className="flex items-center gap-3 px-3.5 py-2.5 bg-gray-50/70">
+                        <div className="flex items-center gap-3 px-3.5 py-2.5 bg-gray-50/70 sticky top-0 z-[1]">
                           <input
                             type="checkbox"
-                            className="w-4 h-4 rounded border-gray-300"
+                            className="w-4 h-4 rounded border-gray-300 accent-violet-600"
                             checked={allChosen}
                             ref={(el) => { if (el) el.indeterminate = someChosen; }}
                             onChange={() => togglePOAll(g)}
@@ -430,7 +557,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                             >
                               <input
                                 type="checkbox"
-                                className="w-4 h-4 rounded border-gray-300"
+                                className="w-4 h-4 rounded border-gray-300 accent-violet-600"
                                 checked={selectedIds.has(s.id)}
                                 onChange={() => toggleStyle(s.id)}
                               />
@@ -453,14 +580,47 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                     );
                   })}
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
-          </>
-          )}
         </div>
 
-        {/* Footer */}
+        {/* Sticky selection tray — only shown when at least one style is
+            picked. Chips scroll horizontally when many are selected. */}
+        {selectedIds.size > 0 && (
+          <div className="px-6 py-3 border-t border-violet-100 bg-violet-50/40 flex-shrink-0 flex items-center gap-3">
+            <div className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide flex-shrink-0">
+              Selected {selectedIds.size}
+            </div>
+            <div className="flex-1 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              {selectedOrders.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => toggleStyle(o.id)}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 bg-white border border-violet-200 rounded-full text-[11px] text-gray-700 hover:border-violet-400 hover:bg-violet-50 transition-colors"
+                  title={`${o.po_number} · ${o.style_code} — click to remove`}
+                >
+                  <span className="font-mono font-semibold text-gray-900">{o.po_number}</span>
+                  <span className="text-gray-400">·</span>
+                  <span className="font-mono text-gray-600 truncate max-w-[110px]">{o.style_code}</span>
+                  <span className="ml-0.5 p-0.5 text-gray-400 hover:text-red-600 rounded-full hover:bg-red-50">
+                    <X className="w-3 h-3" />
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="flex-shrink-0 text-[11px] font-medium text-gray-500 hover:text-red-600"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+
+        {/* ─── Footer ─── */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/40 flex-shrink-0">
           <button
             onClick={onClose}
@@ -475,10 +635,116 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
             className="px-4 py-2 text-sm font-semibold text-white bg-violet-600 rounded-md hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Add to {selectedIds.size} {selectedIds.size === 1 ? 'style' : 'styles'}
+            Add {name.trim() ? `"${name.trim()}"` : 'component'} to {selectedIds.size} {selectedIds.size === 1 ? 'style' : 'styles'}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Filter chip with inline popover ─────────────────────────────────
+// Small dropdown chip used above the style list. Closed state shows just
+// the label (or label + selected value); open state pops a scrollable
+// list of options plus a clear affordance.
+
+function FilterChip({
+  label,
+  value,
+  options,
+  open,
+  onToggle,
+  onPick,
+  onClear,
+}: {
+  label: string;
+  value: string | null;
+  options: string[];
+  open: boolean;
+  onToggle: () => void;
+  onPick: (v: string) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.toLowerCase().includes(q));
+  }, [options, search]);
+
+  const active = value !== null;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+          active
+            ? 'bg-violet-100 text-violet-800 border-violet-200 hover:bg-violet-200'
+            : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+        )}
+      >
+        <span className={cn(active ? 'text-violet-700' : 'text-gray-500')}>
+          {label}{active ? ':' : ''}
+        </span>
+        {active && (
+          <span className="text-violet-900 font-semibold truncate max-w-[120px]" title={value!}>
+            {value}
+          </span>
+        )}
+        {active ? (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onClear(); }}
+            className="ml-0.5 text-violet-500 hover:text-red-600"
+            title="Clear filter"
+          >
+            <X className="w-3 h-3" />
+          </span>
+        ) : (
+          <ChevronDown className="w-3 h-3 text-gray-400" />
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-30 left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-xl overflow-hidden"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-2.5 pt-2 pb-1.5 border-b border-gray-100">
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${label.toLowerCase()}…`}
+              className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-500"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="text-center py-3 text-[11px] text-gray-400 italic">No matches</div>
+            ) : filtered.map((o) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => onPick(o)}
+                className={cn(
+                  'w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 flex items-center justify-between',
+                  o === value && 'bg-violet-100 font-semibold text-violet-900',
+                )}
+              >
+                <span className="truncate">{o}</span>
+                {o === value && <span className="text-violet-600 text-[11px]">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
