@@ -19,6 +19,7 @@ _COMPONENT_DATE_FIELDS = (
     'fit_sample_received', 'fit_sample_approved',
     'strike_off_received', 'strike_off_approved',
     'lab_dip_received', 'lab_dip_approved',
+    'label_received', 'label_approved',
 )
 
 
@@ -204,6 +205,10 @@ class ComponentResponse(BaseModel):
     lab_dip_status: Optional[str] = None
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
+    # Label (third component type, added 2026-07)
+    label_status: Optional[str] = None
+    label_received: Optional[datetime] = None
+    label_approved: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     # Resubmission metadata — current attempt number and prior rejection count
@@ -215,12 +220,15 @@ class ComponentResponse(BaseModel):
     strike_off_rejection_count: Optional[int] = 0
     lab_dip_attempt_no: Optional[int] = 1
     lab_dip_rejection_count: Optional[int] = 0
+    label_attempt_no: Optional[int] = 1
+    label_rejection_count: Optional[int] = 0
     # Latest rejection context per sample area — only populated when the current
     # attempt is > 1. Surfaced to factories on their supplier views so they know
     # WHY the previous attempt was rejected and what to fix.
     fit_sample_last_rejection: Optional[Dict[str, Any]] = None
     strike_off_last_rejection: Optional[Dict[str, Any]] = None
     lab_dip_last_rejection: Optional[Dict[str, Any]] = None
+    label_last_rejection: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -430,8 +438,9 @@ class CommentResponse(CommentBase):
 class ComponentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     # Required at create-time — every new component is strictly one sample
-    # type. 'strike_off' or 'lab_dip'. Default is 'strike_off' to keep older
-    # API clients (e.g. cross-PO add flow) functional without a code update.
+    # type. 'strike_off' | 'lab_dip' | 'label'. Default is 'strike_off' to
+    # keep older API clients (e.g. cross-PO add flow) functional without a
+    # code update.
     sample_type: str = 'strike_off'
     fit_sample_status: Optional[str] = None
     fit_sample_received: Optional[datetime] = None
@@ -442,14 +451,17 @@ class ComponentCreate(BaseModel):
     lab_dip_status: Optional[str] = None
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
+    label_status: Optional[str] = None
+    label_received: Optional[datetime] = None
+    label_approved: Optional[datetime] = None
 
     _coerce_date_fields = field_validator(*_COMPONENT_DATE_FIELDS, mode='before')(_coerce_date_only_string)
 
     @field_validator('sample_type')
     @classmethod
     def _validate_sample_type(cls, v: str) -> str:
-        if v not in ('strike_off', 'lab_dip'):
-            raise ValueError("sample_type must be 'strike_off' or 'lab_dip'")
+        if v not in ('strike_off', 'lab_dip', 'label'):
+            raise ValueError("sample_type must be 'strike_off', 'lab_dip', or 'label'")
         return v
 
 
@@ -466,6 +478,9 @@ class ComponentUpdate(BaseModel):
     lab_dip_status: Optional[str] = None
     lab_dip_received: Optional[datetime] = None
     lab_dip_approved: Optional[datetime] = None
+    label_status: Optional[str] = None
+    label_received: Optional[datetime] = None
+    label_approved: Optional[datetime] = None
 
     _coerce_date_fields = field_validator(*_COMPONENT_DATE_FIELDS, mode='before')(_coerce_date_only_string)
 

@@ -159,11 +159,12 @@ export interface Comment {
   created_at: string;
 }
 
-/** Each component tracks ONE sample type — Strike Off or Lab Dip, never
- *  both. Picked at create time and immutable afterwards. The fields for the
- *  "other" type are kept on the API model for historical reasons but should
- *  not be shown or written for new-shape components. */
-export type ComponentSampleType = 'strike_off' | 'lab_dip';
+/** Each component tracks ONE sample type — Strike Off, Lab Dip, or Label,
+ *  never more than one. Picked at create time and immutable afterwards.
+ *  The fields for the "other" types are kept on the API model for
+ *  historical reasons but should not be shown or written for new-shape
+ *  components. */
+export type ComponentSampleType = 'strike_off' | 'lab_dip' | 'label';
 
 export interface OrderComponent {
   id: number;
@@ -179,6 +180,9 @@ export interface OrderComponent {
   lab_dip_status?: string | null;
   lab_dip_received?: string | null;
   lab_dip_approved?: string | null;
+  label_status?: string | null;
+  label_received?: string | null;
+  label_approved?: string | null;
   created_at: string;
   updated_at: string;
   // Resubmission rollup — current attempt and prior rejection count per area.
@@ -189,11 +193,14 @@ export interface OrderComponent {
   strike_off_rejection_count?: number;
   lab_dip_attempt_no?: number;
   lab_dip_rejection_count?: number;
+  label_attempt_no?: number;
+  label_rejection_count?: number;
   // Latest rejection context per sample area — only populated when the current
   // attempt is > 1. The factory's "what was wrong last time" reference.
   fit_sample_last_rejection?: LastRejection | null;
   strike_off_last_rejection?: LastRejection | null;
   lab_dip_last_rejection?: LastRejection | null;
+  label_last_rejection?: LastRejection | null;
 }
 
 export interface LastRejection {
@@ -295,11 +302,12 @@ export const SAMPLE_STATUS_OPTIONS = [
 // Map legacy sample-status field keys to the canonical sample_type used by
 // the submissions API. Null = this field isn't a sample-status field that
 // should trigger the resubmission flow.
-export const SAMPLE_STATUS_FIELD_TO_TYPE: Record<string, 'fit' | 'strike' | 'lab' | 'pps' | undefined> = {
+export const SAMPLE_STATUS_FIELD_TO_TYPE: Record<string, 'fit' | 'strike' | 'lab' | 'pps' | 'label' | undefined> = {
   fit_sample_status: 'fit',
   strike_off_status: 'strike',
   lab_dip_status: 'lab',
   pps_status: 'pps',
+  label_status: 'label',
 };
 
 export const FCL_LCL_OPTIONS = ['FCL', 'LCL', 'AIR'];

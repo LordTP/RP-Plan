@@ -157,4 +157,22 @@ def init_db():
         if added:
             print(f"✓ Added {len(added)} new CP HEADERS columns to purchase_orders")
 
+    # Migrate: add Label sample columns to order_components (2026-07)
+    # New third component type alongside Strike Off and Lab Dip.
+    if 'order_components' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('order_components')]
+        label_cols = [
+            ("label_status", "VARCHAR(50)"),
+            ("label_received", "TIMESTAMP"),
+            ("label_approved", "TIMESTAMP"),
+        ]
+        added_label = []
+        with engine.begin() as conn:
+            for col_name, col_type in label_cols:
+                if col_name not in columns:
+                    conn.execute(text(f"ALTER TABLE order_components ADD COLUMN {col_name} {col_type}"))
+                    added_label.append(col_name)
+        if added_label:
+            print(f"✓ Added {len(added_label)} label sample columns to order_components")
+
     print("✓ Database tables created successfully")

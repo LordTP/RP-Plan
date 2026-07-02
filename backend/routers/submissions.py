@@ -29,6 +29,7 @@ SAMPLE_FIELD_MAP = {
     'fit':    {'target': 'component', 'status': 'fit_sample_status',    'received': 'fit_sample_received',    'approved': 'fit_sample_approved'},
     'strike': {'target': 'component', 'status': 'strike_off_status',    'received': 'strike_off_received',    'approved': 'strike_off_approved'},
     'lab':    {'target': 'component', 'status': 'lab_dip_status',       'received': 'lab_dip_received',       'approved': 'lab_dip_approved'},
+    'label':  {'target': 'component', 'status': 'label_status',         'received': 'label_received',         'approved': 'label_approved'},
     'pps':    {'target': 'order',     'status': 'pps_status',           'received': 'pps_received',           'approved': 'pps_approved'},
 }
 
@@ -36,7 +37,7 @@ SAMPLE_FIELD_MAP = {
 class RejectRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None  # null for order-level samples (PPS, or fit/strike/lab when the order has no components)
-    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label']
     reason: str = Field(..., min_length=1, description="Reason code from SAMPLE_REJECT_REASONS")
     notes: Optional[str] = None
     photo_url: Optional[str] = None
@@ -50,7 +51,7 @@ class RejectRequest(BaseModel):
 class ApproveRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None
-    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label']
     apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
     apply_to_order_ids: Optional[list[int]] = None
 
@@ -167,7 +168,7 @@ def _latest_submission(db: Session, order_id: int, component_id: Optional[int], 
 @router.get("/api/submissions/siblings")
 async def list_siblings(
     order_id: int,
-    sample_type: Literal['fit', 'strike', 'lab', 'pps'],
+    sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label'],
     component_id: Optional[int] = None,
     current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db),
@@ -491,7 +492,7 @@ class BulkRejectRequest(BaseModel):
     dropdown actually opens proper v+1 attempts rather than silently setting
     the status column. component_ids is the list of OrderComponent IDs to act on."""
     component_ids: list[int]
-    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label']
     reason: str
     notes: Optional[str] = None
     photo_url: Optional[str] = None
@@ -537,7 +538,7 @@ async def bulk_reject_components(
 class MarkReceivedRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None
-    sample_type: Literal['fit', 'strike', 'lab', 'pps']
+    sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label']
     received_at: Optional[str] = None  # ISO date string; defaults to today if omitted
     apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
     apply_to_order_ids: Optional[list[int]] = None

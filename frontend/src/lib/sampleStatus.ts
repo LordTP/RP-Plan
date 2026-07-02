@@ -1,6 +1,6 @@
 import type { OrderComponent } from '@/types';
 
-export type SampleKind = 'fit_sample' | 'strike_off' | 'lab_dip';
+export type SampleKind = 'fit_sample' | 'strike_off' | 'lab_dip' | 'label';
 export type SampleField = 'status' | 'received' | 'approved';
 
 export function isSampleDone(status?: string | null, approvedDate?: string | null): boolean {
@@ -60,6 +60,7 @@ export function relativeTimeShort(iso?: string | null): string {
 export function componentsForKind(components: OrderComponent[], kind: SampleKind): OrderComponent[] {
   if (kind === 'strike_off') return components.filter(c => c.sample_type === 'strike_off');
   if (kind === 'lab_dip') return components.filter(c => c.sample_type === 'lab_dip');
+  if (kind === 'label') return components.filter(c => c.sample_type === 'label');
   return components;
 }
 

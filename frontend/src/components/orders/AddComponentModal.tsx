@@ -274,7 +274,9 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
       const res = await componentsApi.crossPoAdd(name.trim(), Array.from(selectedIds), sampleType);
       const created = res.components_created;
       const skipped = res.skipped_existing;
-      const typeLabel = sampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip';
+      const typeLabel = sampleType === 'strike_off' ? 'Strike Off'
+                      : sampleType === 'lab_dip'    ? 'Lab Dip'
+                      : 'Label';
       const parts = [`Added "${name.trim()}" (${typeLabel}) to ${created} style${created === 1 ? '' : 's'}`];
       if (skipped > 0) parts.push(`${skipped} already had it (skipped)`);
       toast.success(parts.join(' · '));
@@ -327,7 +329,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
               <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-2">
                 Sample type
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setSampleType('strike_off')}
@@ -353,6 +355,19 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                 >
                   <div className="text-sm font-bold">Lab Dip</div>
                   <div className="text-[10px] text-gray-500 mt-0.5">Colour match</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSampleType('label')}
+                  className={cn(
+                    'p-3 rounded-lg border-2 text-left transition-colors',
+                    sampleType === 'label'
+                      ? 'border-violet-500 bg-violet-50 text-violet-900'
+                      : 'border-gray-200 bg-white hover:border-violet-300 text-gray-700'
+                  )}
+                >
+                  <div className="text-sm font-bold">Label</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">Woven / care</div>
                 </button>
               </div>
               <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">

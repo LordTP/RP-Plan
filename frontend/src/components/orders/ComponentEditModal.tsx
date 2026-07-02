@@ -36,6 +36,7 @@ interface Props {
 const SAMPLE_AREAS: { type: SampleType; prefix: string; label: string; }[] = [
   { type: 'strike', prefix: 'strike_off', label: 'Strike Off' },
   { type: 'lab',    prefix: 'lab_dip',    label: 'Lab Dip' },
+  { type: 'label',  prefix: 'label',      label: 'Label' },
 ];
 
 export function ComponentEditModal({ open, order, component, onClose, onUpdated, onOpenFullOrder }: Props) {

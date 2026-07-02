@@ -28,6 +28,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
+import { AddComponentModal } from '@/components/orders/AddComponentModal';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
@@ -1839,8 +1840,11 @@ function DetailPanel({
 
 // ─── Components Section ───────────────────────────────────
 
-// Components only carry Strike Off + Lab Dip — Fit Sample is a whole-garment
-// concern and lives on the style/order itself.
+// Components carry Strike Off, Lab Dip, or Label — Fit Sample is a whole-
+// garment concern and lives on the style/order itself. Label fields use
+// the strike_off column key for hasCol() gating so admins don't need to
+// separately toggle a "label_*" column on/off; they behave as sample
+// fields for visibility purposes.
 const COMPONENT_SAMPLE_FIELDS: { key: string; label: string; type: string; colKey: string; options?: string[] }[] = [
   { key: 'strike_off_status', label: 'Strike Off Status', type: 'text', colKey: 'strike_off_status', options: SAMPLE_STATUS_OPTIONS },
   { key: 'strike_off_received', label: 'Strike Off Rcvd', type: 'date', colKey: 'strike_off_received' },
@@ -1848,6 +1852,9 @@ const COMPONENT_SAMPLE_FIELDS: { key: string; label: string; type: string; colKe
   { key: 'lab_dip_status', label: 'Lab Dip Status', type: 'text', colKey: 'lab_dip_status', options: SAMPLE_STATUS_OPTIONS },
   { key: 'lab_dip_received', label: 'Lab Dip Rcvd', type: 'date', colKey: 'lab_dip_received' },
   { key: 'lab_dip_approved', label: 'Lab Dip Appr', type: 'date', colKey: 'lab_dip_approved' },
+  { key: 'label_status', label: 'Label Status', type: 'text', colKey: 'strike_off_status', options: SAMPLE_STATUS_OPTIONS },
+  { key: 'label_received', label: 'Label Rcvd', type: 'date', colKey: 'strike_off_status' },
+  { key: 'label_approved', label: 'Label Appr', type: 'date', colKey: 'strike_off_status' },
 ];
 
 export function ComponentsSection({
@@ -1873,19 +1880,22 @@ export function ComponentsSection({
   const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [addMode, setAddMode] = useState<'single' | 'all' | 'selected'>('single');
-  // Sample type for the new component — null until the user picks one. The
-  // rest of the add form is hidden until a type is chosen.
-  const [newSampleType, setNewSampleType] = useState<'strike_off' | 'lab_dip' | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-  const [stylesOnPO, setStylesOnPO] = useState<{ id: number; style_code: string; description: string; colour: string }[]>([]);
-  const [selectedStyleIds, setSelectedStyleIds] = useState<Set<number>>(new Set());
-  // Names from the whole system, loaded once when the add form opens, used
-  // for autocomplete so users pick existing names instead of creating variants.
-  const [knownNames, setKnownNames] = useState<{ name: string; count: number }[]>([]);
-  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  // Add-component popup — replaces the previous inline expand-in-place
+  // form. Reuses the /design-components modal so the UX matches. We pull
+  // the full orders pool lazily so the modal can attach a component to
+  // any style across any PO (components are a cross-PO concept).
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addModalOrders, setAddModalOrders] = useState<Order[]>([]);
+  const openAddModal = async () => {
+    setAddModalOpen(true);
+    if (addModalOrders.length > 0) return;
+    try {
+      const res = await ordersApi.getOrders(1, 5000, {});
+      setAddModalOrders(res.orders);
+    } catch {
+      toast.error('Failed to load styles for add-component');
+    }
+  };
   // Reject modal state — populated when a user picks REJECTED from a sample status dropdown.
   const [rejectModal, setRejectModal] = useState<{
     componentId: number;
@@ -1926,72 +1936,6 @@ export function ComponentsSection({
     const matching = submissions.filter(s => s.component_id === componentId && s.sample_type === sampleType);
     if (matching.length === 0) return 1;
     return Math.max(...matching.map(s => s.attempt_no));
-  };
-
-  // Load styles on PO when add form opens
-  useEffect(() => {
-    if (showAddForm && stylesOnPO.length === 0) {
-      ordersApi.getStylesOnPO(poNumber)
-        .then(res => setStylesOnPO(res.orders))
-        .catch(console.error);
-    }
-  }, [showAddForm, poNumber]);
-
-  // Fetch the global list of component names once the user opens the add form,
-  // so autocomplete has something to show from the first keystroke.
-  useEffect(() => {
-    if (showAddForm && knownNames.length === 0) {
-      componentsApi.getComponentNames()
-        .then(res => setKnownNames(res.names))
-        .catch(console.error);
-    }
-  }, [showAddForm, knownNames.length]);
-
-  // Filter suggestions as the user types (case-insensitive, exclude exact match)
-  const nameSuggestions = useMemo(() => {
-    const q = newName.trim().toLowerCase();
-    if (!q) return knownNames.slice(0, 8);
-    const matches = knownNames.filter(n =>
-      n.name.toLowerCase().includes(q) && n.name.toLowerCase() !== q
-    );
-    return matches.slice(0, 8);
-  }, [newName, knownNames]);
-
-  // Detect casing/whitespace-only collision with existing name → show a nudge
-  const existingExactMatch = useMemo(() => {
-    const normalized = newName.trim().toLowerCase().replace(/\s+/g, ' ');
-    if (!normalized) return null;
-    return knownNames.find(n => {
-      const existingNorm = n.name.trim().toLowerCase().replace(/\s+/g, ' ');
-      return existingNorm === normalized && n.name.trim() !== newName.trim();
-    }) || null;
-  }, [newName, knownNames]);
-
-  const handleAdd = async () => {
-    if (!newName.trim() || !newSampleType) return;
-    setIsAdding(true);
-    try {
-      if (addMode === 'all') {
-        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), sample_type: newSampleType });
-        toast.success(`Component added to ${result.components_created} styles`);
-      } else if (addMode === 'selected' && selectedStyleIds.size > 0) {
-        const result = await componentsApi.bulkAddComponent(orderId, { name: newName.trim(), sample_type: newSampleType, order_ids: Array.from(selectedStyleIds) });
-        toast.success(`Component added to ${result.components_created} styles`);
-      } else {
-        await componentsApi.createComponent(orderId, { name: newName.trim(), sample_type: newSampleType });
-        toast.success('Component added');
-      }
-      setNewName('');
-      setNewSampleType(null);
-      setShowAddForm(false);
-      setAddMode('single');
-      setSelectedStyleIds(new Set());
-      loadComponents();
-    } catch (err) {
-      toast.error('Failed to add component');
-    } finally {
-      setIsAdding(false);
-    }
   };
 
   const handleDelete = async (id: number) => {
@@ -2063,7 +2007,7 @@ export function ComponentsSection({
           )}
         </span>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={openAddModal}
           className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
           title="Add component"
         >
@@ -2071,151 +2015,10 @@ export function ComponentsSection({
         </button>
       </h4>
 
-      {/* Add Form */}
-      {showAddForm && (
-        <div className="mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-          {/* Step 1: pick sample type. Hides the rest of the form until done. */}
-          {!newSampleType ? (
-            <>
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                What kind of component?
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewSampleType('strike_off')}
-                  className="px-3 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50/40 text-left"
-                >
-                  <div className="text-xs font-bold text-gray-900">Strike Off</div>
-                  <div className="text-[10px] text-gray-500">Fabric / print sample</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewSampleType('lab_dip')}
-                  className="px-3 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-primary-400 hover:bg-primary-50/40 text-left"
-                >
-                  <div className="text-xs font-bold text-gray-900">Lab Dip</div>
-                  <div className="text-[10px] text-gray-500">Colour match sample</div>
-                </button>
-              </div>
-            </>
-          ) : (
-          <>
-          {/* Chosen-type chip with a "change" affordance. */}
-          <button
-            type="button"
-            onClick={() => setNewSampleType(null)}
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary-50 border border-primary-200 rounded text-[10px] font-medium text-primary-800 hover:bg-primary-100"
-            title="Click to change"
-          >
-            <span className="uppercase tracking-wide text-[8px] text-primary-500">Type</span>
-            <span>{newSampleType === 'strike_off' ? 'Strike Off' : 'Lab Dip'}</span>
-            <span className="text-primary-400">·</span>
-            <span className="text-primary-500 text-[9px]">change</span>
-          </button>
-          <div className="relative">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => { setNewName(e.target.value); setShowNameSuggestions(true); }}
-              onFocus={() => setShowNameSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') { setShowNameSuggestions(false); setShowAddForm(false); }
-                else if (e.key === 'Enter' && addMode === 'single') { setShowNameSuggestions(false); handleAdd(); }
-              }}
-              placeholder="Component name (e.g. Main Fabric)"
-              autoFocus
-              className="w-full text-xs border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-            />
-            {showNameSuggestions && nameSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto">
-                <p className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">Existing names</p>
-                {nameSuggestions.map(s => (
-                  <button
-                    key={s.name}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); setNewName(s.name); setShowNameSuggestions(false); }}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-primary-50 transition-colors"
-                  >
-                    <span className="font-medium text-gray-800 truncate">{s.name}</span>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0">{s.count} {s.count === 1 ? 'use' : 'uses'}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {existingExactMatch && (
-            <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 flex items-center justify-between gap-2">
-              <span>Looks like <strong>"{existingExactMatch.name}"</strong> already exists — pick it to avoid duplicates.</span>
-              <button
-                type="button"
-                onClick={() => setNewName(existingExactMatch.name)}
-                className="text-[10px] font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
-              >
-                Use it →
-              </button>
-            </div>
-          )}
-          <div className="space-y-1">
-            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
-              <input type="radio" name="addMode" checked={addMode === 'single'} onChange={() => setAddMode('single')} className="text-primary-600 focus:ring-primary-500" />
-              This style only
-            </label>
-            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
-              <input type="radio" name="addMode" checked={addMode === 'all'} onChange={() => setAddMode('all')} className="text-primary-600 focus:ring-primary-500" />
-              All styles on PO {poNumber}
-            </label>
-            <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer">
-              <input type="radio" name="addMode" checked={addMode === 'selected'} onChange={() => setAddMode('selected')} className="text-primary-600 focus:ring-primary-500" />
-              Selected styles
-            </label>
-          </div>
-          {addMode === 'selected' && (
-            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg bg-white">
-              {stylesOnPO.map(style => (
-                <label key={style.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedStyleIds.has(style.id)}
-                    onChange={(e) => {
-                      const next = new Set(selectedStyleIds);
-                      if (e.target.checked) next.add(style.id); else next.delete(style.id);
-                      setSelectedStyleIds(next);
-                    }}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-[11px] text-gray-700 truncate">
-                    {style.style_code} · {style.colour} — {style.description}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={handleAdd}
-              disabled={!newName.trim() || !newSampleType || isAdding || (addMode === 'selected' && selectedStyleIds.size === 0)}
-              className="flex-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-            >
-              {isAdding ? 'Adding...' : 'Add'}
-            </button>
-            <button
-              onClick={() => { setShowAddForm(false); setNewName(''); setNewSampleType(null); setAddMode('single'); setSelectedStyleIds(new Set()); }}
-              className="text-xs px-3 py-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
-          </div>
-          </>
-          )}
-        </div>
-      )}
-
       {/* Component List */}
-      {components.length === 0 && !showAddForm ? (
+      {components.length === 0 ? (
         <button
-          onClick={() => setShowAddForm(true)}
+          onClick={openAddModal}
           className="w-full text-xs text-gray-500 text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 hover:bg-gray-100 hover:border-gray-400 transition-colors flex items-center justify-center gap-2"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -2239,10 +2042,12 @@ export function ComponentsSection({
                   <span
                     className={cn(
                       'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
-                      comp.sample_type === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
+                      comp.sample_type === 'strike_off' ? 'bg-amber-100 text-amber-800'
+                        : comp.sample_type === 'lab_dip' ? 'bg-cyan-100 text-cyan-800'
+                        : 'bg-fuchsia-100 text-fuchsia-800',
                     )}
                   >
-                    {comp.sample_type === 'strike_off' ? 'SO' : 'LD'}
+                    {comp.sample_type === 'strike_off' ? 'SO' : comp.sample_type === 'lab_dip' ? 'LD' : 'LB'}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -2253,6 +2058,9 @@ export function ComponentsSection({
                   )}
                   {comp.sample_type === 'lab_dip' && (
                     <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
+                  )}
+                  {comp.sample_type === 'label' && (
+                    <SampleAreaChip label="LB" done={(comp.label_status || '').toUpperCase() === 'APPROVED' || (comp.label_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.label_approved} submissions={submissions} componentId={comp.id} sampleType="label" />
                   )}
                 </div>
               </button>
@@ -2289,6 +2097,19 @@ export function ComponentsSection({
                         <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="lab" size="sm" />
                       </div>
                     )}
+                    {comp.sample_type === 'label' && visibleFields.some(f => f.key.startsWith('label_')) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          Label
+                          <AttemptBadge attemptNo={comp.label_attempt_no} rejectionCount={comp.label_rejection_count} size="xs" />
+                        </p>
+                        <RejectionContextBanner rejection={comp.label_last_rejection} attemptNo={comp.label_attempt_no} sampleAreaLabel="Label" size="sm" />
+                        {visibleFields.filter(f => f.key.startsWith('label_')).map(field => (
+                          <ComponentFieldRow key={field.key} label={field.label.replace('Label ', '')} value={(comp as any)[field.key]} type={field.type} editable={!isSupplierUser} onSave={(val, applyAll, selectedIds) => handleFieldSave(comp, field.key, val, applyAll, selectedIds)} poNumber={poNumber} componentName={comp.name} options={field.options} />
+                        ))}
+                        <AttemptHistory submissions={submissions} componentId={comp.id} sampleType="label" size="sm" />
+                      </div>
+                    )}
                   </div>
                   <div className="pt-2 border-t border-gray-100 flex justify-end">
                     <button
@@ -2321,6 +2142,16 @@ export function ComponentsSection({
           }}
         />
       )}
+
+      <AddComponentModal
+        open={addModalOpen}
+        orders={addModalOrders}
+        onClose={() => setAddModalOpen(false)}
+        onCreated={() => {
+          setAddModalOpen(false);
+          loadComponents();
+        }}
+      />
     </div>
   );
 }

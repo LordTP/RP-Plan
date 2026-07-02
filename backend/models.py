@@ -206,6 +206,13 @@ class OrderComponent(Base):
     lab_dip_received = Column(DateTime, nullable=True)
     lab_dip_approved = Column(DateTime, nullable=True)
 
+    # Samples - Label (added 2026-07 — a third component type alongside
+    # Strike Off and Lab Dip. Same shape as the other two; sample_type on
+    # this row is 'label' and only these columns get written.)
+    label_status = Column(String(50), nullable=True)
+    label_received = Column(DateTime, nullable=True)
+    label_approved = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -373,7 +380,7 @@ class SampleSubmission(Base):
     order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False, index=True)
     # NULL for order-level samples (PPS always; plus fit/strike/lab on orders without components).
     component_id = Column(Integer, ForeignKey("order_components.id", ondelete="CASCADE"), nullable=True, index=True)
-    sample_type = Column(String(20), nullable=False)  # 'fit' | 'strike' | 'lab' | 'pps'
+    sample_type = Column(String(20), nullable=False)  # 'fit' | 'strike' | 'lab' | 'pps' | 'label'
     attempt_no = Column(Integer, nullable=False, default=1)
 
     requested_at = Column(DateTime, nullable=True)
@@ -405,7 +412,7 @@ SAMPLE_REJECT_REASONS = [
 ]
 
 # Canonical sample type keys used in the sample_submissions table and API.
-SAMPLE_TYPES = ('fit', 'strike', 'lab', 'pps')
+SAMPLE_TYPES = ('fit', 'strike', 'lab', 'pps', 'label')
 
 
 class ShipmentDraft(Base):

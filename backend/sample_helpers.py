@@ -3,7 +3,7 @@ from datetime import timedelta
 
 
 SAMPLE_PREFIXES_ORDER = ('fit_sample', 'strike_off', 'lab_dip', 'pps')
-SAMPLE_PREFIXES_COMPONENT = ('fit_sample', 'strike_off', 'lab_dip')
+SAMPLE_PREFIXES_COMPONENT = ('fit_sample', 'strike_off', 'lab_dip', 'label')
 
 
 def reconcile_sample_status(obj, prefixes, skip_prefixes=None):

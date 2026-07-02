@@ -383,7 +383,7 @@ export const componentsApi = {
   crossPoAdd: async (
     name: string,
     orderIds: number[],
-    sampleType: 'strike_off' | 'lab_dip',
+    sampleType: 'strike_off' | 'lab_dip' | 'label',
   ): Promise<{ success: boolean; components_created: number; skipped_existing: number }> => {
     const response = await api.post('/api/components/cross-po-add', {
       name,
@@ -395,7 +395,7 @@ export const componentsApi = {
 
   bulkAddComponent: async (
     orderId: number,
-    data: { name: string; sample_type: 'strike_off' | 'lab_dip'; order_ids?: number[] },
+    data: { name: string; sample_type: 'strike_off' | 'lab_dip' | 'label'; order_ids?: number[] },
   ): Promise<{ success: boolean; components_created: number }> => {
     const response = await api.post(`/api/orders/${orderId}/components/bulk-add`, data);
     return response.data;
@@ -1042,7 +1042,7 @@ export const approvalsApi = {
 };
 
 // Sample submission endpoints — v1/v2/v3 attempt tracking per sample area.
-export type SampleType = 'fit' | 'strike' | 'lab' | 'pps';
+export type SampleType = 'fit' | 'strike' | 'lab' | 'pps' | 'label';
 
 export interface RejectReason {
   code: string;

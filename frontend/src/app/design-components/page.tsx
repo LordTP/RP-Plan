@@ -16,7 +16,7 @@ import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { isSampleDone, businessDaysBetween, businessDaysUntil, relativeTimeShort } from '@/lib/sampleStatus';
 import { FIT_SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_OPTIONS } from '@/types';
-import type { Order, OrderComponent } from '@/types';
+import type { Order, OrderComponent, ComponentSampleType } from '@/types';
 
 export default function DesignComponentsPage() {
   return (
@@ -41,18 +41,29 @@ const STALE_BIZ_DAYS = 14;
 const EX_FAC_URGENT_BIZ_DAYS = 7;
 const HARD_ATTENTION_STATUSES = new Set(['REJECTED', 'LATE', 'P23 ADVISE UPDATE']);
 
+// Return the relevant status + approved for a component, based on its
+// sample_type. Each component tracks exactly one sample type, so the
+// bucket / status displays should only consider that field family.
+function activeSampleFor(component: OrderComponent): { status: string; approved: string | null | undefined } {
+  const t = component.sample_type;
+  const status = (t === 'strike_off' ? component.strike_off_status
+                : t === 'lab_dip'   ? component.lab_dip_status
+                : component.label_status) || '';
+  const approved = t === 'strike_off' ? component.strike_off_approved
+                 : t === 'lab_dip'   ? component.lab_dip_approved
+                 : component.label_approved;
+  return { status: status.trim().toUpperCase(), approved };
+}
+
 function bucketInstance(inst: Instance): BucketKey {
   const { order, component } = inst;
-  const so = (component.strike_off_status || '').trim().toUpperCase();
-  const ld = (component.lab_dip_status || '').trim().toUpperCase();
-  const soDone = isSampleDone(component.strike_off_status, component.strike_off_approved);
-  const ldDone = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-  if (so === 'NOT REQUIRED' && ld === 'NOT REQUIRED') return 'not-required';
-  if (soDone && ldDone) return 'done';
-  if (HARD_ATTENTION_STATUSES.has(so) || HARD_ATTENTION_STATUSES.has(ld)) return 'needs-attention';
+  const { status, approved } = activeSampleFor(component);
+  const done = isSampleDone(status, approved);
+  if (status === 'NOT REQUIRED') return 'not-required';
+  if (done) return 'done';
+  if (HARD_ATTENTION_STATUSES.has(status)) return 'needs-attention';
   const updatedDays = component.updated_at ? businessDaysBetween(component.updated_at, new Date()) : 0;
-  const hasOutstanding = (!soDone && so === 'OUTSTANDING') || (!ldDone && ld === 'OUTSTANDING');
-  if (hasOutstanding && updatedDays >= STALE_BIZ_DAYS) return 'needs-attention';
+  if (status === 'OUTSTANDING' && updatedDays >= STALE_BIZ_DAYS) return 'needs-attention';
   const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
   const days = businessDaysUntil(exFac);
   if (days !== null && days <= EX_FAC_URGENT_BIZ_DAYS) return 'needs-attention';
@@ -62,7 +73,7 @@ function bucketInstance(inst: Instance): BucketKey {
 const BUCKET_META: Record<BucketKey, { label: string; sub: string; dot: string; ring: string; text: string; bgChip: string }> = {
   'needs-attention': { label: 'Needs attention', sub: 'Overdue, rejected, or stale',  dot: 'bg-red-500',    ring: 'ring-red-100',    text: 'text-red-700',   bgChip: 'bg-red-50' },
   'in-progress':     { label: 'In progress',     sub: 'Sent and within review window', dot: 'bg-amber-500', ring: 'ring-amber-100', text: 'text-amber-700', bgChip: 'bg-amber-50' },
-  'done':            { label: 'Done',             sub: 'Both SO + LD approved',         dot: 'bg-green-500', ring: 'ring-green-100', text: 'text-green-700', bgChip: 'bg-green-50' },
+  'done':            { label: 'Done',             sub: 'Sample approved',              dot: 'bg-green-500', ring: 'ring-green-100', text: 'text-green-700', bgChip: 'bg-green-50' },
   'not-required':    { label: 'Not required',     sub: 'Marked N/A',                    dot: 'bg-gray-400',  ring: 'ring-gray-100',  text: 'text-gray-500',  bgChip: 'bg-gray-50' },
 };
 
@@ -95,6 +106,15 @@ function normalizeComponentName(name: string): string {
   return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/** Short label + colour classes for a component's sample_type badge. */
+function sampleTypeChip(t: ComponentSampleType): { short: string; long: string; bg: string } {
+  switch (t) {
+    case 'strike_off': return { short: 'SO', long: 'Strike Off', bg: 'bg-amber-100 text-amber-800' };
+    case 'lab_dip':    return { short: 'LD', long: 'Lab Dip',    bg: 'bg-cyan-100 text-cyan-800' };
+    case 'label':      return { short: 'LB', long: 'Label',      bg: 'bg-fuchsia-100 text-fuchsia-800' };
+  }
+}
+
 function orderMatchesQuery(order: Order, q: string): boolean {
   const fields = [
     order.po_number,
@@ -111,11 +131,11 @@ function orderMatchesQuery(order: Order, q: string): boolean {
 
 type Group = {
   name: string;
-  sampleType: 'strike_off' | 'lab_dip';
+  sampleType: ComponentSampleType;
   instances: Instance[];
   visibleInstances: Instance[]; // filtered by search
-  soDone: number;
-  ldDone: number;
+  /** Instances whose relevant sample area is done (approved / not required). */
+  done: number;
   total: number;
   pending: number;
 };
@@ -190,7 +210,7 @@ function DesignComponentsContent() {
   // a "Pocket" Lab Dip surface as two separate groups, each with the
   // correct sample-type rollups.
   const rawGroups = useMemo(() => {
-    const byKey = new Map<string, { name: string; sampleType: 'strike_off' | 'lab_dip'; instances: Instance[] }>();
+    const byKey = new Map<string, { name: string; sampleType: ComponentSampleType; instances: Instance[] }>();
     for (const order of orders) {
       if (!order.components || order.components.length === 0) continue;
       if (hideShipped && SHIPPED_STATUSES.has((order.status || '').trim())) continue;
@@ -221,14 +241,12 @@ function DesignComponentsContent() {
         : instances;
 
       // In Pending mode, drop instances that are done for this group's
-      // sample type. Each group is single-type now so we only check the
+      // sample type. Each group is single-type so we only check the
       // relevant column.
       if (sort === 'pending') {
         visibleInstances = visibleInstances.filter(({ component }) => {
-          if (sampleType === 'strike_off') {
-            return !isSampleDone(component.strike_off_status, component.strike_off_approved);
-          }
-          return !isSampleDone(component.lab_dip_status, component.lab_dip_approved);
+          const { status, approved } = activeSampleFor(component);
+          return !isSampleDone(status, approved);
         });
       }
 
@@ -236,25 +254,18 @@ function DesignComponentsContent() {
       // If Pending mode and nothing pending, also skip (filters out fully-done groups).
       if ((q || sort === 'pending') && visibleInstances.length === 0) continue;
 
-      // soDone/ldDone are per-group totals — only the matching type counts
-      // for this group's sample type; the other stays 0.
-      let soDone = 0, ldDone = 0, pending = 0;
+      let done = 0, pending = 0;
       for (const { component } of visibleInstances) {
-        if (sampleType === 'strike_off') {
-          const s = isSampleDone(component.strike_off_status, component.strike_off_approved);
-          if (s) soDone++; else pending++;
-        } else {
-          const l = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
-          if (l) ldDone++; else pending++;
-        }
+        const { status, approved } = activeSampleFor(component);
+        if (isSampleDone(status, approved)) done++;
+        else pending++;
       }
       out.push({
         name,
         sampleType,
         instances,
         visibleInstances,
-        soDone,
-        ldDone,
+        done,
         total: visibleInstances.length,
         pending,
       });
@@ -429,10 +440,8 @@ function DesignComponentsContent() {
                 ) : (
                   groups.map((g) => {
                     const isActive = groupKey(g) === selectedName;
-                    // Single-type groups now — done means the relevant
-                    // sample type is fully complete across instances.
-                    const done = g.sampleType === 'strike_off' ? g.soDone : g.ldDone;
-                    const allDone = g.total > 0 && done === g.total;
+                    const allDone = g.total > 0 && g.done === g.total;
+                    const chip = sampleTypeChip(g.sampleType);
                     return (
                       <button
                         key={groupKey(g)}
@@ -449,9 +458,9 @@ function DesignComponentsContent() {
                         <span className="flex-1 text-sm font-semibold truncate">{g.name}</span>
                         <span className={cn(
                           'text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded',
-                          g.sampleType === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
+                          chip.bg
                         )}>
-                          {g.sampleType === 'strike_off' ? 'SO' : 'LD'}
+                          {chip.short}
                         </span>
                         <span className={cn(
                           'text-[11px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 min-w-[24px] text-center',
@@ -492,8 +501,7 @@ function DesignComponentsContent() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <SamplePill label="SO" done={selectedGroup.soDone} total={selectedGroup.total} />
-                      <SamplePill label="LD" done={selectedGroup.ldDone} total={selectedGroup.total} />
+                      <SamplePill label={sampleTypeChip(selectedGroup.sampleType).short} done={selectedGroup.done} total={selectedGroup.total} />
                       <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 ml-1">
                         <button
                           onClick={() => setViewMode('cards')}
@@ -579,20 +587,24 @@ function DesignComponentsContent() {
                           <th className="px-3 py-2">Season</th>
                           <th className="px-3 py-2">Ex-fac</th>
                           <th className="px-3 py-2">Updated</th>
-                          {/* Single-type groups now — only the relevant
-                              status column shows. The "other" column would
-                              always be empty for components in this group. */}
-                          {selectedGroup.sampleType === 'strike_off' && <th className="px-2 py-2 text-center">SO</th>}
-                          {selectedGroup.sampleType === 'lab_dip' && <th className="px-2 py-2 text-center">LD</th>}
+                          {/* Single-type groups — only the relevant status
+                              column shows. */}
+                          <th className="px-2 py-2 text-center">{sampleTypeChip(selectedGroup.sampleType).short}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedGroup.visibleInstances.map(({ order, component }) => {
-                          const so = isSampleDone(component.strike_off_status, component.strike_off_approved);
-                          const ld = isSampleDone(component.lab_dip_status, component.lab_dip_approved);
+                          const { status, approved } = activeSampleFor(component);
+                          const done = isSampleDone(status, approved);
                           const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
                           const daysToExFac = businessDaysUntil(exFac);
                           const isSelected = selectedComponentIds.has(component.id);
+                          const attemptNo = selectedGroup.sampleType === 'strike_off' ? component.strike_off_attempt_no
+                                          : selectedGroup.sampleType === 'lab_dip'   ? component.lab_dip_attempt_no
+                                          : component.label_attempt_no;
+                          const rejectionCount = selectedGroup.sampleType === 'strike_off' ? component.strike_off_rejection_count
+                                              : selectedGroup.sampleType === 'lab_dip'   ? component.lab_dip_rejection_count
+                                              : component.label_rejection_count;
                           return (
                             <tr
                               key={component.id}
@@ -630,22 +642,12 @@ function DesignComponentsContent() {
                               <td className="px-3 py-2.5 text-gray-500 text-[10px] uppercase tracking-wider">{order.season || '—'}</td>
                               <td className="px-3 py-2.5"><ExFacBadge days={daysToExFac} /></td>
                               <td className="px-3 py-2.5 text-gray-500">{relativeTimeShort(component.updated_at)}</td>
-                              {selectedGroup.sampleType === 'strike_off' && (
-                                <td className="px-2 py-2.5 text-center">
-                                  <div className="inline-flex items-center gap-1">
-                                    <Dot done={so} />
-                                    <AttemptBadge attemptNo={component.strike_off_attempt_no} rejectionCount={component.strike_off_rejection_count} size="xs" />
-                                  </div>
-                                </td>
-                              )}
-                              {selectedGroup.sampleType === 'lab_dip' && (
-                                <td className="px-2 py-2.5 text-center">
-                                  <div className="inline-flex items-center gap-1">
-                                    <Dot done={ld} />
-                                    <AttemptBadge attemptNo={component.lab_dip_attempt_no} rejectionCount={component.lab_dip_rejection_count} size="xs" />
-                                  </div>
-                                </td>
-                              )}
+                              <td className="px-2 py-2.5 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <Dot done={done} />
+                                  <AttemptBadge attemptNo={attemptNo} rejectionCount={rejectionCount} size="xs" />
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -741,6 +743,9 @@ const BULK_FIELDS: BulkField[] = [
   { kind: 'status', key: 'lab_dip_status',      label: 'Lab Status',    options: SAMPLE_STATUS_OPTIONS },
   { kind: 'date',   key: 'lab_dip_received',    label: 'Lab Rcvd' },
   { kind: 'date',   key: 'lab_dip_approved',    label: 'Lab Appr' },
+  { kind: 'status', key: 'label_status',        label: 'Label Status',  options: SAMPLE_STATUS_OPTIONS },
+  { kind: 'date',   key: 'label_received',      label: 'Label Rcvd' },
+  { kind: 'date',   key: 'label_approved',      label: 'Label Appr' },
 ];
 
 function todayISO(): string {
@@ -1398,8 +1403,7 @@ function InstanceCard({
           className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 cursor-pointer"
         />
       </div>
-      {/* Status block — only the row matching this component's sample
-          type renders. Strike Off components show SO; Lab Dip show LD. */}
+      {/* Status block — the row matching this component's sample type. */}
       <div className="py-2.5 pr-4 pl-2 flex flex-col gap-1.5 min-w-[240px] border-r border-gray-100">
         {component.sample_type === 'strike_off' && (
           <SampleStatusRow
@@ -1417,6 +1421,16 @@ function InstanceCard({
             status={component.lab_dip_status}
             attemptNo={component.lab_dip_attempt_no}
             rejectionCount={component.lab_dip_rejection_count}
+            showAge={bucket === 'needs-attention'}
+            updatedDays={updatedDays}
+          />
+        )}
+        {component.sample_type === 'label' && (
+          <SampleStatusRow
+            label="LB"
+            status={component.label_status}
+            attemptNo={component.label_attempt_no}
+            rejectionCount={component.label_rejection_count}
             showAge={bucket === 'needs-attention'}
             updatedDays={updatedDays}
           />

@@ -26,6 +26,7 @@ SUPPLIER_FORBIDDEN_FIELDS = {
     'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
     'strike_off_status', 'strike_off_received', 'strike_off_approved',
     'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+    'label_status', 'label_received', 'label_approved',
 }
 
 
@@ -44,6 +45,7 @@ SAMPLE_TYPE_TO_PREFIX = {
     'strike': 'strike_off',
     'lab': 'lab_dip',
     'pps': 'pps',
+    'label': 'label',
 }
 
 
@@ -123,7 +125,7 @@ def _decorate_component_attempts(
     oid = component_dict.get('order_id') if isinstance(component_dict, dict) else getattr(component_dict, 'order_id', None)
     # Fit lives on the style/order, not the component — drop it from the per-component
     # decorator so the component dict no longer ships fit_sample_attempt_no etc.
-    for sample_type, prefix in (('strike', 'strike_off'), ('lab', 'lab_dip')):
+    for sample_type, prefix in (('strike', 'strike_off'), ('lab', 'lab_dip'), ('label', 'label')):
         attempt, rejections = summary.get((cid, sample_type), (1, 0))
         if isinstance(component_dict, dict):
             component_dict[f'{prefix}_attempt_no'] = attempt
@@ -286,12 +288,17 @@ async def create_component(
         for f in list(create_data.keys()):
             if f in SUPPLIER_FORBIDDEN_FIELDS:
                 create_data.pop(f, None)
-    # Drop fields that belong to the OTHER sample type so we never persist
+    # Drop fields that belong to the OTHER sample types so we never persist
     # stale data outside the component's chosen lane.
     sample_type = create_data.get('sample_type', 'strike_off')
-    drop_prefix = 'lab_dip' if sample_type == 'strike_off' else 'strike_off'
-    for f in [f'{drop_prefix}_status', f'{drop_prefix}_received', f'{drop_prefix}_approved']:
-        create_data.pop(f, None)
+    if sample_type not in ('strike_off', 'lab_dip', 'label'):
+        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off', 'lab_dip', or 'label'")
+    keep_prefix = {'strike_off': 'strike_off', 'lab_dip': 'lab_dip', 'label': 'label'}[sample_type]
+    for other in ('strike_off', 'lab_dip', 'label'):
+        if other == keep_prefix:
+            continue
+        for f in [f'{other}_status', f'{other}_received', f'{other}_approved']:
+            create_data.pop(f, None)
     component = OrderComponent(order_id=order_id, **create_data)
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in create_data]
     reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
@@ -329,15 +336,15 @@ async def update_component(
                 detail=f"Suppliers can't edit sample lifecycle fields: {forbidden}. Only Source Lab can mark received / approved / rejected.",
             )
     # Reject edits to fields that don't belong to this component's sample
-    # type. Strike-off components can't have lab_dip fields touched, and
-    # vice versa. Returning a clean 400 is easier to debug than silently
-    # writing values that don't belong.
-    if component.sample_type == 'strike_off':
-        bad = [k for k in update_data if k.startswith('lab_dip_')]
-    elif component.sample_type == 'lab_dip':
-        bad = [k for k in update_data if k.startswith('strike_off_')]
-    else:
-        bad = []
+    # type. A strike_off component can't have lab_dip or label fields
+    # touched, and so on. Returning a clean 400 is easier to debug than
+    # silently writing values that don't belong.
+    other_prefixes = {
+        'strike_off': ('lab_dip_', 'label_'),
+        'lab_dip': ('strike_off_', 'label_'),
+        'label': ('strike_off_', 'lab_dip_'),
+    }.get(component.sample_type, ())
+    bad = [k for k in update_data if any(k.startswith(p) for p in other_prefixes)]
     if bad:
         raise HTTPException(
             status_code=400,
@@ -416,6 +423,7 @@ async def bulk_update_components(
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
         'strike_off_status', 'strike_off_received', 'strike_off_approved',
         'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+        'label_status', 'label_received', 'label_approved',
     }
     if field not in ALLOWED_FIELDS:
         raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable in bulk")
@@ -427,6 +435,7 @@ async def bulk_update_components(
         'fit_sample_received', 'fit_sample_approved',
         'strike_off_received', 'strike_off_approved',
         'lab_dip_received', 'lab_dip_approved',
+        'label_received', 'label_approved',
     }
     if field in date_fields and isinstance(value, str) and value:
         try:
@@ -448,6 +457,8 @@ async def bulk_update_components(
         rows = [c for c in rows if c.sample_type == 'strike_off']
     elif field.startswith('lab_dip_'):
         rows = [c for c in rows if c.sample_type == 'lab_dip']
+    elif field.startswith('label_'):
+        rows = [c for c in rows if c.sample_type == 'label']
 
     # For the status-vs-date reconciliation logic, only skip reconcile when the
     # user explicitly touched the status field. Here we always touch ONE field.
@@ -541,8 +552,8 @@ async def cross_po_add_component(
     sample_type = body.get("sample_type", "strike_off")
     if not name:
         raise HTTPException(status_code=400, detail="Component name is required")
-    if sample_type not in ('strike_off', 'lab_dip'):
-        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off' or 'lab_dip'")
+    if sample_type not in ('strike_off', 'lab_dip', 'label'):
+        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off', 'lab_dip', or 'label'")
     if not isinstance(order_ids, list) or not order_ids:
         raise HTTPException(status_code=400, detail="At least one order id is required")
 
@@ -588,8 +599,8 @@ async def bulk_add_component(
     sample_type = body.get("sample_type", "strike_off")
     if not name:
         raise HTTPException(status_code=400, detail="Component name is required")
-    if sample_type not in ('strike_off', 'lab_dip'):
-        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off' or 'lab_dip'")
+    if sample_type not in ('strike_off', 'lab_dip', 'label'):
+        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off', 'lab_dip', or 'label'")
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -669,12 +680,15 @@ async def apply_component_field_to_po(
     allowed_fields = {
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
         'strike_off_status', 'strike_off_received', 'strike_off_approved',
-        'lab_dip_status', 'lab_dip_received', 'lab_dip_approved', 'name'
+        'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
+        'label_status', 'label_received', 'label_approved',
+        'name',
     }
     date_fields = {
         'fit_sample_received', 'fit_sample_approved',
         'strike_off_received', 'strike_off_approved',
         'lab_dip_received', 'lab_dip_approved',
+        'label_received', 'label_approved',
     }
     update_data = {}
     for k, v in body.items():

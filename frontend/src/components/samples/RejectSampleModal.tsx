@@ -31,6 +31,7 @@ const SAMPLE_TYPE_LABEL: Record<SampleType, string> = {
   strike: 'Strike Off',
   lab: 'Lab Dip',
   pps: 'PPS',
+  label: 'Label',
 };
 
 export function RejectSampleModal({
