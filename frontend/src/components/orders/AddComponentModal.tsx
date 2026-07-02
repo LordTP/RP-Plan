@@ -68,11 +68,25 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, submitting, onClose]);
 
+  // Drop styles that are past the point where adding a component makes
+  // sense — shipped orders (tracking ref set) and PP-approved lines. The
+  // parent hands us the raw order pool; this modal is the right place
+  // for the filter since it's a modal-specific concern.
+  const isPPDone = (o: Order) => {
+    const s = (o.pps_status || '').trim().toUpperCase();
+    return s === 'APPROVED' || s === 'NOT REQUIRED' || !!o.pps_approved;
+  };
+  const isShipped = (o: Order) => {
+    const tr = (o.tracking_reference || '').trim();
+    return tr.length > 0;
+  };
+
   // Group orders by PO
   const poGroups = useMemo<POGroup[]>(() => {
     const map = new Map<string, POGroup>();
     for (const o of orders) {
       if (!o.po_number) continue;
+      if (isShipped(o) || isPPDone(o)) continue;
       const v = map.get(o.po_number);
       if (v) {
         v.styles.push(o);
@@ -88,7 +102,8 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     return Array.from(map.values()).sort((a, b) => a.po_number.localeCompare(b.po_number));
   }, [orders]);
 
-  // Apply search filter — match on PO number, customer, factory, or any style code/desc/colour.
+  // Apply search filter — match on PO number, customer refs (customer PO#,
+  // China Orderbook ref), factory, or any style code/desc/colour.
   const visibleGroups = useMemo<POGroup[]>(() => {
     const q = search.trim().toLowerCase();
     if (!q) return poGroups;
@@ -96,10 +111,19 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
       .map((g) => {
         const poMatches = g.po_number.toLowerCase().includes(q) ||
                           g.customer.toLowerCase().includes(q) ||
-                          g.factory.toLowerCase().includes(q);
+                          g.factory.toLowerCase().includes(q) ||
+                          // Refs live per-style on the Order rows — surface a
+                          // PO if *any* of its styles carry a matching ref.
+                          g.styles.some((s) =>
+                            (s.customer_po_number || '').toLowerCase().includes(q) ||
+                            (s.china_orderbook_ref || '').toLowerCase().includes(q)
+                          );
         if (poMatches) return g;
         const styles = g.styles.filter((s) =>
           (s.style_code || '').toLowerCase().includes(q) ||
+          (s.customer_style_code || '').toLowerCase().includes(q) ||
+          (s.customer_po_number || '').toLowerCase().includes(q) ||
+          (s.china_orderbook_ref || '').toLowerCase().includes(q) ||
           (s.description || '').toLowerCase().includes(q) ||
           (s.colour || '').toLowerCase().includes(q)
         );
@@ -338,7 +362,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search PO, style, customer, factory…"
+                placeholder="Search PO, style, customer, factory, refs…"
                 className="w-full pl-9 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-violet-500"
               />
             </div>

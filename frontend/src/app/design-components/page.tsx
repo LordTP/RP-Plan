@@ -163,7 +163,7 @@ function DesignComponentsContent() {
 
   const reloadOrders = () => {
     setIsLoading(true);
-    ordersApi.getOrders(1, 500, {})
+    ordersApi.getOrders(1, 5000, {})
       .then((res) => setOrders(res.orders))
       .catch(() => toast.error('Failed to load orders'))
       .finally(() => setIsLoading(false));
@@ -337,7 +337,7 @@ function DesignComponentsContent() {
       const res = await componentsApi.mergeComponentNames(fromNames, toName);
       toast.success(`Merged ${res.renamed_count} components into "${toName}"`);
       // Reload orders so the groups/clusters update
-      const r = await ordersApi.getOrders(1, 500, {});
+      const r = await ordersApi.getOrders(1, 5000, {});
       setOrders(r.orders);
       // selectedName is "<name>|<sampleType>"; if the current selection's
       // name was part of the merge, point it at the renamed group. Keep the
@@ -696,7 +696,7 @@ function DesignComponentsContent() {
                 toast.success(`${res.changed_count} updated${res.unchanged_count ? ` · ${res.unchanged_count} already matched` : ''}`);
               }
               // Reload orders to pick up fresh component values
-              const r = await ordersApi.getOrders(1, 500, {});
+              const r = await ordersApi.getOrders(1, 5000, {});
               setOrders(r.orders);
               setSelectedComponentIds(new Set());
               setBulkAction(null);
