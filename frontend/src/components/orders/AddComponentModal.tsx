@@ -49,10 +49,12 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Filter chips — each is either null (no filter) or a specific value.
-  const [customerFilter, setCustomerFilter] = useState<string | null>(null);
-  const [seasonFilter, setSeasonFilter] = useState<string | null>(null);
-  const [styleFilter, setStyleFilter] = useState<string | null>(null);
+  // Filter chips — each holds the set of picked values. Empty set = no
+  // filter on that dimension. Multi-select: click each option in the
+  // popover to toggle it.
+  const [customerFilter, setCustomerFilter] = useState<Set<string>>(new Set());
+  const [seasonFilter, setSeasonFilter] = useState<Set<string>>(new Set());
+  const [styleFilter, setStyleFilter] = useState<Set<string>>(new Set());
   const [openFilter, setOpenFilter] = useState<OpenFilter>(null);
 
   // Reset state every time the modal opens
@@ -64,9 +66,9 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
     setSelectedIds(new Set());
     setCollapsedPOs(new Set());
     setShowNameSuggestions(false);
-    setCustomerFilter(null);
-    setSeasonFilter(null);
-    setStyleFilter(null);
+    setCustomerFilter(new Set());
+    setSeasonFilter(new Set());
+    setStyleFilter(new Set());
     setOpenFilter(null);
     componentsApi.getComponentNames()
       .then((res) => setKnownNames(res.names))
@@ -130,13 +132,15 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
 
   // Apply filter chips first, THEN search — this way the search is scoped
   // to the currently-visible chip filters (search inside e.g. "Chelsea").
+  // Each dimension is OR within itself (customer in {Chelsea, Stoke})
+  // and AND across dimensions (customer OR-set  AND  season OR-set).
   const filteredOrders = useMemo(() => {
     return eligibleOrders.filter((o) => {
-      if (customerFilter && o.customer !== customerFilter) return false;
-      if (seasonFilter && o.season !== seasonFilter) return false;
-      if (styleFilter) {
-        const base = o.style_base || o.style_code;
-        if (base !== styleFilter) return false;
+      if (customerFilter.size > 0 && !customerFilter.has(o.customer || '')) return false;
+      if (seasonFilter.size > 0 && !seasonFilter.has(o.season || '')) return false;
+      if (styleFilter.size > 0) {
+        const base = o.style_base || o.style_code || '';
+        if (!styleFilter.has(base)) return false;
       }
       return true;
     });
@@ -450,36 +454,36 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
 
                 <FilterChip
                   label="Customer"
-                  value={customerFilter}
+                  values={customerFilter}
                   options={customerOptions}
                   open={openFilter === 'customer'}
                   onToggle={() => setOpenFilter(openFilter === 'customer' ? null : 'customer')}
-                  onPick={(v) => { setCustomerFilter(v); setOpenFilter(null); }}
-                  onClear={() => setCustomerFilter(null)}
+                  onPick={(v) => setCustomerFilter(toggleInSet(customerFilter, v))}
+                  onClear={() => setCustomerFilter(new Set())}
                 />
                 <FilterChip
                   label="Season"
-                  value={seasonFilter}
+                  values={seasonFilter}
                   options={seasonOptions}
                   open={openFilter === 'season'}
                   onToggle={() => setOpenFilter(openFilter === 'season' ? null : 'season')}
-                  onPick={(v) => { setSeasonFilter(v); setOpenFilter(null); }}
-                  onClear={() => setSeasonFilter(null)}
+                  onPick={(v) => setSeasonFilter(toggleInSet(seasonFilter, v))}
+                  onClear={() => setSeasonFilter(new Set())}
                 />
                 <FilterChip
                   label="Style"
-                  value={styleFilter}
+                  values={styleFilter}
                   options={styleOptions}
                   open={openFilter === 'style'}
                   onToggle={() => setOpenFilter(openFilter === 'style' ? null : 'style')}
-                  onPick={(v) => { setStyleFilter(v); setOpenFilter(null); }}
-                  onClear={() => setStyleFilter(null)}
+                  onPick={(v) => setStyleFilter(toggleInSet(styleFilter, v))}
+                  onClear={() => setStyleFilter(new Set())}
                 />
 
-                {(customerFilter || seasonFilter || styleFilter) && (
+                {(customerFilter.size > 0 || seasonFilter.size > 0 || styleFilter.size > 0) && (
                   <button
                     type="button"
-                    onClick={() => { setCustomerFilter(null); setSeasonFilter(null); setStyleFilter(null); }}
+                    onClick={() => { setCustomerFilter(new Set()); setSeasonFilter(new Set()); setStyleFilter(new Set()); }}
                     className="text-[11px] text-gray-500 hover:text-red-600 font-medium ml-1"
                   >
                     Clear filters
@@ -512,7 +516,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
             <div className="px-6 pb-3 flex-1 min-h-0 flex flex-col">
               {visibleGroups.length === 0 ? (
                 <div className="text-center py-16 text-sm text-gray-400 italic">
-                  {search || customerFilter || seasonFilter || styleFilter
+                  {search || customerFilter.size > 0 || seasonFilter.size > 0 || styleFilter.size > 0
                     ? 'No matches'
                     : 'No styles available'}
                 </div>
@@ -643,14 +647,23 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
   );
 }
 
+// Small pure helper: return a NEW Set with `v` toggled. Keeps state
+// updates immutable so React sees a change reliably.
+function toggleInSet(set: Set<string>, v: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(v)) next.delete(v); else next.add(v);
+  return next;
+}
+
 // ─── Filter chip with inline popover ─────────────────────────────────
-// Small dropdown chip used above the style list. Closed state shows just
-// the label (or label + selected value); open state pops a scrollable
-// list of options plus a clear affordance.
+// Multi-select dropdown chip. Options list stays open on click so the
+// user can tick several; each tick emits an onPick which the parent
+// converts to a toggle. Chip label shows the first selection with a
+// "+N more" tail when more than one is picked.
 
 function FilterChip({
   label,
-  value,
+  values,
   options,
   open,
   onToggle,
@@ -658,7 +671,7 @@ function FilterChip({
   onClear,
 }: {
   label: string;
-  value: string | null;
+  values: Set<string>;
   options: string[];
   open: boolean;
   onToggle: () => void;
@@ -674,7 +687,9 @@ function FilterChip({
     return options.filter((o) => o.toLowerCase().includes(q));
   }, [options, search]);
 
-  const active = value !== null;
+  const active = values.size > 0;
+  const primary = active ? Array.from(values)[0] : null;
+  const extra = active ? values.size - 1 : 0;
 
   return (
     <div className="relative">
@@ -691,10 +706,17 @@ function FilterChip({
         <span className={cn(active ? 'text-violet-700' : 'text-gray-500')}>
           {label}{active ? ':' : ''}
         </span>
-        {active && (
-          <span className="text-violet-900 font-semibold truncate max-w-[120px]" title={value!}>
-            {value}
-          </span>
+        {active && primary && (
+          <>
+            <span className="text-violet-900 font-semibold truncate max-w-[120px]" title={primary}>
+              {primary}
+            </span>
+            {extra > 0 && (
+              <span className="text-violet-600 font-semibold text-[10px] bg-white/70 border border-violet-200 rounded-full px-1.5 py-0" title={Array.from(values).join(', ')}>
+                +{extra}
+              </span>
+            )}
+          </>
         )}
         {active ? (
           <span
@@ -715,34 +737,58 @@ function FilterChip({
           className="absolute z-30 left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-xl overflow-hidden"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="px-2.5 pt-2 pb-1.5 border-b border-gray-100">
+          <div className="px-2.5 pt-2 pb-1.5 border-b border-gray-100 flex items-center gap-2">
             <input
               type="text"
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={`Search ${label.toLowerCase()}…`}
-              className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-500"
+              className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-violet-500"
             />
+            {active && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="text-[10px] font-medium text-gray-500 hover:text-red-600 whitespace-nowrap"
+              >
+                Clear
+              </button>
+            )}
           </div>
-          <div className="max-h-56 overflow-y-auto">
+          <div className="max-h-56 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <div className="text-center py-3 text-[11px] text-gray-400 italic">No matches</div>
-            ) : filtered.map((o) => (
-              <button
-                key={o}
-                type="button"
-                onClick={() => onPick(o)}
-                className={cn(
-                  'w-full text-left px-3 py-1.5 text-xs hover:bg-violet-50 flex items-center justify-between',
-                  o === value && 'bg-violet-100 font-semibold text-violet-900',
-                )}
-              >
-                <span className="truncate">{o}</span>
-                {o === value && <span className="text-violet-600 text-[11px]">✓</span>}
-              </button>
-            ))}
+            ) : filtered.map((o) => {
+              const checked = values.has(o);
+              return (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => onPick(o)}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-violet-50',
+                    checked && 'bg-violet-50 font-semibold text-violet-900',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                      checked ? 'bg-violet-600 border-violet-600' : 'bg-white border-gray-300',
+                    )}
+                  >
+                    {checked && <span className="text-white text-[9px] leading-none">✓</span>}
+                  </span>
+                  <span className="truncate">{o}</span>
+                </button>
+              );
+            })}
           </div>
+          {active && (
+            <div className="border-t border-gray-100 px-3 py-1.5 text-[10px] text-violet-700 font-semibold bg-violet-50/40">
+              {values.size} selected
+            </div>
+          )}
         </div>
       )}
     </div>
