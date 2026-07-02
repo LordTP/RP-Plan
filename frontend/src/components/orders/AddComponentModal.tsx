@@ -329,7 +329,7 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
               <div className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-2">
                 Sample type
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setSampleType('strike_off')}
