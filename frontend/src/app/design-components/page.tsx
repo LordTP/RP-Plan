@@ -186,16 +186,6 @@ function DesignComponentsContent() {
     return () => { cancelled = true; };
   }, []);
 
-  if (user && user.role === 'supplier') {
-    return (
-      <AppShell title="Components">
-        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-          <p className="text-sm text-gray-500">You do not have permission to view this page.</p>
-        </div>
-      </AppShell>
-    );
-  }
-
   // Raw groups — keyed by (name, sample_type) so a "Pocket" Strike Off and
   // a "Pocket" Lab Dip surface as two separate groups, each with the
   // correct sample-type rollups.
