@@ -1,7 +1,7 @@
 """
 Database models for China Orderbook Portal
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, Enum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, Enum, UniqueConstraint, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -152,6 +152,13 @@ class PurchaseOrder(Base):
 
     # Import tracking
     import_batch_id = Column(String(36), nullable=True, index=True)
+
+    # Text overrides for date fields that can't always hold a real date
+    # (e.g. customers send "ASAP" instead of a delivery date). Shape:
+    # {"field_name": "ASAP"} — populated by import + edit flows when the
+    # incoming value isn't parseable as a date. Only a small allowlist of
+    # fields is eligible (see DATE_NOTE_FIELDS in routers/orders.py).
+    date_notes = Column(JSON, nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)

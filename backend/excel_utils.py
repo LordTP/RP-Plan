@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from models import PurchaseOrder, User, DateChangeHistory, PendingDateChange
+from date_notes import DATE_NOTE_FIELDS, apply_date_field
 from schemas import ExcelUploadResponse
 
 
@@ -408,7 +409,14 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                         )
                         db.add(history_entry)
 
-                        setattr(existing_po, field, new_value)
+                        # Note-eligible fields (ASAP-etc) route via the
+                        # helper so the value lands in the right column
+                        # (date_notes for text, the date column for real
+                        # dates).
+                        if field in DATE_NOTE_FIELDS:
+                            apply_date_field(existing_po, field, new_value)
+                        else:
+                            setattr(existing_po, field, new_value)
 
                 if changed_fields:
                     # Auto-calculate totals
@@ -417,8 +425,16 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                     rows_updated += 1
                     print(f"  Updated PO# {po_number} / {style_code}: {changed_fields}")
             else:
-                # Create new PO
+                # Create new PO. Peel off note-eligible fields first so
+                # a string like "ASAP" doesn't try to land in a DateTime
+                # column at construction time — apply them via the helper
+                # after the object exists.
+                note_field_values = {
+                    f: po_data.pop(f) for f in list(po_data.keys()) if f in DATE_NOTE_FIELDS
+                }
                 new_po = PurchaseOrder(**po_data)
+                for f, v in note_field_values.items():
+                    apply_date_field(new_po, f, v)
                 if import_batch_id:
                     new_po.import_batch_id = import_batch_id
                 # Auto-calculate totals
@@ -973,8 +989,17 @@ def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str,
         "date_approved_to_production", "actual_date_del_to_uk", "actual_date_del_to_customer"
     ]
     for field in date_fields:
-        if field in col_map:
-            data[field] = parse_date(_get_cell_value(sheet, row_idx, col_map[field]))
+        if field not in col_map:
+            continue
+        raw = _get_cell_value(sheet, row_idx, col_map[field])
+        parsed = parse_date(raw)
+        # Note-eligible fields keep the raw text when it can't be parsed
+        # as a date — the downstream apply path routes it via
+        # apply_date_field which decides between date column vs note.
+        if parsed is None and field in DATE_NOTE_FIELDS and isinstance(raw, str) and raw.strip():
+            data[field] = raw.strip()
+        else:
+            data[field] = parsed
 
     return data
 
@@ -1494,6 +1519,13 @@ def export_database_to_excel(
             # Format value based on type
             if field_type == "date":
                 cell_value = format_date(value)
+                # Note-eligible date fields: if there's a free-text note
+                # (e.g. "ASAP"), export that instead of the empty date so
+                # the customer round-trip stays lossless.
+                if not cell_value and field_name in DATE_NOTE_FIELDS:
+                    note = (po.date_notes or {}).get(field_name)
+                    if note:
+                        cell_value = note
             elif field_type == "bool":
                 cell_value = "YES" if value else "NO"
             elif field_type == "float" and value is not None:
@@ -1628,6 +1660,10 @@ def _export_database_to_excel_legacy(db: Session, factory_filter: str = None, is
             # Format value based on type
             if col_type == "date":
                 cell_value = format_date(value)
+                if not cell_value and field_name in DATE_NOTE_FIELDS:
+                    note = (po.date_notes or {}).get(field_name)
+                    if note:
+                        cell_value = note
             elif col_type == "bool":
                 cell_value = "YES" if value else "NO"
             elif col_type == "float" and value is not None:

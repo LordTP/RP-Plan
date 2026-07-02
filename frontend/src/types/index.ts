@@ -106,6 +106,12 @@ export interface Order {
   is_late?: boolean;
   // Shipping
   tracking_reference?: string;
+  // Free-text overrides for the small set of date fields where customers /
+  // factories occasionally give text instead of a real date (e.g. "ASAP").
+  // Keys are field names (e.g. "original_del_date_to_customer"); values are
+  // the free text. The corresponding date column is always null when a note
+  // is set — the two are kept mutually exclusive on the server.
+  date_notes?: Record<string, string> | null;
   // Comments
   comment_count?: number;
   unread_comment_count?: number;

@@ -31,6 +31,7 @@ from auth import (
 from supplier_access import (
     apply_supplier_filter, supplier_filter_clause, assert_supplier_can_access,
 )
+from date_notes import DATE_NOTE_FIELDS, apply_date_field
 from sample_helpers import (
     reconcile_sample_status,
     SAMPLE_PREFIXES_ORDER,
@@ -667,6 +668,31 @@ async def update_order(
                 continue
 
             is_date = key in date_fields or 'date' in key.lower()
+
+            # Note-eligible date fields (e.g. ASAP for customer delivery)
+            # go through the shared helper which routes to either the
+            # date column or date_notes based on what parses. Continue
+            # after logging the change so history captures both dirs.
+            if key in DATE_NOTE_FIELDS:
+                old_date = getattr(order, key)
+                old_note = (order.date_notes or {}).get(key)
+                apply_date_field(order, key, value)
+                new_date = getattr(order, key)
+                new_note = (order.date_notes or {}).get(key)
+                if (old_date != new_date) or (old_note != new_note):
+                    role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+                    change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
+                    _old_repr = old_note or (str(old_date) if old_date is not None else None)
+                    _new_repr = new_note or (str(new_date) if new_date is not None else None)
+                    db.add(DateChangeHistory(
+                        po_id=order.id,
+                        user_id=current_user.id,
+                        field_name=key,
+                        old_value=_old_repr,
+                        new_value=_new_repr,
+                        source=change_source,
+                    ))
+                continue
 
             # Treat empty string OR null as "clear this date" for date fields.
             # Without this, clearing a date in the UI silently no-ops.

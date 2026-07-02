@@ -102,6 +102,19 @@ def init_db():
                 conn.execute(text("ALTER TABLE purchase_orders ADD COLUMN tracking_reference VARCHAR(100)"))
             print("✓ Added tracking_reference column to purchase_orders table")
 
+    # Migrate: add date_notes JSON column to purchase_orders
+    # Holds text overrides (e.g. "ASAP") for a small set of date fields
+    # where the customer/factory occasionally gives free text instead of
+    # a real date. Postgres = JSONB, SQLite falls back to TEXT via JSON1.
+    if 'purchase_orders' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('purchase_orders')]
+        if 'date_notes' not in columns:
+            with engine.begin() as conn:
+                dialect = engine.dialect.name
+                col_type = "JSONB" if dialect == 'postgresql' else "JSON"
+                conn.execute(text(f"ALTER TABLE purchase_orders ADD COLUMN date_notes {col_type}"))
+            print("✓ Added date_notes column to purchase_orders table")
+
     # Migrate: add new CP HEADERS columns to purchase_orders (2026-03-24)
     if 'purchase_orders' in inspector.get_table_names():
         columns = [col['name'] for col in inspector.get_columns('purchase_orders')]

@@ -9,36 +9,35 @@ import { Calendar, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  /** ISO date string (YYYY-MM-DD) or empty string. */
+  /**
+   * The stored value. Either an ISO date (YYYY-MM-DD or a fuller ISO
+   * datetime), a free-text override like "ASAP" (for note-eligible fields),
+   * or empty. The component doesn't decide which — it just displays what
+   * it's given and lets the caller/backend route it.
+   */
   value: string;
-  /** Fired with an ISO date string or empty string when cleared. */
+  /**
+   * Emits either an ISO YYYY-MM-DD string, empty, or the raw text the
+   * user typed if it doesn't parse as a date. Backend on note-eligible
+   * fields routes the raw text into date_notes.
+   */
   onChange: (value: string) => void;
-  /** Optional: fires when the popover closes (matches native input.onBlur). */
   onBlur?: () => void;
-  /** Auto-open the popover on mount — used when this picker replaces an
-   *  inline-edit native input the user just clicked into. */
   autoFocus?: boolean;
-  /** Visual size — sm matches the inline DetailRow input style; md matches a
-   *  standalone form field (e.g. shipment drafts). */
   size?: 'sm' | 'md';
-  /** Visual variant — 'inline' is the right-aligned inline-edit style used in
-   *  DetailRow / TimelineItem; 'block' is a full-width input (forms). */
   variant?: 'inline' | 'block';
   placeholder?: string;
   disabled?: boolean;
-  /** Allow clearing the value with an inline X button. */
   clearable?: boolean;
   className?: string;
 }
 
 /**
- * Drop-in replacement for `<input type="date">` that renders the same UI on
- * every OS — Mac, Windows, Linux, all browsers. The native input is fine on
- * Safari/Chrome on macOS but truly horrible on Windows + Firefox; this wraps
- * react-day-picker so we own the look.
- *
- * API matches the native input as closely as possible: ISO YYYY-MM-DD string
- * in `value`, ISO string out via `onChange` (or '' on clear).
+ * Cross-platform date input. Two ways in: type into the text input
+ * (supports d/m/yyyy, yyyy-m-d, "27 Mar 2026", free text like "ASAP")
+ * or click the calendar icon for a picker. Emits ISO YYYY-MM-DD on a
+ * parseable date, empty on clear, or the raw text otherwise so the
+ * backend can decide what to do with it.
  */
 export function DatePickerInput({
   value,
@@ -47,50 +46,46 @@ export function DatePickerInput({
   autoFocus,
   size = 'sm',
   variant = 'inline',
-  placeholder = 'Pick date',
+  placeholder = 'Type or pick date',
   disabled,
   clearable = true,
   className,
 }: Props) {
-  const [open, setOpen] = useState(!!autoFocus);
+  const [open, setOpen] = useState(false);
   const [popupPos, setPopupPos] = useState<{ left: number; top: number } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [editValue, setEditValue] = useState<string>(() => initialEdit(value));
+  const [focused, setFocused] = useState(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
-  // Parse the ISO string into a Date object for react-day-picker. Empty string
-  // → undefined so the calendar shows nothing selected.
-  const selectedDate = (() => {
-    if (!value) return undefined;
-    try {
-      const d = parseISO(value);
-      return isValid(d) ? d : undefined;
-    } catch { return undefined; }
-  })();
+  // Keep the input in sync when `value` changes externally (e.g. the
+  // parent set a new value via calendar or after a save round-trip).
+  // But leave the user's in-progress typing alone — only sync when the
+  // field isn't focused.
+  useEffect(() => {
+    if (!focused) setEditValue(initialEdit(value));
+  }, [value, focused]);
 
-  const formatted = selectedDate ? format(selectedDate, 'd MMM yyyy') : '';
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Position the popover next to the trigger via a portal so it never gets
-  // clipped by parent overflow:hidden (modal cards, comment bubbles, etc.).
+  const selectedDate = parseAny(value);
+
+  // Position the calendar popover via a portal so parent overflow:hidden
+  // can't clip it (modals, dropdown menus, etc.).
   useLayoutEffect(() => {
     if (!open) { setPopupPos(null); return; }
     const update = () => {
       const t = triggerRef.current;
       if (!t) return;
       const r = t.getBoundingClientRect();
-      // Default below + aligned to the trigger's left edge.
-      let left = r.left;
-      let top = r.bottom + 4;
-      // If the popup would go off the right edge, anchor right instead.
-      const popupWidth = 320;
-      if (left + popupWidth > window.innerWidth - 8) {
-        left = Math.max(8, r.right - popupWidth);
-      }
-      // If the popup would go off the bottom, flip above.
-      const popupHeight = 380;
-      if (top + popupHeight > window.innerHeight - 8) {
-        top = Math.max(8, r.top - popupHeight - 4);
-      }
-      setPopupPos({ left, top });
+      setPopupPos({ left: r.left, top: r.bottom + 4 });
     };
     update();
     window.addEventListener('resize', update);
@@ -101,8 +96,7 @@ export function DatePickerInput({
     };
   }, [open]);
 
-  // Click-outside closes the popover and fires onBlur. Skipped if the click
-  // was inside the trigger or the popup.
+  // Click-outside closes the calendar popover.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -110,91 +104,134 @@ export function DatePickerInput({
       if (triggerRef.current?.contains(t)) return;
       if (popupRef.current?.contains(t)) return;
       setOpen(false);
-      onBlur?.();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open, onBlur]);
+  }, [open]);
 
-  // Esc closes the popover.
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        onBlur?.();
-      }
+      if (e.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, onBlur]);
+  }, [open]);
 
-  const handleSelect = (d: Date | undefined) => {
+  const commit = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      onChange('');
+      return;
+    }
+    const parsed = parseAny(trimmed);
+    if (parsed) {
+      onChange(toISODate(parsed));
+    } else {
+      // Not a date — pass through as-is so the backend can decide (note
+      // vs reject). Fields that don't accept notes will bounce it.
+      onChange(trimmed);
+    }
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    commit(editValue);
+    onBlur?.();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit(editValue);
+      inputRef.current?.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditValue(initialEdit(value));
+      inputRef.current?.blur();
+    }
+  };
+
+  const handleCalendarSelect = (d: Date | undefined) => {
     if (!d) {
       onChange('');
+      setEditValue('');
     } else {
-      // Local-time ISO YYYY-MM-DD (so the displayed day matches what the user picked).
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      onChange(`${yyyy}-${mm}-${dd}`);
+      const iso = toISODate(d);
+      onChange(iso);
+      setEditValue(format(d, 'd MMM yyyy'));
     }
     setOpen(false);
-    onBlur?.();
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange('');
-    onBlur?.();
+    setEditValue('');
   };
 
-  // Trigger styles vary by variant. 'inline' matches the existing DetailRow
-  // inline-edit input (right-aligned, narrow, simple border); 'block' is a
-  // standalone form field (full width, taller).
-  const triggerClass = variant === 'block'
+  // Wrapper styles match the variants used by callers today so the
+  // component slots in without breaking any layout.
+  const wrapperClass = variant === 'block'
     ? cn(
-        'w-full text-left flex items-center justify-between gap-2 rounded-md border bg-white transition-colors',
-        size === 'sm' ? 'px-3 py-2 text-xs' : 'px-3 py-2 text-sm',
+        'w-full flex items-center gap-1 rounded-md border bg-white transition-colors',
+        size === 'sm' ? 'px-2 py-1 text-xs' : 'px-2 py-1.5 text-sm',
         disabled
-          ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
-          : 'border-gray-200 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 cursor-pointer',
+          ? 'border-gray-200 bg-gray-50'
+          : 'border-gray-200 hover:border-gray-300 focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-400',
         className
       )
     : cn(
-        'inline-flex items-center justify-between gap-1.5 rounded-md border bg-white transition-colors',
-        size === 'sm' ? 'px-2 py-1 text-xs w-[160px]' : 'px-2.5 py-1.5 text-xs w-[180px]',
+        'inline-flex items-center gap-1 rounded-md border bg-white transition-colors',
+        size === 'sm' ? 'px-1.5 py-0.5 text-xs w-[170px]' : 'px-2 py-1 text-xs w-[190px]',
         disabled
-          ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-          : 'border-primary-300 hover:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 cursor-pointer',
+          ? 'border-gray-200 bg-gray-50'
+          : 'border-primary-300 hover:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/20',
         className
       );
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        className={triggerClass}
-      >
-        <span className={cn('flex items-center gap-1.5 min-w-0', !formatted && 'text-gray-400')}>
-          <Calendar className="w-3 h-3 flex-shrink-0 text-gray-400" />
-          <span className="truncate">{formatted || placeholder}</span>
-        </span>
-        {clearable && formatted && !disabled && (
-          <span
-            role="button"
-            tabIndex={-1}
+      <div ref={triggerRef} className={wrapperClass}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={cn(
+            'flex-1 min-w-0 outline-none bg-transparent',
+            disabled ? 'text-gray-400 cursor-not-allowed' : 'text-gray-800 placeholder:text-gray-400',
+          )}
+        />
+        {clearable && editValue && !disabled && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleClear}
-            className="flex-shrink-0 p-0.5 -m-0.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+            className="flex-shrink-0 p-0.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
             title="Clear"
+            tabIndex={-1}
           >
             <X className="w-3 h-3" />
-          </span>
+          </button>
         )}
-      </button>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => !disabled && setOpen((o) => !o)}
+          disabled={disabled}
+          className="flex-shrink-0 p-0.5 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded"
+          title="Pick from calendar"
+          tabIndex={-1}
+        >
+          <Calendar className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       {open && popupPos && createPortal(
         <div
@@ -205,9 +242,9 @@ export function DatePickerInput({
         >
           <DayPicker
             mode="single"
-            selected={selectedDate}
-            onSelect={handleSelect}
-            defaultMonth={selectedDate}
+            selected={selectedDate ?? undefined}
+            onSelect={handleCalendarSelect}
+            defaultMonth={selectedDate ?? undefined}
             weekStartsOn={1}
             classNames={{
               root: 'rdp-modern p-3 font-sans',
@@ -230,15 +267,15 @@ export function DatePickerInput({
           <div className="border-t border-gray-100 px-3 py-2 flex items-center justify-between bg-gray-50/50">
             <button
               type="button"
-              onClick={() => handleSelect(new Date())}
+              onClick={() => handleCalendarSelect(new Date())}
               className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
             >
               Today
             </button>
-            {clearable && formatted && (
+            {clearable && editValue && (
               <button
                 type="button"
-                onClick={() => { onChange(''); setOpen(false); onBlur?.(); }}
+                onClick={() => { onChange(''); setEditValue(''); setOpen(false); }}
                 className="text-[11px] font-medium text-gray-500 hover:text-red-600"
               >
                 Clear
@@ -250,4 +287,55 @@ export function DatePickerInput({
       )}
     </>
   );
+}
+
+// ─── helpers ───────────────────────────────────────────────────────────
+
+/** What to show in the input when we haven't been touched yet. Formats
+ *  a parseable date as "27 Mar 2026" so it reads nicely; passes free
+ *  text (e.g. "ASAP") through unchanged. */
+function initialEdit(value: string): string {
+  if (!value) return '';
+  const parsed = parseAny(value);
+  if (parsed) return format(parsed, 'd MMM yyyy');
+  return value;
+}
+
+/** Try several date formats. Returns null if nothing parsed. */
+function parseAny(raw: string): Date | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // ISO first (handles both YYYY-MM-DD and full datetime).
+  try {
+    const iso = parseISO(trimmed);
+    if (isValid(iso)) return iso;
+  } catch { /* fall through */ }
+
+  // d/m/yyyy and d-m-yyyy — common UK entry.
+  const dmY = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (dmY) {
+    const d = parseInt(dmY[1], 10);
+    const m = parseInt(dmY[2], 10);
+    let y = parseInt(dmY[3], 10);
+    if (y < 100) y += 2000;  // "26" → 2026
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      const dt = new Date(y, m - 1, d);
+      if (isValid(dt)) return dt;
+    }
+  }
+
+  // "27 Mar 2026" / "27 March 2026" via a permissive Date.parse.
+  const flexible = new Date(trimmed);
+  if (isValid(flexible)) return flexible;
+
+  return null;
+}
+
+function toISODate(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }

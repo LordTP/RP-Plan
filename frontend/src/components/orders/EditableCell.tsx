@@ -6,6 +6,7 @@ import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from
 import { ordersApi } from '@/lib/api';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
+import { NOTE_ELIGIBLE_FIELDS } from '@/lib/dateNotes';
 import type { ColumnDef, Order } from '@/types';
 
 type ApplyMode = 'single' | 'all' | 'selected';
@@ -96,7 +97,12 @@ export function EditableCell({
 
     let initialValue = value;
     if (column.type === 'date') {
-      initialValue = formatDateForInput(value);
+      // Note-eligible fields: prefer the free-text note over the (null)
+      // date so the editor opens with e.g. "ASAP" ready to keep or replace.
+      const note = NOTE_ELIGIBLE_FIELDS.has(column.key as string)
+        ? order.date_notes?.[column.key as string]
+        : undefined;
+      initialValue = note || formatDateForInput(value);
     } else if (column.type === 'currency') {
       initialValue = value?.toString() || '';
     } else {
@@ -207,6 +213,14 @@ export function EditableCell({
   };
 
   const formatDisplayValue = () => {
+    // Note-eligible date fields fall back to the free-text note (e.g.
+    // "ASAP") when the date column itself is null. Checked before the
+    // null bail-out so a cell with only a note still renders text.
+    if (column.type === 'date' && NOTE_ELIGIBLE_FIELDS.has(column.key as string)) {
+      const note = order.date_notes?.[column.key as string];
+      if (note) return note;
+    }
+
     if (value === null || value === undefined) return '-';
 
     switch (column.type) {

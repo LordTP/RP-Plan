@@ -1766,7 +1766,7 @@ function DetailPanel({
                 <div>
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
                   <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                    {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={formatDate(order.original_del_date_to_customer)} />}
+                    {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={order.date_notes?.original_del_date_to_customer || formatDate(order.original_del_date_to_customer)} />}
                     {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
                     {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
                     {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
@@ -1791,16 +1791,16 @@ function DetailPanel({
                     {hasCol('tech_packs_sent_to_factory') && <TimelineItem label="Tech Packs Sent" date={order.tech_packs_sent_to_factory} />}
                     {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} />}
                     {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} />}
-                    {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} />}
-                    {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
-                    {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
+                    {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} note={order.date_notes?.original_po_ex_factory} />}
+                    {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                    {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} note={order.date_notes?.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
                     {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
                     {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
                     {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
                     {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
                     {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
                     {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
-                    {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} />}
+                    {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} note={order.date_notes?.original_del_date_to_customer} />}
                   </div>
                 </div>
               </div>
@@ -2582,15 +2582,18 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   );
 }
 
-function TimelineItem({ label, date, highlight, editable, onSave }: {
+function TimelineItem({ label, date, note, highlight, editable, onSave }: {
   label: string;
   date: string | null | undefined;
+  /** Free-text override (e.g. "ASAP") — displayed in place of the date
+   *  when set. Only relevant for note-eligible fields. */
+  note?: string | null;
   highlight?: boolean;
   editable?: boolean;
   onSave?: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const hasDate = !!date;
+  const hasDate = !!date || !!note;
 
   return (
     <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
@@ -2608,7 +2611,7 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
         <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
         {editing ? (
           <DatePickerInput
-            value={date ? date.split('T')[0] : ''}
+            value={note || (date ? date.split('T')[0] : '')}
             onChange={(v) => { onSave?.(v); setEditing(false); }}
             onBlur={() => setEditing(false)}
             autoFocus
@@ -2624,7 +2627,7 @@ function TimelineItem({ label, date, highlight, editable, onSave }: {
             onClick={() => editable && setEditing(true)}
             title={editable ? 'Click to edit' : undefined}
           >
-            {formatDate(date)}
+            {note || formatDate(date)}
           </span>
         )}
       </div>

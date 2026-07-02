@@ -165,6 +165,12 @@ class PurchaseOrderBase(BaseModel):
     status: Optional[str] = None
     is_late: bool = False
     tracking_reference: Optional[str] = None
+    # Free-text overrides for a small set of date fields where customers /
+    # factories occasionally write "ASAP" instead of a real date. Keys are
+    # the field names (e.g. "original_del_date_to_customer"); values are
+    # the free text as-typed. Populated only when the date column itself
+    # is null — the two are kept mutually exclusive on the server.
+    date_notes: Optional[Dict[str, str]] = None
 
 
 class PurchaseOrderCreate(PurchaseOrderBase):
@@ -351,6 +357,9 @@ class PurchaseOrderSupplierResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    # Same as PurchaseOrderResponse — free-text overrides for a small set
+    # of date fields (e.g. "ASAP"). See PurchaseOrderBase.date_notes.
+    date_notes: Optional[Dict[str, str]] = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
