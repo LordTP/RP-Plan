@@ -1102,17 +1102,37 @@ function DetailBody({
   }, []);
 
   // Sampling progress badge — count distinct sample types and how many are done.
-  // For the hero strip; also used to show "1 pending" on the Sampling pill.
-  // Fit + PPS are always order-level. Strike + Lab fall back to the order
-  // when there are no components; otherwise they're tracked per-component
-  // and don't show in this hero count.
+  // For the hero strip + Sampling pill "N pending" counter.
+  // Fit + PPS are always order-level. Strike / Lab / Label live on the
+  // components — each component contributes ONE item using its own
+  // sample_type. Order-level SO/LD only counts as a fallback when the
+  // order has no components at all (legacy shape).
   const sampleProgress = useMemo(() => {
     const items: { label: string; done: boolean }[] = [];
     if (hasCol('fit_sample_status')) {
       const s = (order.fit_sample_status || '').toUpperCase();
-      items.push({ label: 'Fit', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
+      // Fit Required = N also counts as done — the sample won't happen.
+      const required = (order.fit_sample_required || '').trim().toUpperCase();
+      const done = s === 'APPROVED' || s === 'NOT REQUIRED' || required === 'N';
+      items.push({ label: 'Fit', done });
     }
-    if (!hasComponents) {
+    const components = order.components || [];
+    if (components.length > 0) {
+      for (const c of components) {
+        const t = c.sample_type;
+        const status = (t === 'strike_off' ? c.strike_off_status
+                      : t === 'lab_dip'   ? c.lab_dip_status
+                      : c.label_status) || '';
+        const approved = t === 'strike_off' ? c.strike_off_approved
+                       : t === 'lab_dip'   ? c.lab_dip_approved
+                       : c.label_approved;
+        const s = status.trim().toUpperCase();
+        const done = s === 'APPROVED' || s === 'NOT REQUIRED' || !!approved;
+        const tag = t === 'strike_off' ? 'SO' : t === 'lab_dip' ? 'LD' : 'LB';
+        items.push({ label: `${c.name} ${tag}`, done });
+      }
+    } else {
+      // Legacy order-level SO/LD — only when there are no components.
       if (hasCol('strike_off_status')) {
         const s = (order.strike_off_status || '').toUpperCase();
         items.push({ label: 'Strike', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
@@ -1127,7 +1147,7 @@ function DetailBody({
       items.push({ label: 'PPS', done: s === 'APPROVED' || s === 'NOT REQUIRED' });
     }
     return items;
-  }, [order, hasCol, hasComponents]);
+  }, [order, hasCol]);
   const sampleDone = sampleProgress.filter(s => s.done).length;
   const sampleTotal = sampleProgress.length;
   const samplePending = sampleTotal - sampleDone;
