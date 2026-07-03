@@ -284,7 +284,8 @@ export function EditableCell({
             </div>
 
             <div className="mb-2 text-sm text-gray-500">
-              PO#: {order.customer_po_number || order.po_number}
+              PO# {order.po_number}
+              {order.style_code && <span className="text-gray-400"> · {order.style_code}</span>}
             </div>
 
             <div className="mb-4">
