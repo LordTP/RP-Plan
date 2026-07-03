@@ -565,34 +565,66 @@ export function AddComponentModal({ open, onClose, orders, onCreated }: Props) {
                         {/* Styles list */}
                         {!collapsed && g.styles.map((s) => {
                           const ref = s.customer_po_number || s.china_orderbook_ref;
+                          const existingComponents = s.components || [];
                           return (
-                            <label
+                            <div
                               key={s.id}
                               className={cn(
-                                'grid items-center gap-3 pl-12 pr-3.5 py-2.5 text-xs cursor-pointer hover:bg-gray-50',
+                                'cursor-pointer hover:bg-gray-50',
                                 selectedIds.has(s.id) && 'bg-violet-50/50',
                               )}
-                              style={{ gridTemplateColumns: 'auto 130px 1fr 140px 100px' }}
                             >
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-gray-300 accent-violet-600"
-                                checked={selectedIds.has(s.id)}
-                                onChange={() => toggleStyle(s.id)}
-                              />
-                              <span className="font-mono text-gray-800 truncate" title={s.style_code || `#${s.id}`}>
-                                {s.style_code || `#${s.id}`}
-                              </span>
-                              <span className="text-gray-600 truncate" title={s.description || ''}>
-                                {s.description}
-                              </span>
-                              <span className="text-gray-500 truncate text-[11px]" title={ref || ''}>
-                                {ref ? <><span className="text-gray-400">ref </span>{ref}</> : ''}
-                              </span>
-                              <span className="text-gray-500 truncate text-right" title={s.colour || ''}>
-                                {s.colour}
-                              </span>
-                            </label>
+                              <label
+                                className="grid items-center gap-3 pl-12 pr-3.5 py-2.5 text-xs cursor-pointer"
+                                style={{ gridTemplateColumns: 'auto 130px 1fr 140px 100px' }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 rounded border-gray-300 accent-violet-600"
+                                  checked={selectedIds.has(s.id)}
+                                  onChange={() => toggleStyle(s.id)}
+                                />
+                                <span className="font-mono text-gray-800 truncate" title={s.style_code || `#${s.id}`}>
+                                  {s.style_code || `#${s.id}`}
+                                </span>
+                                <span className="text-gray-600 truncate" title={s.description || ''}>
+                                  {s.description}
+                                </span>
+                                <span className="text-gray-500 truncate text-[11px]" title={ref || ''}>
+                                  {ref ? <><span className="text-gray-400">ref </span>{ref}</> : ''}
+                                </span>
+                                <span className="text-gray-500 truncate text-right" title={s.colour || ''}>
+                                  {s.colour}
+                                </span>
+                              </label>
+                              {/* Subtle line: existing components on this
+                                  style. Helps users spot duplicates before
+                                  they add — click still handled by the
+                                  parent's cursor / bg. */}
+                              {existingComponents.length > 0 && (
+                                <div className="pl-12 pr-3.5 pb-2 -mt-1 flex items-center gap-1.5 flex-wrap text-[10px]">
+                                  <span className="uppercase tracking-wide text-gray-300 font-semibold">Already on:</span>
+                                  {existingComponents.map((c) => {
+                                    const tag = c.sample_type === 'strike_off' ? 'SO'
+                                              : c.sample_type === 'lab_dip' ? 'LD'
+                                              : 'LB';
+                                    const tagColor = c.sample_type === 'strike_off' ? 'text-amber-600'
+                                                    : c.sample_type === 'lab_dip' ? 'text-cyan-600'
+                                                    : 'text-fuchsia-600';
+                                    return (
+                                      <span key={c.id} className="inline-flex items-center gap-1 text-gray-500">
+                                        <span className="truncate max-w-[120px]" title={c.name}>{c.name}</span>
+                                        <span className={cn('font-bold', tagColor)}>{tag}</span>
+                                      </span>
+                                    );
+                                  }).reduce<React.ReactNode[]>((acc, node, i) => {
+                                    if (i > 0) acc.push(<span key={`sep-${i}`} className="text-gray-300">·</span>);
+                                    acc.push(node);
+                                    return acc;
+                                  }, [])}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
