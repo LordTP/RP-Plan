@@ -271,6 +271,11 @@ export const ordersApi = {
     return response.data;
   },
 
+  bulkDelete: async (orderIds: number[]): Promise<{ success: boolean; deleted_count: number }> => {
+    const response = await api.post('/api/orders/bulk-delete', { order_ids: orderIds });
+    return response.data;
+  },
+
   bulkUpdateDate: async (
     poNumber: string,
     fieldName: string,

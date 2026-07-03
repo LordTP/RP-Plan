@@ -74,7 +74,7 @@ interface OrderTableProps {
 }
 
 export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange }: OrderTableProps) {
-  const { user, setSelectedOrder, updateOrderInList } = useStore();
+  const { user, setSelectedOrder, updateOrderInList, orders: storeOrders, totalOrders: storeTotal, setOrders: setStoreOrders } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [statusDropdownOrder, setStatusDropdownOrder] = useState<number | null>(null);
@@ -108,6 +108,26 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+
+  // Row selection (internal/admin only) — powers the checkbox column,
+  // the floating action bar and the right-click delete menu.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Order[] | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; orderId: number } | null>(null);
+  const canBulkDelete = isInternal;
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onDown = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextMenu(null); };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
 
   // Drag-to-scroll state
   const isDragging = useRef(false);
@@ -320,15 +340,19 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
 
   const visibleColumns = getVisibleColumns();
 
-  // Compute sticky left offsets for pinned columns
-  // Comment icon (32px) sticks at left:0, po_number at 32, style_code at 32+po_width
+  // Compute sticky left offsets for pinned columns.
+  // Layout: [ select? | comment | po_number | style_code | rest... ]
+  // Select column (28px) only renders when the user can bulk-delete
+  // (internal/admin). Comment icon (32px) sticks after it.
+  const SELECT_COL_WIDTH = 28;
   const COMMENT_COL_WIDTH = 32;
+  const LEADING_STICKY_WIDTH = (canBulkDelete ? SELECT_COL_WIDTH : 0) + COMMENT_COL_WIDTH;
   const STICKY_COLUMNS = ['po_number', 'style_code'] as const;
   const stickyLeftMap: Record<string, number> = {};
   {
     const poCol = visibleColumns.find(c => c.key === 'po_number');
-    stickyLeftMap['po_number'] = COMMENT_COL_WIDTH;
-    stickyLeftMap['style_code'] = COMMENT_COL_WIDTH + (poCol ? poCol.width : 0);
+    stickyLeftMap['po_number'] = LEADING_STICKY_WIDTH;
+    stickyLeftMap['style_code'] = LEADING_STICKY_WIDTH + (poCol ? poCol.width : 0);
   }
   const lastStickyKey = (() => {
     for (let i = visibleColumns.length - 1; i >= 0; i--) {
@@ -447,7 +471,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   };
 
   // Calculate total table width (includes comment col at start)
-  const totalWidth = COMMENT_COL_WIDTH + visibleColumns.reduce((sum, col) => sum + col.width, 0);
+  const totalWidth = (canBulkDelete ? SELECT_COL_WIDTH : 0) + COMMENT_COL_WIDTH + visibleColumns.reduce((sum, col) => sum + col.width, 0);
 
   // Total header rows = 1 main + 13 reference = 14 (only if we have size columns AND showing reference)
   const headerRowCount = (hasSizeColumns && showSizeReference) ? SIZE_REFERENCE.length + 1 : 1;
@@ -481,11 +505,36 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           <thead className="sticky top-0 z-20">
             {/* Row 1: Main headers */}
             <tr className="bg-gray-100">
-              {/* Comment column - first, sticky */}
+              {/* Select column — first, sticky. Only for internal/admin. */}
+              {canBulkDelete && (
+                <th
+                  rowSpan={showSizeReference ? headerRowCount : 1}
+                  className="px-0 py-1 text-center border border-gray-300 bg-gray-100 align-top"
+                  style={{ position: 'sticky', left: 0, zIndex: 30, width: SELECT_COL_WIDTH, minWidth: SELECT_COL_WIDTH }}
+                >
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-violet-600 cursor-pointer align-middle"
+                    checked={orders.length > 0 && orders.every(o => selectedIds.has(o.id))}
+                    ref={(el) => {
+                      if (!el) return;
+                      const some = orders.some(o => selectedIds.has(o.id));
+                      const all = orders.length > 0 && orders.every(o => selectedIds.has(o.id));
+                      el.indeterminate = some && !all;
+                    }}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedIds(new Set(orders.map(o => o.id)));
+                      else setSelectedIds(new Set());
+                    }}
+                    title="Select all visible"
+                  />
+                </th>
+              )}
+              {/* Comment column - sticky after select */}
               <th
                 rowSpan={showSizeReference ? headerRowCount : 1}
                 className="px-0.5 py-1 text-center border border-gray-300 bg-gray-100 align-top"
-                style={{ position: 'sticky', left: 0, zIndex: 30, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
+                style={{ position: 'sticky', left: canBulkDelete ? SELECT_COL_WIDTH : 0, zIndex: 30, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
               >
                 <MessageSquare className="w-3 h-3 mx-auto text-gray-400" />
               </th>
@@ -612,29 +661,71 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
             {orders.length === 0 ? (
               <tr>
                 <td
-                  colSpan={visibleColumns.length + 1}
+                  colSpan={visibleColumns.length + 1 + (canBulkDelete ? 1 : 0)}
                   className="px-3 py-8 text-center text-gray-400 text-xs"
                 >
                   No orders found
                 </td>
               </tr>
             ) : (
-              orders.map((order) => {
+              orders.map((order, rowIndex) => {
                 const orderChangedFields = changedFields?.[String(order.id)] || [];
+                const isSelected = selectedIds.has(order.id);
 
                 return (
                 <tr
                   key={order.id}
+                  onContextMenu={canBulkDelete ? (e) => {
+                    e.preventDefault();
+                    if (!selectedIds.has(order.id)) setSelectedIds(new Set([order.id]));
+                    setContextMenu({ x: e.clientX, y: e.clientY, orderId: order.id });
+                  } : undefined}
                   className={cn(
                     "table-row border-b border-gray-100 hover:bg-gray-50",
-                    orderChangedFields.length > 0 && "!bg-green-50",
+                    isSelected && "!bg-violet-50 hover:!bg-violet-100",
+                    orderChangedFields.length > 0 && !isSelected && "!bg-green-50",
                     order.unread_comment_count && order.unread_comment_count > 0 && "!border-l-2 !border-l-primary-400"
                   )}
                 >
-                  {/* Comment cell - first, sticky */}
+                  {/* Select cell — first, sticky. Only when canBulkDelete. */}
+                  {canBulkDelete && (
+                    <td
+                      className={cn("px-0 py-1 text-center border border-gray-100", isSelected ? "bg-violet-50" : "bg-white")}
+                      style={{ position: 'sticky', left: 0, zIndex: 10, width: SELECT_COL_WIDTH, minWidth: SELECT_COL_WIDTH }}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-3.5 h-3.5 accent-violet-600 cursor-pointer align-middle"
+                        checked={isSelected}
+                        onChange={() => { /* handled in onClick to catch shiftKey */ }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const shift = (e.nativeEvent as MouseEvent).shiftKey;
+                          if (shift && lastCheckedIndex !== null) {
+                            const [from, to] = lastCheckedIndex <= rowIndex ? [lastCheckedIndex, rowIndex] : [rowIndex, lastCheckedIndex];
+                            const range = orders.slice(from, to + 1).map(o => o.id);
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              range.forEach(id => next.add(id));
+                              return next;
+                            });
+                          } else {
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(order.id)) next.delete(order.id);
+                              else next.add(order.id);
+                              return next;
+                            });
+                          }
+                          setLastCheckedIndex(rowIndex);
+                        }}
+                      />
+                    </td>
+                  )}
+                  {/* Comment cell - sticky after select */}
                   <td
-                    className="px-0.5 py-1 text-center border border-gray-100 bg-white"
-                    style={{ position: 'sticky', left: 0, zIndex: 10, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
+                    className={cn("px-0.5 py-1 text-center border border-gray-100", isSelected ? "bg-violet-50" : "bg-white")}
+                    style={{ position: 'sticky', left: canBulkDelete ? SELECT_COL_WIDTH : 0, zIndex: 10, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
                   >
                     <button
                       onClick={() => handleRowClick(order)}
@@ -813,6 +904,130 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           />
         );
       })()}
+
+      {/* Floating action bar — appears when 1+ rows selected. */}
+      {canBulkDelete && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white rounded-full shadow-2xl px-2 py-1.5 flex items-center gap-2 ring-1 ring-white/10">
+          <span className="pl-3 pr-1 text-sm font-semibold">
+            {selectedIds.size} selected
+          </span>
+          <span className="text-white/30">·</span>
+          <button
+            onClick={() => setDeleteConfirm(orders.filter(o => selectedIds.has(o.id)))}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500 hover:bg-red-600 flex items-center gap-1.5 transition-colors"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && canBulkDelete && (
+        <div
+          className="fixed z-50 bg-white rounded-lg shadow-xl ring-1 ring-gray-200 overflow-hidden text-sm"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setContextMenu(null);
+              setDeleteConfirm(orders.filter(o => selectedIds.has(o.id)));
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2"
+          >
+            Delete {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
+          </button>
+          <button
+            onClick={() => { setContextMenu(null); setSelectedIds(new Set()); }}
+            className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 border-t border-gray-100"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Delete confirmation modal — hard-deletes on confirm. */}
+      {deleteConfirm && (
+        <DeleteConfirmModal
+          orders={deleteConfirm}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={async () => {
+            const ids = deleteConfirm.map(o => o.id);
+            setDeleteConfirm(null);
+            try {
+              const res = await ordersApi.bulkDelete(ids);
+              setSelectedIds(new Set());
+              toast.success(`Deleted ${res.deleted_count} ${res.deleted_count === 1 ? 'row' : 'rows'}`);
+              // Filter deleted rows out of the store so they disappear
+              // from the parent's list immediately.
+              const idSet = new Set(ids);
+              setStoreOrders(storeOrders.filter(o => !idSet.has(o.id)), Math.max(0, storeTotal - res.deleted_count));
+            } catch (err: any) {
+              toast.error(err?.response?.data?.detail || 'Delete failed');
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteConfirmModal({ orders, onCancel, onConfirm }: {
+  orders: Order[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6" onClick={onCancel}>
+      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl ring-1 ring-gray-100 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+            <span className="text-red-600 font-bold text-lg">!</span>
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Delete {orders.length} order{orders.length === 1 ? '' : 's'}?</h3>
+            <p className="text-xs text-red-600 font-medium">This cannot be undone.</p>
+          </div>
+        </div>
+        <div className="px-5 py-3 max-h-64 overflow-y-auto text-xs">
+          <ul className="divide-y divide-gray-100">
+            {orders.slice(0, 40).map(o => (
+              <li key={o.id} className="py-1.5 flex items-center gap-3">
+                <span className="font-mono font-semibold text-gray-900 w-16 flex-shrink-0">{o.po_number}</span>
+                <span className="font-mono text-gray-700 truncate">{o.style_code || `#${o.id}`}</span>
+                <span className="text-gray-400 truncate ml-auto max-w-[160px]">{o.customer}</span>
+              </li>
+            ))}
+            {orders.length > 40 && (
+              <li className="py-2 text-center text-gray-400 italic">…and {orders.length - 40} more</li>
+            )}
+          </ul>
+        </div>
+        <div className="px-5 py-3 bg-gray-50/40 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => { setBusy(true); await onConfirm(); }}
+            disabled={busy}
+            className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            Delete {orders.length} order{orders.length === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

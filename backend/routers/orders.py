@@ -875,6 +875,32 @@ async def delete_order(
     return None
 
 
+@router.post("/api/orders/bulk-delete")
+async def bulk_delete_orders(
+    data: dict,
+    current_user: User = Depends(get_current_internal_user),
+    db: Session = Depends(get_db)
+):
+    """Hard-delete a batch of orders (internal/admin only). Rows are gone
+    from the DB — the frontend confirm modal warns the user that this
+    can't be undone before we hit here.
+
+    Body: { "order_ids": [1, 2, 3, ...] }
+    Returns { "deleted_count": N }
+    """
+    order_ids = data.get("order_ids") or []
+    if not isinstance(order_ids, list) or not order_ids:
+        raise HTTPException(status_code=400, detail="order_ids must be a non-empty list")
+
+    rows = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching orders found")
+
+    count = len(rows)
+    for order in rows:
+        db.delete(order)
+    db.commit()
+    return {"success": True, "deleted_count": count}
 
 
 @router.post("/api/orders/bulk-update-status")
