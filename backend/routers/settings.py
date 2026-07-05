@@ -1,7 +1,13 @@
 """App settings endpoints — order statuses list + admin-managed app
 settings (kill switch, Resend API key, email automations) + role column
-visibility/edit settings."""
+visibility/edit settings + admin DB dump download."""
+import os
+import subprocess
+from datetime import datetime
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -197,3 +203,72 @@ async def update_role_column_settings(
     db.commit()
 
     return {"success": True, "message": f"Updated {len(columns)} column settings for {role}"}
+
+
+@router.get("/api/settings/db-dump")
+async def download_db_dump(
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Stream a pg_dump of the live PostgreSQL DB to the caller as a
+    downloadable .sql file. Admin only. Uses the postgresql-client
+    already bundled in the backend image — no docker exec, we just run
+    pg_dump against the DB using the connection details from
+    DATABASE_URL. SQLite deployments (local dev default) return 400
+    because pg_dump doesn't speak SQLite.
+    """
+    database_url = os.getenv("DATABASE_URL", "")
+    if not database_url.startswith("postgres"):
+        raise HTTPException(
+            status_code=400,
+            detail="DB dump only works against a PostgreSQL DATABASE_URL. Local SQLite dev isn't dumpable via pg_dump.",
+        )
+
+    parsed = urlparse(database_url)
+    # urlparse gives us scheme, user, password, host, port, path (db name)
+    pg_env = {
+        **os.environ,
+        "PGHOST": parsed.hostname or "db",
+        "PGPORT": str(parsed.port or 5432),
+        "PGUSER": parsed.username or "orderbook",
+        "PGPASSWORD": parsed.password or "",
+        "PGDATABASE": (parsed.path or "/orderbook").lstrip("/"),
+    }
+
+    # Spawn pg_dump; stream its stdout straight through to the client.
+    # No intermediate file on disk — saves memory and disk contention.
+    proc = subprocess.Popen(
+        ["pg_dump", "--no-owner", "--no-privileges"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=pg_env,
+    )
+
+    def stream():
+        assert proc.stdout is not None
+        try:
+            while True:
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            proc.wait()
+            if proc.returncode != 0:
+                # We've already streamed some bytes so we can't 500 the
+                # response, but at least log the pg_dump stderr so it's
+                # visible in container logs for debugging.
+                err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+                print(f"pg_dump failed (rc={proc.returncode}): {err}")
+
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    filename = f"orderbook-prod-{ts}.sql"
+    return StreamingResponse(
+        stream(),
+        media_type="application/sql",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # Tell any intermediate proxies not to buffer — some Nginx
+            # setups will otherwise sit on the whole response.
+            "X-Accel-Buffering": "no",
+        },
+    )

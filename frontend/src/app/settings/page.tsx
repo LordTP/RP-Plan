@@ -22,6 +22,8 @@ import {
   Bell,
   Ruler,
   GripVertical,
+  Database,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
@@ -33,7 +35,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { COLUMNS } from '@/types';
 
-type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes';
+type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes' | 'backup';
 
 export default function SettingsPage() {
   return (
@@ -157,6 +159,7 @@ function SettingsContent() {
     { key: 'columns', label: 'Supplier Columns', icon: SettingsIcon, show: isFullInternal },
     { key: 'sizes', label: 'Size Guide', icon: Ruler, show: isFullInternal },
     { key: 'notifications', label: 'Notifications', icon: Bell, show: isAdmin },
+    { key: 'backup', label: 'Backup', icon: Database, show: isAdmin },
     { key: 'fields', label: 'Field Reference', icon: CheckCircle, show: true },
   ];
 
@@ -228,6 +231,8 @@ function SettingsContent() {
             {activeTab === 'sizes' && isFullInternal && <SizeGuideTab />}
 
             {activeTab === 'notifications' && isAdmin && <NotificationsTab />}
+
+            {activeTab === 'backup' && isAdmin && <BackupTab />}
 
             {activeTab === 'fields' && <FieldReferenceTab />}
           </main>
@@ -1671,6 +1676,67 @@ type EmailAutomation = {
   setting_key: string;
   enabled: boolean;
 };
+
+function BackupTab() {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await settingsApi.downloadDbDump();
+      toast.success('Database dump downloaded');
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'Download failed';
+      toast.error(typeof detail === 'string' ? detail : 'Download failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+      <div>
+        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <Database className="w-5 h-5 text-primary-600" />
+          Database backup
+        </h3>
+        <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+          Download a full <code className="text-[12px] bg-gray-100 px-1 py-0.5 rounded">pg_dump</code> of the live database. Use for local restore, off-site backup, or investigating a bug against real data.
+        </p>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg p-5 bg-gray-50/40 space-y-3 max-w-2xl">
+        <div className="text-xs text-gray-600 space-y-1.5">
+          <div>· File comes back as <span className="font-mono">orderbook-prod-YYYYMMDD-HHMMSS.sql</span></div>
+          <div>· Plain-text SQL, restorable with <span className="font-mono">psql &lt; file.sql</span></div>
+          <div>· Contains everything &mdash; orders, users (hashed passwords), components, submissions</div>
+          <div>· Read-only operation, safe to run anytime</div>
+        </div>
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="w-full sm:w-auto inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+        >
+          {downloading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Preparing dump…
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4" />
+              Download DB dump
+            </>
+          )}
+        </button>
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+          Treat this file as sensitive — it contains customer PO data and hashed passwords. Keep local.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function NotificationsTab() {
   const [isLoading, setIsLoading] = useState(true);

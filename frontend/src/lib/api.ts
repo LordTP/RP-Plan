@@ -461,6 +461,27 @@ export const settingsApi = {
     const response = await api.get('/api/settings/email-automations');
     return response.data;
   },
+
+  /** Download a full pg_dump of the live prod DB as a .sql attachment.
+   *  Admin only. Uses fetch + blob so the browser saves it instead of
+   *  trying to render it. Backend spawns pg_dump against the compose
+   *  network DB — same output as running pg_dump on the droplet. */
+  downloadDbDump: async (): Promise<void> => {
+    const response = await api.get('/api/settings/db-dump', { responseType: 'blob' });
+    // Prefer the server-suggested filename; fall back to a timestamped one.
+    const disposition = response.headers['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || `orderbook-prod-${Date.now()}.sql`;
+    const blob = new Blob([response.data], { type: 'application/sql' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };
 
 // Statuses endpoint
