@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   Calendar,
@@ -66,8 +67,14 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
   // the same list, NOT as a separate card. Events flow as one continuous
   // surface from one PO to the next.
   return (
-    <div className="ring-1 ring-gray-200 rounded-lg overflow-hidden bg-white">
-      <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
+    <div className="ring-1 ring-gray-200 rounded-lg overflow-hidden bg-white flex flex-col" style={{ height: 640 }}>
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{
+          scrollBehavior: 'smooth',
+          overscrollBehavior: 'contain',
+        }}
+      >
         {poGroups.map((po, poIdx) => (
           <div key={po.po_number}>
             <POSectionHeader po={po} onPOClick={onPOClick} isFirst={poIdx === 0} />
@@ -84,7 +91,7 @@ export function RecentActivityFeed({ groups, onPOClick, hasMore, loadingMore, on
       </div>
 
       {hasMore && (
-        <div className="border-t border-gray-100 px-3 py-2 flex justify-center bg-gray-50/40">
+        <div className="border-t border-gray-100 px-3 py-2 flex justify-center bg-gray-50/40 flex-shrink-0">
           <button
             onClick={onLoadMore}
             disabled={loadingMore}
@@ -193,23 +200,53 @@ function BulkStylesPill({ count, styles, poNumber, onStyleClick }: {
   onStyleClick: (style: string) => void;
 }) {
   const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; below: boolean } | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  // Position the portal-rendered popup near the trigger. Flip above
+  // when there's no room below, and clamp left within the viewport.
+  useLayoutEffect(() => {
+    if (!show || !triggerRef.current) { setPos(null); return; }
+    const rect = triggerRef.current.getBoundingClientRect();
+    const POPUP_W = 260;
+    const POPUP_H = 240;
+    const GAP = 6;
+    const below = rect.bottom + GAP + POPUP_H <= window.innerHeight - 8;
+    const top = below ? rect.bottom + GAP : Math.max(8, rect.top - POPUP_H - GAP);
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - POPUP_W - 8);
+    setPos({ top, left, below });
+  }, [show]);
+
   return (
-    <span className="relative inline-flex" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
-      <button
-        type="button"
-        onClick={(e) => e.stopPropagation()}
-        className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[10px] font-bold bg-blue-50 text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100 transition-colors align-baseline"
+    <>
+      <span
+        ref={triggerRef}
+        className="inline-flex"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
       >
-        {count} styles
-        <svg className="w-2.5 h-2.5" viewBox="0 0 12 12">
-          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {show && styles.length > 0 && (
-        <div className="absolute top-full left-0 mt-1.5 bg-white text-gray-800 rounded-lg shadow-lg ring-1 ring-gray-200 py-2 px-2.5 z-50 min-w-[180px] max-w-[260px]">
-          <div className="absolute bottom-full left-3 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[5px] border-b-white" />
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[10px] font-bold bg-blue-50 text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100 transition-colors align-baseline"
+        >
+          {count} styles
+          <svg className="w-2.5 h-2.5" viewBox="0 0 12 12">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </span>
+      {show && pos && styles.length > 0 && typeof window !== 'undefined' && createPortal(
+        <div
+          ref={popupRef}
+          className="fixed bg-white text-gray-800 rounded-lg shadow-xl ring-1 ring-gray-200 py-2 px-2.5 min-w-[180px] max-w-[260px]"
+          style={{ top: pos.top, left: pos.left, zIndex: 100 }}
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
           <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 px-1">Styles · {poNumber}</p>
-          <div className="space-y-0 max-h-56 overflow-y-auto">
+          <div className="space-y-0 max-h-56 overflow-y-auto" style={{ scrollBehavior: 'smooth', overscrollBehavior: 'contain' }}>
             {styles.map((s) => (
               <button
                 key={s}
@@ -220,9 +257,10 @@ function BulkStylesPill({ count, styles, poNumber, onStyleClick }: {
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </span>
+    </>
   );
 }
 

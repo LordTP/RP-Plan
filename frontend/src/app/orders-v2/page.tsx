@@ -291,9 +291,12 @@ function OrdersV2Content() {
         groups[po].latestUpdate = order.updated_at;
       }
 
-      // Use revised or original ex-factory date
+      // Ex-factory date for THIS style — revised wins over original.
+      // We store the EARLIEST across the PO's styles so the sort picks
+      // up the most urgent one; the field name stays `latestDate` for
+      // minimal blast radius, but semantically it's now "earliest".
       const exFactory = order.revised_po_ex_factory || order.original_po_ex_factory;
-      if (exFactory && (!groups[po].latestDate || exFactory > groups[po].latestDate)) {
+      if (exFactory && (!groups[po].latestDate || exFactory < groups[po].latestDate)) {
         groups[po].latestDate = exFactory;
       }
     }
@@ -313,8 +316,14 @@ function OrdersV2Content() {
       }
     }
 
-    // Sort by latest update (most recent first)
-    return Object.values(groups).sort((a, b) => b.latestUpdate.localeCompare(a.latestUpdate));
+    // Sort: earliest ex-factory first (soonest = most urgent). POs with
+    // no ex-factory sink to the bottom, broken ties by most recent update.
+    return Object.values(groups).sort((a, b) => {
+      if (a.latestDate && b.latestDate) return a.latestDate.localeCompare(b.latestDate);
+      if (a.latestDate && !b.latestDate) return -1;
+      if (!a.latestDate && b.latestDate) return 1;
+      return b.latestUpdate.localeCompare(a.latestUpdate);
+    });
   }, [orders, searchQuery, statusFilter]);
 
   // Status counts for chips

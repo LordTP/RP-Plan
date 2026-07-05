@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import { Clock, CheckCircle, XCircle, X, Loader2 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
@@ -11,9 +13,12 @@ import {
   analyticsApi,
   type RecentActivityEvent,
   type PendingApprovalGroup,
+  type MyPendingChange,
+  type MyApprovedChange,
+  type RejectedChange,
 } from '@/lib/api';
 import { WarningsCentre } from '@/components/dashboard/WarningsCentre';
-import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { formatCurrency, formatNumber, formatDate, cn } from '@/lib/utils';
 import { InboxAtScale } from '@/components/dashboard/InboxAtScale';
 import { RecentActivityFeed, groupBulkActivity } from '@/components/dashboard/RecentActivityFeed';
 
@@ -37,8 +42,16 @@ function DashboardContent() {
   const [recentActivity, setRecentActivity] = useState<RecentActivityEvent[]>([]);
   const [hasMoreActivity, setHasMoreActivity] = useState(false);
   const [loadingMoreActivity, setLoadingMoreActivity] = useState(false);
+  // Supplier date-change tracking — carried over from the v1 dashboard so
+  // suppliers still see their pending / approved / rejected changes at a
+  // glance. Loaded only when the current user is a supplier.
+  const [myPendingChanges, setMyPendingChanges] = useState<MyPendingChange[]>([]);
+  const [myApprovedChanges, setMyApprovedChanges] = useState<MyApprovedChange[]>([]);
+  const [rejectedChanges, setRejectedChanges] = useState<RejectedChange[]>([]);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
+  const isSupplier = user?.role === 'supplier';
 
   useEffect(() => {
     loadAll();
@@ -50,7 +63,9 @@ function DashboardContent() {
     try {
       const [stats, recentResult] = await Promise.all([
         statsApi.getDashboardStats(),
-        statsApi.getRecentActivity(25),
+        // Events collapse by PO/type so 25 rarely fills the feed. Ask for
+        // a much bigger first page so the box looks populated on load.
+        statsApi.getRecentActivity(100),
       ]);
       setDashboardStats(stats);
       setRecentActivity(recentResult?.events || []);
@@ -62,12 +77,43 @@ function DashboardContent() {
       ]);
       setPendingApprovals(approvalsResult.pending_approvals || []);
       setWarnings(warningsResult?.warnings || []);
+
+      // Supplier-only: fetch their own date-change submissions.
+      if (isSupplier) {
+        try {
+          const [myP, myA, rej] = await Promise.all([
+            approvalsApi.getMyPendingChanges(),
+            approvalsApi.getMyApprovedChanges(),
+            approvalsApi.getRejectedChanges(),
+          ]);
+          setMyPendingChanges(myP.pending_changes || []);
+          setMyApprovedChanges(myA.approved_changes || []);
+          setRejectedChanges(rej.rejected_changes || []);
+        } catch { /* silent — non-critical */ }
+      }
     } catch (err) {
       console.error('Failed to load dashboard:', err);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleCancelPending = async (id: number) => {
+    setCancellingId(id);
+    try {
+      await approvalsApi.cancelPendingChange(id);
+      toast.success('Pending change cancelled');
+      const myP = await approvalsApi.getMyPendingChanges();
+      setMyPendingChanges(myP.pending_changes || []);
+    } catch {
+      toast.error('Failed to cancel pending change');
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const formatFieldName = (field: string): string =>
+    field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   const reloadInbox = async () => {
     try {
@@ -134,6 +180,93 @@ function DashboardContent() {
         <KPI label="Overdue"        value={formatNumber(stats?.overdue_orders || 0)}            onClick={() => handleStatusClick('Delayed')} tone="red" />
       </div>
 
+      {/* Supplier-only: my date-change submissions.
+          Pending / Approved / Rejected. Rendered above the fold when
+          there's something to show. */}
+      {isSupplier && (myPendingChanges.length > 0 || myApprovedChanges.length > 0 || rejectedChanges.length > 0) && (
+        <section className="mb-10">
+          <header className="flex items-baseline justify-between mb-3 pb-2 border-b border-gray-200">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">
+              My date-change requests
+            </h3>
+            <span className="text-[10px] text-gray-400">
+              Pending {myPendingChanges.length} · Approved {myApprovedChanges.length} · Rejected {rejectedChanges.length}
+            </span>
+          </header>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <SupplierChangesColumn
+              tone="orange"
+              Icon={Clock}
+              title="Pending"
+              count={myPendingChanges.length}
+              emptyLabel="No pending changes"
+            >
+              {myPendingChanges.map(c => (
+                <div key={c.id} className="p-2.5 hover:bg-gray-50">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-medium text-gray-900">
+                        {c.po_number} <span className="text-[10px] text-gray-400">({c.style_code})</span>
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{formatFieldName(c.field_name)}</p>
+                      <p className="text-[11px] mt-0.5">
+                        <span className="text-gray-400">{c.current_value ? formatDate(c.current_value) : 'Not set'}</span>
+                        {' → '}
+                        <span className="font-medium text-orange-600">{c.proposed_value ? formatDate(c.proposed_value) : 'Not set'}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleCancelPending(c.id)}
+                      disabled={cancellingId === c.id}
+                      className="p-0.5 text-gray-400 hover:text-red-500 rounded"
+                      title="Cancel this pending change"
+                    >
+                      {cancellingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </SupplierChangesColumn>
+
+            <SupplierChangesColumn
+              tone="green"
+              Icon={CheckCircle}
+              title="Approved"
+              count={myApprovedChanges.length}
+              emptyLabel="No approved changes yet"
+            >
+              {myApprovedChanges.slice(0, 10).map(c => (
+                <div key={c.id} className="p-2.5 hover:bg-gray-50">
+                  <p className="text-[12px] font-medium text-gray-900">
+                    {c.po_number} <span className="text-[10px] text-gray-400">({c.style_code})</span>
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{formatFieldName(c.field_name)}</p>
+                  <p className="text-[10px] text-green-600 mt-0.5">Approved by {c.approved_by}</p>
+                </div>
+              ))}
+            </SupplierChangesColumn>
+
+            <SupplierChangesColumn
+              tone="red"
+              Icon={XCircle}
+              title="Rejected"
+              count={rejectedChanges.length}
+              emptyLabel="No rejected changes"
+            >
+              {rejectedChanges.slice(0, 10).map(c => (
+                <div key={c.id} className="p-2.5 hover:bg-gray-50">
+                  <p className="text-[12px] font-medium text-gray-900">
+                    {c.po_number} <span className="text-[10px] text-gray-400">({c.style_code})</span>
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{formatFieldName(c.field_name)}</p>
+                  <p className="text-[10px] text-red-600 mt-0.5 truncate">{c.rejection_reason}</p>
+                </div>
+              ))}
+            </SupplierChangesColumn>
+          </div>
+        </section>
+      )}
+
       {/* Inbox + Activity */}
       <div className="grid grid-cols-12 gap-10">
         <div className="col-span-12 lg:col-span-7">
@@ -160,7 +293,7 @@ function DashboardContent() {
             onLoadMore={async () => {
               setLoadingMoreActivity(true);
               try {
-                const result = await statsApi.getRecentActivity(15, recentActivity.length);
+                const result = await statsApi.getRecentActivity(50, recentActivity.length);
                 setRecentActivity(prev => [...prev, ...result.events]);
                 setHasMoreActivity(result.has_more);
               } catch { /* ignore */ }
@@ -206,6 +339,39 @@ function KPI({ label, value, onClick, border, tone }: {
     >
       <div className={cn('text-[10px] font-semibold uppercase tracking-wider', labelClass)}>{label}</div>
       <div className={cn('text-2xl font-bold mt-0.5 tabular-nums', valueClass)}>{value}</div>
+    </div>
+  );
+}
+
+// One column in the supplier's date-change tracker. Kept tiny and
+// state-less — the parent owns the data.
+function SupplierChangesColumn({
+  tone, Icon, title, count, emptyLabel, children,
+}: {
+  tone: 'orange' | 'green' | 'red';
+  Icon: React.ElementType;
+  title: string;
+  count: number;
+  emptyLabel: string;
+  children: React.ReactNode;
+}) {
+  const styles = {
+    orange: { header: 'bg-orange-50 border-orange-100 text-orange-800', icon: 'text-orange-600', badge: 'bg-orange-200 text-orange-800' },
+    green:  { header: 'bg-green-50 border-green-100 text-green-800',   icon: 'text-green-600',  badge: 'bg-green-200 text-green-800'  },
+    red:    { header: 'bg-red-50 border-red-100 text-red-800',         icon: 'text-red-600',    badge: 'bg-red-200 text-red-800'      },
+  }[tone];
+  return (
+    <div className="bg-white rounded-xl ring-1 ring-gray-100 overflow-hidden">
+      <div className={cn('px-4 py-2.5 border-b flex items-center gap-2', styles.header)}>
+        <Icon className={cn('w-3.5 h-3.5', styles.icon)} />
+        <span className="text-[11px] font-medium">{title}</span>
+        <span className={cn('ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-semibold', styles.badge)}>{count}</span>
+      </div>
+      <div className="divide-y divide-gray-50 max-h-56 overflow-y-auto">
+        {count === 0
+          ? <div className="p-3 text-center text-[11px] text-gray-400">{emptyLabel}</div>
+          : children}
+      </div>
     </div>
   );
 }

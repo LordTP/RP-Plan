@@ -142,8 +142,8 @@ export function Navbar() {
   return (
     <>
       <header className="sticky top-0 z-40 flex h-12 items-center border-b border-gray-200 bg-white px-4">
-        {/* Logo — links to each role's "home" page (suppliers don't have
-            access to /dashboard so theirs goes to /factory-product instead). */}
+        {/* Logo — links to each role's "home" page (suppliers land on
+            /factory-product, everyone else on /dashboard). */}
         <Link
           href={user?.role === 'supplier' ? '/factory-product' : '/dashboard'}
           className="flex items-center gap-2.5 mr-8"

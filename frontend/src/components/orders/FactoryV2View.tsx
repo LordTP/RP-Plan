@@ -264,7 +264,10 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
         groups[po].latestUpdate = order.updated_at;
       }
       const exFactory = order.revised_po_ex_factory || order.original_po_ex_factory;
-      if (exFactory && (!groups[po].latestDate || exFactory > groups[po].latestDate)) {
+      // Track EARLIEST ex-factory across the PO's styles so the sort
+      // surfaces the most urgent PO first. Field name kept as latestDate
+      // to minimise churn; semantically it's now "earliest".
+      if (exFactory && (!groups[po].latestDate || exFactory < groups[po].latestDate)) {
         groups[po].latestDate = exFactory;
       }
     }
@@ -281,7 +284,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       }
     }
 
-    return Object.values(groups).sort((a, b) => b.latestUpdate.localeCompare(a.latestUpdate));
+    // Earliest ex-factory first, no-ex-factory at bottom, tie-break by
+    // most recent update.
+    return Object.values(groups).sort((a, b) => {
+      if (a.latestDate && b.latestDate) return a.latestDate.localeCompare(b.latestDate);
+      if (a.latestDate && !b.latestDate) return -1;
+      if (!a.latestDate && b.latestDate) return 1;
+      return b.latestUpdate.localeCompare(a.latestUpdate);
+    });
   }, [orders, searchQuery, statusFilter]);
 
   const statusCounts = useMemo(() => {
@@ -307,10 +317,10 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   };
 
   const handleStyleClick = (order: Order) => {
-    // Suppliers don't get a detail panel — they only interact with the
-    // orange calendar button per row to request date changes. Internal/admin
-    // users still get the full detail panel on click.
-    if (isSupplier) return;
+    // Suppliers now get a supplier-safe detail panel — pricing rows and
+    // the internal-only value column are already hidden inside DetailPanel
+    // via its isSupplier prop. Editing dates still routes through the
+    // change-request modal because sample lifecycle stays Source Lab's.
     setSelectedStyleId(order.id);
   };
 
