@@ -150,7 +150,7 @@ function DesignComponentsContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortMode>('count');
+  const [sort, setSort] = useState<SortMode>('pending');
   // Composite "<name>|<sample_type>" — a "Pocket" Strike Off and a "Pocket"
   // Lab Dip are now distinct groups, so identifying by name alone collides.
   const [selectedName, setSelectedName] = useState<string | null>(null);
