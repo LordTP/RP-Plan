@@ -28,7 +28,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
-import { AddComponentModal } from '@/components/orders/AddComponentModal';
+import { LibraryFirstAddModal } from '@/components/orders/LibraryFirstAddModal';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
@@ -2153,11 +2153,12 @@ export function ComponentsSection({
         />
       )}
 
-      <AddComponentModal
+      <LibraryFirstAddModal
         open={addModalOpen}
         orders={addModalOrders}
+        isSupplier={isSupplierUser}
         onClose={() => setAddModalOpen(false)}
-        onCreated={() => {
+        onDone={() => {
           setAddModalOpen(false);
           loadComponents();
         }}

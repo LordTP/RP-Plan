@@ -419,7 +419,95 @@ export const componentsApi = {
     });
     return response.data;
   },
+
+  // Component library (canonical entries) — /components page
+  listLibrary: async (params?: {
+    q?: string;
+    sample_type?: string;
+    include_blank?: boolean;
+  }): Promise<{ components: CanonicalComponent[] }> => {
+    const response = await api.get('/api/components/library', { params });
+    return response.data;
+  },
+
+  getLibraryEntry: async (canonicalId: number): Promise<CanonicalDetail> => {
+    const response = await api.get(`/api/components/library/${canonicalId}`);
+    return response.data;
+  },
+
+  patchLibraryEntry: async (
+    canonicalId: number,
+    data: Partial<Pick<CanonicalComponent, 'name' | 'description' | 'colour' | 'position' | 'spec_url' | 'supplier_notes'>>,
+  ): Promise<CanonicalComponent & { changed: Record<string, { from: any; to: any }> }> => {
+    const response = await api.patch(`/api/components/library/${canonicalId}`, data);
+    return response.data;
+  },
+
+  bulkEditInstances: async (data: {
+    instance_ids: number[];
+    status?: string | null;
+    received?: string | null;
+    approved?: string | null;
+  }): Promise<{ success: boolean; changed_count: number; unchanged_count: number; changed_ids: number[] }> => {
+    const response = await api.post('/api/components/library/instances/bulk-edit', data);
+    return response.data;
+  },
 };
+
+/** Valid position values for strike-off components. Kept in sync with the
+ *  backend's VALID_POSITIONS set in routers/components.py. */
+export const CANONICAL_POSITIONS = [
+  'CHEST POSITION – CENTRAL',
+  'CHEST POSITION – LEFT AS WORN',
+  'CHEST POSITION – RIGHT AS WORN',
+  'BACK',
+  'BACK NECK',
+  'HEM',
+  'LEFT SLEEVE AS WORN',
+  'RIGHT SLEEVE AS WORN',
+] as const;
+export type CanonicalPosition = typeof CANONICAL_POSITIONS[number];
+
+export interface CanonicalComponent {
+  id: number;
+  name: string;
+  sample_type: 'strike_off' | 'lab_dip' | 'label';
+  description: string | null;
+  colour: string | null;
+  position: CanonicalPosition | null;
+  spec_url: string | null;
+  supplier_notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  styles_count: number;
+  customers_count: number;
+  approved_count: number;
+  received_count: number;
+  outstanding_count: number;
+  has_spec: boolean;
+  is_blank: boolean;
+}
+
+export interface CanonicalInstance {
+  instance_id: number;
+  order_id: number;
+  po_number: string;
+  customer: string | null;
+  customer_po_number: string | null;
+  style_code: string | null;
+  customer_style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  status: string | null;
+  received: string | null;
+  approved: string | null;
+}
+
+export interface CanonicalDetail extends Omit<CanonicalComponent,
+  'styles_count' | 'customers_count' | 'approved_count' | 'received_count' | 'outstanding_count' | 'has_spec' | 'is_blank'
+> {
+  instances: CanonicalInstance[];
+}
 
 // Role Column Settings API
 export interface ColumnSetting {

@@ -170,6 +170,32 @@ class PurchaseOrder(Base):
     components = relationship("OrderComponent", back_populates="order", cascade="all, delete-orphan")
 
 
+class Component(Base):
+    """Canonical component in the reusable library. One row per real-world
+    component (e.g. "CHEST PRINT — HOME KIT BLUE"); every OrderComponent
+    instance linked to it shares the same identity but tracks its own
+    sample lifecycle per-style. Names are stored UPPERCASE by convention
+    so casing drift doesn't create duplicates."""
+    __tablename__ = "components"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    sample_type = Column(String(20), nullable=False, index=True)  # 'strike_off' | 'lab_dip' | 'label'
+    description = Column(Text, nullable=True)
+    colour = Column(String(100), nullable=True)
+    # Strike-off-only field: placement label (e.g. "CHEST POSITION – CENTRAL",
+    # "BACK NECK", "LEFT SLEEVE AS WORN"). Nullable so existing rows +
+    # non-strike-off types stay valid. Valid values are enforced in the API.
+    position = Column(String(60), nullable=True)
+    spec_url = Column(String(500), nullable=True)
+    supplier_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    instances = relationship("OrderComponent", back_populates="canonical")
+
+
 class OrderComponent(Base):
     """Components for each order style (e.g. Main Fabric, Lining, Trim) with
     per-component sampling status.
@@ -178,11 +204,17 @@ class OrderComponent(Base):
     or Lab Dip, never both. Picked at create time via sample_type. The
     columns for the "other" type are left in the model so historical data
     (pre-split) stays addressable, but they're never written to or shown for
-    new-shape components."""
+    new-shape components.
+
+    As of 2026-07, each row is an INSTANCE of a canonical Component (see
+    Component model). canonical_id links to the shared library entry;
+    identity fields (name, spec, description) are read from there while
+    sample lifecycle stays per-instance."""
     __tablename__ = "order_components"
 
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
+    canonical_id = Column(Integer, ForeignKey("components.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(100), nullable=False)  # e.g. "Main Fabric", "Lining"
 
     # Which sample type this component tracks. 'strike_off' or 'lab_dip'.
@@ -218,6 +250,7 @@ class OrderComponent(Base):
 
     # Relationships
     order = relationship("PurchaseOrder", back_populates="components")
+    canonical = relationship("Component", back_populates="instances")
 
 
 class Comment(Base):

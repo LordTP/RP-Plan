@@ -9,14 +9,14 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, PurchaseOrder, OrderComponent, DateChangeHistory, SampleSubmission
+from models import User, PurchaseOrder, OrderComponent, DateChangeHistory, SampleSubmission, Component
 from schemas import ComponentCreate, ComponentUpdate, ComponentResponse
 from auth import get_current_user
 from sample_helpers import (
     reconcile_sample_status,
     SAMPLE_PREFIXES_COMPONENT,
 )
-from supplier_access import assert_supplier_can_access, apply_supplier_filter
+from supplier_access import assert_supplier_can_access, apply_supplier_filter, supplier_filter_clause
 
 
 # Sample-tracking fields suppliers cannot touch — those belong to the
@@ -754,3 +754,598 @@ async def get_styles_with_component(
                 "component_id": comp.id,
             })
     return {"styles": results}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Component library (canonical entries) — the /components page
+# ─────────────────────────────────────────────────────────────────────────
+
+def _status_field_for(prefix: str, suffix: str):
+    """Return the OrderComponent column for the given sample-type prefix +
+    field suffix. Prefix is 'strike_off' | 'lab_dip' | 'label', suffix is
+    'status' | 'received' | 'approved'."""
+    return getattr(OrderComponent, f"{prefix}_{suffix}")
+
+
+def _instance_status_case():
+    """SQL CASE that picks the right status field based on the instance's
+    sample_type, so we can roll up across canonicals."""
+    return case(
+        (OrderComponent.sample_type == 'strike_off', OrderComponent.strike_off_status),
+        (OrderComponent.sample_type == 'lab_dip', OrderComponent.lab_dip_status),
+        (OrderComponent.sample_type == 'label', OrderComponent.label_status),
+        else_=None,
+    )
+
+
+@router.get("/api/components/library")
+async def list_component_library(
+    q: Optional[str] = Query(None),
+    sample_type: Optional[str] = Query(None),
+    include_blank: bool = Query(True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List canonical components in the library with rollup counts.
+
+    For supplier users, the list is naturally scoped: only canonicals with
+    at least one instance on a PO for their factory are returned.
+    """
+    supplier_clauses = supplier_filter_clause(current_user)
+
+    # Base rollup aggregate per canonical, joining instances + POs (needed
+    # for supplier scoping). LEFT JOIN so blank canonicals still show.
+    status_case = _instance_status_case()
+    approved_case = case((func.upper(status_case) == 'APPROVED', 1), else_=0)
+    received_case = case((func.upper(status_case) == 'RECEIVED', 1), else_=0)
+    outstanding_case = case((func.upper(status_case) == 'OUTSTANDING', 1), else_=0)
+
+    query = (
+        db.query(
+            Component.id,
+            Component.name,
+            Component.sample_type,
+            Component.description,
+            Component.colour,
+            Component.position,
+            Component.spec_url,
+            Component.supplier_notes,
+            Component.created_at,
+            Component.updated_at,
+            func.count(OrderComponent.id).label('styles_count'),
+            func.count(func.distinct(PurchaseOrder.customer)).label('customers_count'),
+            func.sum(approved_case).label('approved_count'),
+            func.sum(received_case).label('received_count'),
+            func.sum(outstanding_case).label('outstanding_count'),
+        )
+        .outerjoin(OrderComponent, OrderComponent.canonical_id == Component.id)
+        .outerjoin(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+        .group_by(Component.id)
+    )
+
+    if sample_type:
+        query = query.filter(Component.sample_type == sample_type)
+    if q:
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (Component.name.ilike(like))
+            | (Component.description.ilike(like))
+            | (Component.colour.ilike(like))
+            | (Component.supplier_notes.ilike(like))
+        )
+
+    # Supplier scoping: canonical must have at least one instance on their
+    # factory. We enforce this via HAVING count > 0 on the PO-filtered join.
+    if supplier_clauses:
+        # Re-express as: at least one instance whose PO matches the factory.
+        # Using a subquery for correctness (LEFT JOIN + filter breaks blanks).
+        allowed_ids_subq = (
+            db.query(OrderComponent.canonical_id)
+            .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+            .filter(*supplier_clauses)
+            .filter(OrderComponent.canonical_id.isnot(None))
+            .distinct()
+            .subquery()
+        )
+        query = query.filter(Component.id.in_(db.query(allowed_ids_subq)))
+
+    rows = query.order_by(Component.name).all()
+
+    results = []
+    for r in rows:
+        styles_count = int(r.styles_count or 0)
+        if not include_blank and styles_count == 0:
+            continue
+        results.append({
+            "id": r.id,
+            "name": r.name,
+            "sample_type": r.sample_type,
+            "description": r.description,
+            "colour": r.colour,
+            "position": r.position,
+            "spec_url": r.spec_url,
+            "supplier_notes": r.supplier_notes,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "styles_count": styles_count,
+            "customers_count": int(r.customers_count or 0),
+            "approved_count": int(r.approved_count or 0),
+            "received_count": int(r.received_count or 0),
+            "outstanding_count": int(r.outstanding_count or 0),
+            "has_spec": bool(r.spec_url),
+            "is_blank": styles_count == 0,
+        })
+    return {"components": results}
+
+
+@router.get("/api/components/library/{canonical_id}")
+async def get_component_library_entry(
+    canonical_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get one canonical + all instances using it. Instance list is scoped
+    to the supplier's factory when caller is a supplier."""
+    canonical = db.query(Component).filter(Component.id == canonical_id).first()
+    if not canonical:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    supplier_clauses = supplier_filter_clause(current_user)
+
+    instance_query = (
+        db.query(OrderComponent, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+        .filter(OrderComponent.canonical_id == canonical_id)
+    )
+    if supplier_clauses:
+        instance_query = instance_query.filter(*supplier_clauses)
+
+    instances_data = []
+    for oc, po in instance_query.all():
+        prefix = oc.sample_type  # 'strike_off' | 'lab_dip' | 'label'
+        status_val = getattr(oc, f"{prefix}_status", None)
+        received_val = getattr(oc, f"{prefix}_received", None)
+        approved_val = getattr(oc, f"{prefix}_approved", None)
+        instances_data.append({
+            "instance_id": oc.id,
+            "order_id": po.id,
+            "po_number": po.po_number,
+            "customer": po.customer,
+            "customer_po_number": po.customer_po_number,
+            "style_code": po.style_code,
+            "customer_style_code": po.customer_style_code,
+            "description": po.description,
+            "colour": po.colour,
+            "status": status_val,
+            "received": received_val.isoformat() if received_val else None,
+            "approved": approved_val.isoformat() if approved_val else None,
+        })
+
+    # Supplier accessing a canonical with no instances on their factory: 404
+    if supplier_clauses and not instances_data:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    return {
+        "id": canonical.id,
+        "name": canonical.name,
+        "sample_type": canonical.sample_type,
+        "description": canonical.description,
+        "colour": canonical.colour,
+        "position": canonical.position,
+        "spec_url": canonical.spec_url,
+        "supplier_notes": canonical.supplier_notes,
+        "created_at": canonical.created_at.isoformat() if canonical.created_at else None,
+        "updated_at": canonical.updated_at.isoformat() if canonical.updated_at else None,
+        "instances": instances_data,
+    }
+
+
+VALID_POSITIONS = {
+    "CHEST POSITION – CENTRAL",
+    "CHEST POSITION – LEFT AS WORN",
+    "CHEST POSITION – RIGHT AS WORN",
+    "BACK",
+    "BACK NECK",
+    "HEM",
+    "LEFT SLEEVE AS WORN",
+    "RIGHT SLEEVE AS WORN",
+}
+
+
+@router.post("/api/components/library", status_code=201)
+async def create_component_library_entry(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new canonical component. Identity only — no instances yet.
+
+    Body: {name, sample_type, colour, description?, position?, spec_url?, supplier_notes?}
+
+    Names are UPPERCASED before storage so casing drift doesn't create duplicates.
+    Colour is required at create time. Position is strike-off only and
+    must be one of FRONT | BACK | LEFT | RIGHT.
+    """
+    name = (data.get("name") or "").strip().upper()
+    sample_type = data.get("sample_type")
+    colour = (data.get("colour") or "").strip()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if sample_type not in ("strike_off", "lab_dip", "label"):
+        raise HTTPException(status_code=400, detail="sample_type must be strike_off, lab_dip, or label")
+    # Colour is mandatory for strike-offs and lab dips (that's how the sample
+    # is identified downstream). Labels don't need one.
+    if sample_type in ("strike_off", "lab_dip") and not colour:
+        raise HTTPException(status_code=400, detail="colour is required for strike-off and lab-dip components")
+
+    position = (data.get("position") or "").strip().upper() or None
+    if position and sample_type != "strike_off":
+        raise HTTPException(status_code=400, detail="position is only valid for strike-off components")
+    if position and position not in VALID_POSITIONS:
+        raise HTTPException(status_code=400, detail=f"position must be one of {sorted(VALID_POSITIONS)}")
+
+    canonical = Component(
+        name=name,
+        sample_type=sample_type,
+        description=(data.get("description") or None),
+        colour=colour,
+        position=position,
+        spec_url=(data.get("spec_url") or None),
+        supplier_notes=(data.get("supplier_notes") or None),
+    )
+    db.add(canonical)
+    db.commit()
+    db.refresh(canonical)
+    return {
+        "id": canonical.id,
+        "name": canonical.name,
+        "sample_type": canonical.sample_type,
+        "description": canonical.description,
+        "colour": canonical.colour,
+        "position": canonical.position,
+        "spec_url": canonical.spec_url,
+        "supplier_notes": canonical.supplier_notes,
+    }
+
+
+@router.post("/api/components/library/{canonical_id}/apply")
+async def apply_component_library_entry(
+    canonical_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Apply a canonical component to N styles with a starting state.
+
+    Body: {
+        "order_ids": [1, 2, 3],
+        "starting_state": "blank" | "copy" | "approved",
+        "peer_instance_id": 42   // required when starting_state = "copy"
+    }
+
+    - blank:    creates instances with no dates, no status.
+    - copy:     clones state (status, received, approved) AND sample_submissions
+                history from peer_instance_id onto each new instance.
+    - approved: marks each new instance APPROVED with today's date. Sourcelab-only.
+
+    Skips orders that already have an instance linked to this canonical.
+    Supplier orders outside their factory scope are silently dropped.
+    """
+    canonical = db.query(Component).filter(Component.id == canonical_id).first()
+    if not canonical:
+        raise HTTPException(status_code=404, detail="Canonical component not found")
+
+    order_ids = data.get("order_ids") or []
+    starting_state = data.get("starting_state") or "blank"
+    peer_instance_id = data.get("peer_instance_id")
+
+    if not isinstance(order_ids, list) or not order_ids:
+        raise HTTPException(status_code=400, detail="At least one order id is required")
+    if starting_state not in ("blank", "copy", "approved"):
+        raise HTTPException(status_code=400, detail="starting_state must be blank, copy, or approved")
+    if starting_state == "copy" and not peer_instance_id:
+        raise HTTPException(status_code=400, detail="peer_instance_id is required when starting_state is 'copy'")
+    if starting_state == "approved" and _is_supplier(current_user):
+        raise HTTPException(status_code=403, detail="Suppliers can't mark new instances Approved. Use Blank or Copy from another style.")
+
+    # Resolve peer instance for copy
+    peer = None
+    if starting_state == "copy":
+        peer = db.query(OrderComponent).filter(OrderComponent.id == peer_instance_id).first()
+        if not peer:
+            raise HTTPException(status_code=404, detail="Peer instance not found")
+        if peer.canonical_id != canonical_id:
+            raise HTTPException(status_code=400, detail="Peer instance is not linked to this canonical component")
+
+    # Filter target orders through supplier scope
+    target_orders_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
+    target_orders_q = apply_supplier_filter(target_orders_q, current_user)
+    target_orders = target_orders_q.all()
+    if not target_orders:
+        raise HTTPException(status_code=404, detail="No matching orders found for this user")
+
+    prefix = canonical.sample_type
+    role_str = str(current_user.role.value if hasattr(current_user.role, "value") else current_user.role).lower()
+    source_tag = "Supplier" if role_str == "supplier" else "Sourcelab"
+
+    # Prepare starting-state field values
+    copy_status = None
+    copy_received = None
+    copy_approved = None
+    if starting_state == "copy" and peer is not None:
+        copy_status = getattr(peer, f"{prefix}_status")
+        copy_received = getattr(peer, f"{prefix}_received")
+        copy_approved = getattr(peer, f"{prefix}_approved")
+    elif starting_state == "approved":
+        copy_status = "APPROVED"
+        copy_approved = datetime.utcnow()
+
+    # Fetch peer submissions once for copy path
+    peer_submissions = []
+    if starting_state == "copy" and peer is not None:
+        peer_submissions = db.query(SampleSubmission).filter(
+            SampleSubmission.component_id == peer.id,
+        ).order_by(SampleSubmission.attempt_no).all()
+
+    created_ids = []
+    skipped_orders = []
+    for o in target_orders:
+        # Skip if this style already has an instance of this canonical
+        existing = db.query(OrderComponent).filter(
+            OrderComponent.order_id == o.id,
+            OrderComponent.canonical_id == canonical_id,
+        ).first()
+        if existing:
+            skipped_orders.append(o.id)
+            continue
+
+        new_inst = OrderComponent(
+            order_id=o.id,
+            canonical_id=canonical_id,
+            name=canonical.name,
+            sample_type=canonical.sample_type,
+        )
+        if starting_state != "blank":
+            setattr(new_inst, f"{prefix}_status", copy_status)
+            setattr(new_inst, f"{prefix}_received", copy_received)
+            setattr(new_inst, f"{prefix}_approved", copy_approved)
+        db.add(new_inst)
+        db.flush()  # get id
+
+        # Copy sample submission history if applicable
+        if starting_state == "copy":
+            for sub in peer_submissions:
+                db.add(SampleSubmission(
+                    order_id=o.id,
+                    component_id=new_inst.id,
+                    sample_type=sub.sample_type,
+                    attempt_no=sub.attempt_no,
+                    requested_at=sub.requested_at,
+                    submitted_at=sub.submitted_at,
+                    resolved_at=sub.resolved_at,
+                    outcome=sub.outcome,
+                    reason=sub.reason,
+                    notes=sub.notes,
+                    photo_url=sub.photo_url,
+                ))
+
+        # Activity feed line so the addition is visible in the feed.
+        note_bits = []
+        if starting_state == "copy" and peer is not None:
+            peer_order = db.query(PurchaseOrder).filter(PurchaseOrder.id == peer.order_id).first()
+            peer_style = peer_order.style_code if peer_order else f"style {peer.order_id}"
+            note_bits.append(f"copied from {peer_style} ({copy_status or 'blank'})")
+        elif starting_state == "approved":
+            note_bits.append("marked approved on create")
+        db.add(DateChangeHistory(
+            po_id=o.id,
+            user_id=current_user.id,
+            field_name=f"component:{canonical.name}",
+            old_value=None,
+            new_value=" · ".join(note_bits) or "added blank",
+            source=source_tag,
+            component_name=canonical.name,
+        ))
+
+        created_ids.append(new_inst.id)
+
+    db.commit()
+    return {
+        "success": True,
+        "canonical_id": canonical_id,
+        "created_count": len(created_ids),
+        "created_instance_ids": created_ids,
+        "skipped_order_ids": skipped_orders,
+    }
+
+
+@router.post("/api/components/library/instances/bulk-edit")
+async def bulk_edit_library_instances(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk-update sample lifecycle across a set of instances that may span
+    canonicals, POs, and sample types.
+
+    Body: {
+        "instance_ids": [1, 2, 3],
+        "status":   "APPROVED" | "RECEIVED" | "OUTSTANDING" | null   (optional),
+        "received": "2026-07-05" | null                              (optional),
+        "approved": "2026-07-05" | null                              (optional)
+    }
+
+    Each field is applied to every instance, using the column that matches
+    that instance's own sample_type (strike_off / lab_dip / label).
+    At least one of status/received/approved must be supplied.
+
+    Suppliers can't call this — sample lifecycle stays Sourcelab-owned.
+    """
+    if _is_supplier(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Suppliers can't bulk-edit sample fields. Sample lifecycle is managed by Source Lab.",
+        )
+
+    instance_ids = data.get("instance_ids") or []
+    if not instance_ids or not isinstance(instance_ids, list):
+        raise HTTPException(status_code=400, detail="instance_ids must be a non-empty list")
+
+    # Which lifecycle fields are being set. Missing key = leave alone.
+    updates = {}
+    for field_key in ("status", "received", "approved"):
+        if field_key in data:
+            updates[field_key] = data[field_key]
+    if not updates:
+        raise HTTPException(status_code=400, detail="At least one of status/received/approved must be provided")
+
+    ALLOWED_STATUSES = {"APPROVED", "RECEIVED", "OUTSTANDING", "NOT REQUIRED", None}
+    if "status" in updates and updates["status"] not in ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status '{updates['status']}'")
+
+    # Parse dates once
+    for date_key in ("received", "approved"):
+        val = updates.get(date_key)
+        if isinstance(val, str) and val:
+            try:
+                updates[date_key] = datetime.fromisoformat(val.replace('Z', '+00:00'))
+            except ValueError:
+                try:
+                    updates[date_key] = datetime.strptime(val, '%Y-%m-%d')
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Could not parse {date_key} date '{val}'")
+
+    rows = db.query(OrderComponent).filter(OrderComponent.id.in_(instance_ids)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No matching instances found")
+
+    order_ids = list({c.order_id for c in rows})
+    orders_by_id = {o.id: o for o in db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()}
+
+    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+
+    role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
+    source_tag = "Sourcelab"
+
+    changed_ids = []
+    unchanged_ids = []
+    field_key_to_suffix = {"status": "status", "received": "received", "approved": "approved"}
+
+    for comp in rows:
+        prefix = comp.sample_type  # 'strike_off' | 'lab_dip' | 'label'
+        if prefix not in SAMPLE_PREFIXES_COMPONENT:
+            unchanged_ids.append(comp.id)
+            continue
+
+        touched_status_here = False
+        row_changed = False
+        for field_key, new_value in updates.items():
+            column_name = f"{prefix}_{field_key_to_suffix[field_key]}"
+            old_value = getattr(comp, column_name, None)
+            if old_value == new_value:
+                continue
+            db.add(DateChangeHistory(
+                po_id=comp.order_id,
+                user_id=current_user.id,
+                field_name=column_name,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(new_value) if new_value is not None else None,
+                source=source_tag,
+                component_name=comp.name,
+            ))
+            setattr(comp, column_name, new_value)
+            row_changed = True
+            if field_key == "status":
+                touched_status_here = True
+                order = orders_by_id.get(comp.order_id)
+                status_field = f"{prefix}_status"
+                if order is not None and status_field in STATUS_FIELD_TO_SAMPLE_TYPE and new_value == "APPROVED":
+                    sync_submission_on_status_change(db, order, comp, status_field, new_value, current_user.id)
+
+        if row_changed:
+            comp.updated_at = datetime.utcnow()
+            reconcile_sample_status(
+                comp,
+                SAMPLE_PREFIXES_COMPONENT,
+                skip_prefixes=[prefix] if touched_status_here else [],
+            )
+            changed_ids.append(comp.id)
+        else:
+            unchanged_ids.append(comp.id)
+
+    db.commit()
+    return {
+        "success": True,
+        "changed_count": len(changed_ids),
+        "unchanged_count": len(unchanged_ids),
+        "changed_ids": changed_ids,
+    }
+
+
+@router.patch("/api/components/library/{canonical_id}")
+async def update_component_library_entry(
+    canonical_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update canonical identity fields (name, description, colour, spec_url,
+    supplier_notes). Change propagates to every instance by definition.
+
+    Suppliers can call this only when the canonical has an instance on one
+    of their POs — same 'natural scoping' as the list/get endpoints.
+    """
+    canonical = db.query(Component).filter(Component.id == canonical_id).first()
+    if not canonical:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    supplier_clauses = supplier_filter_clause(current_user)
+    if supplier_clauses:
+        has_scoped_instance = (
+            db.query(OrderComponent)
+            .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+            .filter(OrderComponent.canonical_id == canonical_id)
+            .filter(*supplier_clauses)
+            .first()
+        )
+        if not has_scoped_instance:
+            raise HTTPException(status_code=404, detail="Component not found")
+
+    EDITABLE_FIELDS = {'name', 'description', 'colour', 'position', 'spec_url', 'supplier_notes'}
+    # Normalise: name goes uppercase, position goes uppercase + validated
+    if 'name' in data and isinstance(data['name'], str):
+        data['name'] = data['name'].strip().upper() or None
+    if 'position' in data:
+        pos = (data['position'] or '').strip().upper() if isinstance(data['position'], str) else None
+        if pos and canonical.sample_type != 'strike_off':
+            raise HTTPException(status_code=400, detail="position is only valid for strike-off components")
+        if pos and pos not in VALID_POSITIONS:
+            raise HTTPException(status_code=400, detail=f"position must be one of {sorted(VALID_POSITIONS)}")
+        data['position'] = pos or None
+
+    changed = {}
+    for field, value in data.items():
+        if field not in EDITABLE_FIELDS:
+            continue
+        current_val = getattr(canonical, field)
+        if value != current_val:
+            setattr(canonical, field, value)
+            changed[field] = {"from": current_val, "to": value}
+
+    if changed:
+        canonical.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(canonical)
+
+    return {
+        "id": canonical.id,
+        "name": canonical.name,
+        "sample_type": canonical.sample_type,
+        "description": canonical.description,
+        "colour": canonical.colour,
+        "position": canonical.position,
+        "spec_url": canonical.spec_url,
+        "supplier_notes": canonical.supplier_notes,
+        "changed": changed,
+    }

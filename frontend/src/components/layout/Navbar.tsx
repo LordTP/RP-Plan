@@ -44,14 +44,14 @@ const factorySubItems = [
   // Suppliers reach the components catalogue here. Same page as Design uses
   // (/design-components) — the page itself scopes results to the supplier's
   // factory and hides bulk-edit actions for them.
-  { href: '/design-components', label: 'Components', icon: Layers },
+  { href: '/components', label: 'Components', icon: Layers },
   { href: '/factory-guide', label: 'Guide', icon: BookOpen },
 ];
 
 const designSubItems = [
   { href: '/design-overview', label: 'Overview', icon: BarChart3 },
   { href: '/design', label: 'Orders', icon: Palette },
-  { href: '/design-components', label: 'Components', icon: Layers },
+  { href: '/components', label: 'Components', icon: Layers },
   { href: '/resubmissions', label: 'Resubmissions', icon: RefreshCcw },
 ];
 

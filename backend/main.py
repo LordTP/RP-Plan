@@ -16,7 +16,7 @@ from collections import defaultdict
 import time as _time
 
 from database import get_db, init_db
-from models import User, PurchaseOrder, Comment, CommentRead, CommentMention, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent, AppSetting
+from models import User, PurchaseOrder, Comment, CommentRead, CommentMention, DateChangeHistory, UserRole, ORDER_STATUSES, RoleColumnSettings, ImportBatch, PendingDateChange, OrderComponent, Component, AppSetting
 import app_settings
 from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
@@ -228,6 +228,106 @@ async def startup_event():
             print(f"⚠ sample_type column added but {MIGRATION_FLAG} flag was already set — skipping classification")
     finally:
         migration_db.close()
+
+    # Migration: components reusability foundation. Adds canonical_id FK on
+    # order_components + backfills a Component row per (po_number, name,
+    # sample_type). Cross-PO rows with matching names stay separate — merch
+    # can merge later once they've confirmed they're the same real-world part.
+    component_columns_now = [c['name'] for c in inspector.get_columns('order_components')]
+    if 'canonical_id' not in component_columns_now:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE order_components ADD COLUMN canonical_id INTEGER REFERENCES components(id) ON DELETE SET NULL"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_order_components_canonical_id ON order_components(canonical_id)"))
+        print("✓ Added canonical_id column to order_components table")
+
+    from models import Component
+    CANONICAL_MIGRATION_FLAG = 'components_canonical_backfill_v1'
+    canonical_db = SessionLocal()
+    try:
+        canonical_flag = canonical_db.query(AppSetting).filter(AppSetting.key == CANONICAL_MIGRATION_FLAG).first()
+        if canonical_flag is None:
+            # Group order_components by (po_number, name, sample_type) via a
+            # join to PurchaseOrder. Mint one canonical Component per group,
+            # then set canonical_id on every matching instance.
+            from models import PurchaseOrder
+            rows = canonical_db.query(
+                OrderComponent.id,
+                OrderComponent.name,
+                OrderComponent.sample_type,
+                PurchaseOrder.po_number,
+            ).join(PurchaseOrder, OrderComponent.order_id == PurchaseOrder.id).filter(
+                OrderComponent.canonical_id.is_(None)
+            ).all()
+
+            groups: dict[tuple[str, str, str], list[int]] = {}
+            for instance_id, name, sample_type, po_number in rows:
+                key = (po_number or '', name, sample_type)
+                groups.setdefault(key, []).append(instance_id)
+
+            canonical_created = 0
+            instances_linked = 0
+            for (_po, name, sample_type), instance_ids in groups.items():
+                canonical = Component(name=name, sample_type=sample_type)
+                canonical_db.add(canonical)
+                canonical_db.flush()  # get id
+                canonical_db.query(OrderComponent).filter(
+                    OrderComponent.id.in_(instance_ids)
+                ).update({OrderComponent.canonical_id: canonical.id}, synchronize_session=False)
+                canonical_created += 1
+                instances_linked += len(instance_ids)
+
+            canonical_db.add(AppSetting(key=CANONICAL_MIGRATION_FLAG, value='done'))
+            canonical_db.commit()
+            print(f"✓ Components canonical backfill: {canonical_created} canonicals created, {instances_linked} instances linked")
+    finally:
+        canonical_db.close()
+
+    # Migration: components.position column (strike-off placement). Nullable
+    # so existing rows stay valid.
+    components_cols = [c['name'] for c in inspector.get_columns('components')]
+    if 'position' not in components_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE components ADD COLUMN position VARCHAR(60)"))
+        print("✓ Added position column to components table")
+
+    # Migration: widen components.position from VARCHAR(20) to VARCHAR(60) so
+    # longer labels like 'CHEST POSITION – LEFT AS WORN' fit. Idempotent.
+    POSITION_WIDEN_FLAG = 'components_position_widen_v2'
+    widen_db = SessionLocal()
+    try:
+        flag = widen_db.query(AppSetting).filter(AppSetting.key == POSITION_WIDEN_FLAG).first()
+        if flag is None:
+            try:
+                if engine.dialect.name == 'postgresql':
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE components ALTER COLUMN position TYPE VARCHAR(60)"))
+                    print("✓ Widened components.position to VARCHAR(60)")
+                # SQLite is dynamically typed; no widen needed.
+                widen_db.add(AppSetting(key=POSITION_WIDEN_FLAG, value='done'))
+                widen_db.commit()
+            except Exception as exc:
+                print(f"⚠ Could not widen components.position: {exc}")
+    finally:
+        widen_db.close()
+
+    # Migration: one-shot uppercase of existing canonical names so casing
+    # drift no longer creates duplicates. Guarded by an AppSetting flag.
+    UPPERCASE_FLAG = 'components_canonical_name_uppercase_v1'
+    upper_db = SessionLocal()
+    try:
+        flag = upper_db.query(AppSetting).filter(AppSetting.key == UPPERCASE_FLAG).first()
+        if flag is None:
+            canonicals = upper_db.query(Component).all()
+            renamed = 0
+            for c in canonicals:
+                if c.name and c.name != c.name.upper():
+                    c.name = c.name.upper()
+                    renamed += 1
+            upper_db.add(AppSetting(key=UPPERCASE_FLAG, value='done'))
+            upper_db.commit()
+            print(f"✓ Canonical name uppercase: {renamed} rows normalised")
+    finally:
+        upper_db.close()
 
     # Migration: ensure users.role is stored as the enum NAME (uppercase), which is
     # SQLAlchemy's default when Column(Enum(UserRole)) has no values_callable.
