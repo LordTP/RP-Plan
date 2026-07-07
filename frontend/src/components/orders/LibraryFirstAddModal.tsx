@@ -9,7 +9,7 @@ import type { Order } from '@/types';
 
 type SampleType = 'strike_off' | 'lab_dip' | 'label';
 type ModalTab = 'library' | 'create';
-type StartingState = 'blank' | 'copy' | 'approved';
+type StartingState = 'blank' | 'copy';
 
 interface Props {
   open: boolean;
@@ -376,7 +376,6 @@ function ConfigureFromLibrary({
   const eligibleOrders = orders.filter((o) => !excludedOrderIds.has(o.id));
 
   const canCopy = detail.instances.length > 0;
-  const canApprove = !isSupplier;
   const tag = SAMPLE_TAGS[detail.sample_type];
 
   const canSubmit = selectedOrderIds.size > 0 && (startingState !== 'copy' || peerId !== null);
@@ -406,7 +405,7 @@ function ConfigureFromLibrary({
         {/* Starting state */}
         <div>
           <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Starting state for the new instances</div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <StartingStateTile
               on={startingState === 'blank'}
               onClick={() => setStartingState('blank')}
@@ -419,15 +418,7 @@ function ConfigureFromLibrary({
               disabled={!canCopy}
               disabledHint="No existing instances to copy from"
               title="Copy from another style"
-              body="Inherit state, dates, and attempt history from a peer style."
-            />
-            <StartingStateTile
-              on={startingState === 'approved'}
-              onClick={() => canApprove && setStartingState('approved')}
-              disabled={!canApprove}
-              disabledHint="Sourcelab-only shortcut"
-              title="Mark approved"
-              body="Approved with today's date, no history."
+              body="Inherit state, dates, and attempt history from a peer style — including if it's already Approved."
             />
           </div>
         </div>
@@ -638,15 +629,34 @@ function TargetStylePicker({
     onChange(next);
   }
 
+  function collapseAll() {
+    setCollapsedPos(new Set(grouped.map(([po]) => po)));
+  }
+
+  function expandAll() {
+    setCollapsedPos(new Set());
+  }
+
+  const allCollapsed = grouped.length > 0 && grouped.every(([po]) => collapsedPos.has(po));
+
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 flex items-center justify-between">
+      <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2 flex items-center justify-between gap-2">
         <span>Apply to styles</span>
-        {excludedCount > 0 && (
-          <span className="text-[10px] font-normal normal-case tracking-normal text-gray-400 italic">
-            {excludedCount} style{excludedCount === 1 ? '' : 's'} already have this component (hidden)
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {excludedCount > 0 && (
+            <span className="text-[10px] font-normal normal-case tracking-normal text-gray-400 italic">
+              {excludedCount} style{excludedCount === 1 ? '' : 's'} already have this (hidden)
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={allCollapsed ? expandAll : collapseAll}
+            className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 normal-case tracking-normal"
+          >
+            {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </button>
+        </div>
       </div>
       <div className="relative mb-2">
         <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -746,7 +756,6 @@ function CreateNewBody({
   const [position, setPosition] = useState<CanonicalPosition | ''>('');
   const [specUrl, setSpecUrl] = useState('');
   const [supplierNotes, setSupplierNotes] = useState('');
-  const [startingState, setStartingState] = useState<StartingState>('blank');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
 
   const colourRequired = sampleType === 'strike_off' || sampleType === 'lab_dip';
@@ -863,29 +872,10 @@ function CreateNewBody({
           </div>
         </div>
 
-        {/* Starting state — Copy hidden here since there are no peer instances yet */}
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Starting state for the new instances</div>
-          <div className="grid grid-cols-2 gap-2">
-            <StartingStateTile
-              on={startingState === 'blank'}
-              onClick={() => setStartingState('blank')}
-              title="Blank"
-              body="Status empty, no dates. Standard for a new sample going out."
-            />
-            <StartingStateTile
-              on={startingState === 'approved'}
-              onClick={() => !isSupplier && setStartingState('approved')}
-              disabled={isSupplier}
-              disabledHint="Sourcelab-only shortcut"
-              title="Mark approved"
-              body="Approved with today's date, no history."
-            />
-          </div>
-          <div className="mt-1 text-[10px] text-gray-400 italic">
-            Copy from another style is available once this component has instances on at least one style — pick From library instead.
-          </div>
-        </div>
+        {/* New canonicals always start blank — there's no peer to copy from
+            and marking-approved is intentionally not a shortcut here. Users
+            who want an approved starting state pick From library and Copy
+            from another style that's already been approved. */}
 
         {/* Target styles */}
         <TargetStylePicker
@@ -914,7 +904,7 @@ function CreateNewBody({
               supplier_notes: supplierNotes.trim() || undefined,
             },
             order_ids: Array.from(selectedOrderIds),
-            starting_state: startingState,
+            starting_state: 'blank',
           })}
           className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
         >

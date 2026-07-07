@@ -373,14 +373,16 @@ export function Navbar() {
                       Import
                     </Link>
                   )}
-                  <Link
-                    href="/guide"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <BookOpen className="h-3.5 w-3.5 text-gray-400" />
-                    Help Guide
-                  </Link>
+                  {user?.role !== 'supplier' && (
+                    <Link
+                      href="/guide"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 text-gray-400" />
+                      Help Guide
+                    </Link>
+                  )}
                   {user?.role === 'admin' && (
                     <Link
                       href="/settings"

@@ -142,39 +142,51 @@ const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: 'What Are Components?',
         content: [
-          'Components represent the individual materials or trims in a style — Main Fabric, Lining, Zip, Woven Labels, Badges, Embroidered Logo, Pocket Fabric, etc.',
-          'Each component tracks ONE sample type — Strike Off OR Lab Dip, never both. The type is picked at create time and is locked once saved.',
+          'Components represent the individual materials or trims in a style — Main Fabric, Lining, Chest Print, Woven Labels, Badges, Embroidered Logo, etc.',
+          'Each component tracks ONE sample type — Strike Off, Lab Dip, or Label. Pick it at create time; it can\'t change.',
           'Fit Sample and PPS are NOT components — they live at the order/style level since they cover the whole garment.',
         ],
-        tips: ['Strike Off (SO) = fabric / print sample; Lab Dip (LD) = colour-match sample. The same name can exist as both types on the same style — "Pocket" SO and "Pocket" LD are treated separately.'],
+        tips: ['SO = physical fabric/print sample. LD = colour-match sample. LB = woven/printed label. The same name can exist as multiple types (e.g. "Pocket" SO and "Pocket" LD) — they\'re treated separately.'],
       },
       {
-        title: 'Adding Components',
+        title: 'The /components page — Library + In Progress',
         content: [
-          'In the style detail modal, find the Components section. Click + Add Component. The flow is type → name → scope:',
+          'Everything happens under Components in the nav. Two tabs at the top:',
           {
             type: 'fields',
             items: [
-              { name: '1. Pick the type', desc: 'Strike Off or Lab Dip. Locked once saved — pick the right one.' },
-              { name: '2. Name it', desc: 'Type the name. As you type, existing names auto-suggest. A near-match warning catches casing/spacing dupes.' },
-              { name: '3. Scope', desc: 'This style only / All styles on PO / Selected styles (picker).' },
+              { name: 'Library', desc: 'The canonical catalogue — one row per real-world component. Browse, edit identity (name, colour, position, spec), see every style using it, bulk-edit across every PO.' },
+              { name: 'In Progress', desc: 'The working queue — components with unfinished samples. Left rail lists what needs chasing; right panel shows PO groups and instance cards.' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'Dedupe is per (name, sample_type). A Strike Off "Pocket" and a Lab Dip "Pocket" can coexist on the same style — they\'re different things.' },
+          { type: 'callout', tone: 'info', text: 'Library = "what components exist?" · In Progress = "what needs chasing today?"' },
         ],
-        tips: ['Common names: Main Fabric, Lining, Rib Fabric, Pocket Fabric, Zip, Buttons, Drawstring, Woven Label, Badges, Chest Emb, Print.'],
       },
       {
-        title: 'Editing & Bulk Applying',
+        title: 'Adding Components — library-first',
         content: [
-          'Expand a component to see its sample tracking fields — Status, Received, Approved. Only the section matching the component\'s sample type renders; the other type\'s fields are hidden.',
-          'When you save a field change, you get three options: this style only, all styles on the PO with the same name AND same sample type, or select specific styles from a picker.',
+          'Click + Add component (page-level button on /components or the button on any style\'s Components section). Same modal opens with two tabs:',
+          {
+            type: 'fields',
+            items: [
+              { name: 'From library', desc: 'Default. Search, pick a canonical, choose Blank or Copy-from-another-style, then tick target styles grouped by PO.' },
+              { name: '+ Create new', desc: 'Only when the component genuinely doesn\'t exist yet. Fill name (auto-uppercased), sample type, colour (required for SO+LD), position (SO only), then target styles.' },
+            ],
+          },
+          { type: 'callout', tone: 'info', text: 'To land a new instance as Approved, use Copy from another style and pick an approved peer. There\'s no "Mark approved" shortcut — every instance points at a real, signed-off peer or starts Blank.' },
+        ],
+      },
+      {
+        title: 'Editing + Bulk edit',
+        content: [
+          'Click any instance card in the In Progress right panel — an edit modal opens on top, no navigation. Set status, received, approved, or reject with a reason.',
+          'To update many at once: tick multiple instance checkboxes (or the PO-level checkbox), then click "Bulk edit… (N)" in the identity header. Set any combination of status / received / approved — applies across every ticked instance regardless of PO.',
         ],
       },
       {
         title: 'Full reference',
         content: [
-          'For a top-to-bottom walkthrough — type picker, scope rules, the full sample lifecycle, the rework / v2 flow, the Design → Components catalogue, and every dashboard warning threshold — see the Components tab inside Factory → Guide. Same content, written so both Source Lab and factory users get it.',
+          'For a top-to-bottom walkthrough — the two tabs, library-first Add flow, starting states, single + bulk edits, the sample lifecycle, and rejections/v2 — see the Components tab inside Factory → Guide. Same content, written so both Sourcelab and factory users get it.',
         ],
       },
     ],
@@ -252,52 +264,44 @@ const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: 'design-components',
-    title: 'Design → Components',
-    description: 'Catalogue of every component with bulk edit, merge, and search',
+    title: '/components page',
+    description: 'Library + In Progress tabs — canonical catalogue and working queue',
     icon: Layers,
     color: 'from-fuchsia-500 to-fuchsia-600',
     steps: [
       {
-        title: 'What this page is for',
+        title: 'One page, two tabs',
         content: [
-          'The Components page is the catalogue of every component across every order. Left sidebar lists unique component names with counts; the right pane shows the detail for whichever one you\'ve selected. Use it to clean up duplicates, set statuses in bulk, and spot which components are causing trouble.',
-        ],
-      },
-      {
-        title: 'Sidebar — sort and filter',
-        content: [
-          'The sidebar lists every distinct component name with its usage count.',
+          'The /components page (accessible from Components in the nav) has two tabs at the top:',
           {
             type: 'fields',
             items: [
-              { name: 'Used', desc: 'Sort by how many orders use the component (most common at the top).' },
-              { name: 'Pending', desc: 'Filter to components that have at least one unresolved sample somewhere. Quickly surfaces what needs attention.' },
-              { name: 'A–Z', desc: 'Alphabetical sort.' },
-              { name: 'Hide shipped', desc: 'Toggle to drop components whose orders are all shipped — stops old orders cluttering the view.' },
+              { name: 'Library', desc: 'Canonical catalogue. One row per real-world component. Left rail lists everything alphabetically; right panel shows identity (name, colour, position, spec, description), rollup counts, and every style using it.' },
+              { name: 'In Progress', desc: 'Working queue. Left rail shows components with unfinished samples plus a "N needs attention" red badge when things are stale or overdue. Right panel groups instance cards by PO.' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'Search matches component name, PO number, and china_orderbook_ref (the Chinese orderbook reference) simultaneously.' },
+          { type: 'callout', tone: 'info', text: 'Names are stored UPPERCASE across the app so casing drift no longer creates duplicates.' },
         ],
       },
       {
-        title: 'Data quality — duplicate detection & merge',
+        title: 'Editing identity — propagates by design',
         content: [
-          'A yellow callout appears above the table when the system detects near-duplicate component names (e.g. "Main Fabric", "main fabric", "Main  Fabric" — extra space). Click any cluster to open the merge picker.',
-          'Pick one name as the canonical version, tick which variants to roll in, and hit merge. Every component with one of the other names gets renamed in one shot.',
-          { type: 'callout', tone: 'warn', text: 'Merges are destructive — the other names no longer exist after. Confirm the cluster is genuinely the same thing before merging.' },
+          'Edit an identity field (name, colour, position, spec URL) on the Library tab and the change hits every instance using that canonical. That\'s the point of the canonical model.',
+          { type: 'callout', tone: 'info', text: 'Colour is required for Strike Offs + Lab Dips (both are colour-specific samples). Optional for Labels. Position is Strike-Off only — pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).' },
+          { type: 'callout', tone: 'warn', text: 'If you need a genuinely different name for just one style, delete that instance and re-add. Detach action coming soon.' },
         ],
       },
       {
-        title: 'Bulk actions',
+        title: 'Bulk editing across POs',
         content: [
-          'Tick the checkbox on multiple rows to open the bulk action bar at the bottom. Bulk set status, bulk rename, bulk delete — all with a confirmation modal that shows exactly which rows will change before you commit.',
+          'From the Library tab or In Progress tab, tick instance checkboxes (individual rows or the PO-level select) and hit "Bulk edit… (N)" in the identity header. Set any combination of status / received / approved — applies to every ticked instance regardless of PO. Overwrite warning fires if any of the ticked instances already have an Approved date.',
         ],
-        tips: ['The confirmation modal is the foolproof guard — you must tick "I understand this will change N rows" before the button enables.'],
+        tips: ['The big merch win — approve one canonical across 6 styles on 3 POs in one action instead of clicking through each style.'],
       },
       {
-        title: 'PO and Chinese orderbook references',
+        title: 'Filtering + search',
         content: [
-          'Each component row shows its PO number alongside the china_orderbook_ref (the Chinese supplier-side reference). Format is "PO-NNNN — CO-NNNN". Both are searchable — paste either reference into the search bar and it\'ll find the component.',
+          'Both tabs support search (name, colour, description, PO, style, customer, factory) and a type filter (SO / LD / LB). In Progress adds "Hide shipped" (drop components whose orders are on a shipment) and "Needs attention only" (shrink to the urgent stuff).',
         ],
       },
     ],

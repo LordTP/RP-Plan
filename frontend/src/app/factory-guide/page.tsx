@@ -266,104 +266,225 @@ function FactoryGuideContent() {
           <SectionHeader
             icon={Layers}
             title="Factory · Components"
-            blurb="What components are, how to add them, how the sample lifecycle works, and exactly when the dashboard warns you. Same content for both Source Lab and factory users."
+            blurb="What components are, the two views on the /components page, how the library-first Add flow works, single-instance edits, bulk edits across POs, and when warnings fire. Same content for both Source Lab and factory users."
           />
 
-          {/* 1. Basics — start with the SO vs LD distinction; factory users
-              already know what a component is. */}
-          <Step number="1.1" title="Strike Off vs Lab Dip">
+          {/* 1. Basics — the three sample types */}
+          <Step number="1.1" title="Sample types — SO, LD, LB">
             <p>
-              Every component tracks <strong>one</strong> sample type — Strike Off OR Lab Dip. Not both. You pick the type when you create it, and it can't change afterwards.
+              A <strong>component</strong> is one physical thing being sampled: a fabric, a print, a label, a colour swatch. Every component tracks <strong>one</strong> sample type. Pick it when you create — it can't change afterwards.
             </p>
             <Table>
               <TableRow
                 label="Strike Off (SO)"
-                value="A physical printed/woven sample of the fabric or trim, to sign off the pattern, weave, or print quality."
+                value="A physical printed / woven sample of the fabric or trim. Sign off the pattern, weave, or print quality. Has an optional Position field (Front / Back / Hem / etc)."
               />
               <TableRow
                 label="Lab Dip (LD)"
-                value="A colour-match sample, to sign off the specific shade. Same swatch in three different colourways = three Lab Dip components."
+                value="A colour-match sample. Sign off the exact shade. Same swatch in three different colourways = three separate Lab Dip components."
+              />
+              <TableRow
+                label="Label (LB)"
+                value="Woven / printed labels. Colour is optional here (labels are often mono-colour or spec-driven)."
               />
             </Table>
-            <MockShot caption="Strike Off and Lab Dip live in separate columns and have their own SO / LD badge.">
+            <MockShot caption="Strike Off, Lab Dip, and Label each have their own SO / LD / LB badge and live independently.">
               <TypeComparisonMock />
             </MockShot>
-            <Callout type="info" title="The same name can be both types">
-              "Pocket" might exist as a Strike Off component (sample the fabric) AND as a Lab Dip component (match the colour) on the same style. They're treated as separate, with their own statuses and dates.
+            <Callout type="info" title="The same name can be two types">
+              "Pocket" might exist as a Strike Off (sample the fabric) AND as a Lab Dip (match the colour) on the same style. Each is a separate component with its own status + dates.
             </Callout>
           </Step>
 
           <Step number="1.2" title="Fit Sample and PPS are NOT components">
             <p>
-              Fit Sample and PPS (Pre-Production Sample) are <em>whole-garment</em> concerns and live at the order/style level, not on individual components. You'll see them in their own section of the style detail — not inside the Components list.
+              Fit Sample and PPS (Pre-Production Sample) are <em>whole-garment</em> concerns and live at the order / style level, not on individual components. Look for them in their own section on the style detail — not inside the Components list.
             </p>
           </Step>
 
-          {/* 2. Adding */}
-          <Step number="2.1" title="Adding a component — Step 1: pick the type">
+          {/* 2. The two views on /components */}
+          <Step number="2.1" title="The /components page — Library + In Progress">
             <p>
-              From a style's detail view, click the <strong>+ Add Component</strong> button (top-right of the Components section). The first thing you'll see is a two-card chooser:
+              Everything happens under <strong>Components</strong> in the nav. Two tabs at the top:
             </p>
-            <MockShot caption="Step 1 of the Add Component flow. The form for name + scope is hidden until you pick a type.">
-              <AddTypePickerMock />
-            </MockShot>
-            <Callout type="warn" title="Type is locked once you save">
-              Pick the right one. You can't change a Strike Off component to a Lab Dip later — you'd need to delete and re-add it.
+            <Table>
+              <TableRow
+                label="Library"
+                value="The canonical catalogue — one row per real-world component. Browse, edit identity (name, colour, position, spec), see rollup counts and every style using it. Bulk edit across every PO from here."
+              />
+              <TableRow
+                label="In Progress"
+                value="The working queue — components with unfinished samples. Left rail lists components that need chasing; right panel shows PO groups and instance cards. Click a card to open an edit modal in place."
+              />
+            </Table>
+            <Callout type="info" title="Library vs In Progress in one line">
+              <strong>Library</strong> = "what components exist?"  ·  <strong>In Progress</strong> = "what needs chasing today?"
             </Callout>
           </Step>
 
-          <Step number="2.2" title="Step 2: name it">
+          <Step number="2.2" title="Library — browse + edit identity">
             <p>
-              Once you've picked the type, the rest of the form opens. Type the component name in the field. As you type, the app suggests existing names that match — pick from the dropdown to keep things consistent across the catalogue.
+              Left rail: alphabetical list of every canonical component, each with a colour chip and (for Strike Offs) a position chip. Click one to see identity + rollup + all styles using it.
+            </p>
+            <MockShot caption="Library tab — left rail lists canonicals with a colour chip; right panel shows identity, rollup counts, and every style linked to the entry.">
+              <LibraryTabMock />
+            </MockShot>
+            <Tips>
+              <Tip icon={Tag}>Names are stored UPPERCASE across the app — same input capitalisation doesn't create duplicates.</Tip>
+              <Tip icon={Tag}>Colour is <strong>required</strong> for Strike Offs + Lab Dips, optional for Labels.</Tip>
+              <Tip icon={Tag}>Position is Strike-Off-only. Pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).</Tip>
+              <Tip icon={Search}>Search on the left rail matches name, description, colour, and supplier notes.</Tip>
+            </Tips>
+            <Callout type="warn" title="Editing identity propagates">
+              Rename or update the colour on the Library and it changes on every instance — that's the whole point of the canonical model. If you need a different name for just one style, delete that instance and re-add as a new canonical (Detach coming soon).
+            </Callout>
+          </Step>
+
+          {/* 3. Adding — the new library-first flow */}
+          <Step number="3.1" title="Adding — library-first modal">
+            <p>
+              Click <strong>+ Add component</strong> — either the page-level button on <span className="font-mono">/components</span>, or the button on any style's Components section. Same modal opens with two tabs:
+            </p>
+            <Table>
+              <TableRow
+                label="From library"
+                value="Default. Search the left rail, pick a canonical, then choose the starting state and target styles. Use this whenever the component already exists somewhere."
+              />
+              <TableRow
+                label="+ Create new"
+                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec URL, supplier notes) and target styles. Use this only when the component genuinely doesn't exist yet."
+              />
+            </Table>
+            <MockShot caption="Add Component modal — library-first with a tab to create if you can't find it.">
+              <AddModalMock />
+            </MockShot>
+          </Step>
+
+          <Step number="3.2" title="Create new — filling the form">
+            <p>
+              Flip to the <strong>+ Create new</strong> tab when the component genuinely doesn't exist in the library yet. Fields:
+            </p>
+            <Table>
+              <TableRow
+                label="Name"
+                value="The component's identity. Auto-uppercases as you type — 'Chest Print' becomes 'CHEST PRINT' before it hits the DB. Casing dupes are impossible."
+              />
+              <TableRow
+                label="Sample type"
+                value="Strike Off / Lab Dip / Label. Locked once created — pick carefully."
+              />
+              <TableRow
+                label="Description"
+                value="Optional. One or two lines to explain what this is (e.g. 'Digital transfer, cotton base, 2026 crest')."
+              />
+              <TableRow
+                label="Colour"
+                value="REQUIRED for Strike Offs + Lab Dips. Optional for Labels. The specific shade — 'Sky Captain', 'Bottle Green', 'Peacoat'."
+              />
+              <TableRow
+                label="Position"
+                value="Strike Off only. Optional. Where the print / embroidery sits: CHEST POSITION – CENTRAL / LEFT AS WORN / RIGHT AS WORN, BACK, BACK NECK, HEM, LEFT SLEEVE AS WORN, RIGHT SLEEVE AS WORN."
+              />
+              <TableRow
+                label="Spec URL"
+                value="Optional. Link to the tech pack PDF, drawing, or wherever the sign-off spec lives."
+              />
+              <TableRow
+                label="Supplier notes"
+                value="Optional. Anything the supplier needs to know that doesn't fit in the description — colour reference codes, base fabric hint, tolerances."
+              />
+            </Table>
+            <MockShot caption="Create new form — name auto-uppercases, colour is required for SO/LD, position dropdown appears for Strike Offs.">
+              <CreateNewFormMock />
+            </MockShot>
+            <Callout type="info" title="Save + apply in one shot">
+              Fill identity, tick target styles, hit Create — the canonical lands in the library AND instances land on each ticked style, all in one action. No two-step "save then apply."
+            </Callout>
+          </Step>
+
+          <Step number="3.3" title="From library — starting state (Blank or Copy)">
+            <p>
+              After picking a library entry, choose how the new instances start life:
+            </p>
+            <Table>
+              <TableRow
+                label="Blank"
+                value="Status empty, no dates. The default — most new samples start here."
+              />
+              <TableRow
+                label="Copy from another style"
+                value="Inherit the status, received / approved dates, and full attempt history from a peer style already using this component. Use this when the same sample was approved on another PO and you want to skip the workflow again."
+              />
+            </Table>
+            <Callout type="info" title="No more 'Mark approved' shortcut">
+              If you want a new instance to land Approved, pick <strong>Copy from another style</strong> and choose an approved peer. That way the new instance links back to a real, signed-off sample rather than a shortcut with no history.
+            </Callout>
+          </Step>
+
+          <Step number="3.4" title="Target styles — pick which to apply">
+            <p>
+              Style picker groups by PO. Search matches PO number, style code, customer, or orderbook reference. Tick individual styles, or tick the PO row to select all its styles at once. <strong>Collapse all / Expand all</strong> in the top-right for fast scanning of a long list.
             </p>
             <Tips>
-              <Tip icon={Tag}>If you type something that already exists with different casing or spacing (e.g. "Main fabric" when "Main Fabric" is already used), you'll get an amber warning. Click "use existing" to avoid duplicates.</Tip>
-              <Tip icon={Tag}>Common names: Main Fabric, Lining, Rib Fabric, Pocket Fabric, Zip, Buttons, Drawstring, Woven Label, Badges, Chest Emb, Print.</Tip>
+              <Tip icon={Tag}>Styles already using this component are hidden automatically — the count of hidden styles shows in the header.</Tip>
+              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to Chelsea PO 5310 and Stoke PO 5205 in one go.</Tip>
             </Tips>
           </Step>
 
-          <Step number="2.3" title="Step 3: pick the scope">
+          {/* 4. In Progress + editing */}
+          <Step number="4.1" title="In Progress — the working queue">
             <p>
-              By default the component is added to just the style you're on. If the same component exists on other styles in the same PO, you can apply it to those at the same time:
+              Left rail: components with unfinished work (anything that's not Approved or on a shipped style). Each row shows how many styles are affected and, in red, how many of those need attention (rejected, stale outstanding, or ex-fac urgent).
             </p>
-            <Table>
-              <TableRow label="This style only" value="Just the current row. Quickest." />
-              <TableRow label="All styles on PO" value="Every style on this purchase order gets a copy of the component." />
-              <TableRow label="Selected styles" value="Opens a picker so you tick which specific styles to add it to." />
-            </Table>
-            <MockShot caption="Step 2: name + scope. The type chip at the top is a click-to-change shortcut back to step 1.">
-              <AddFormMock />
+            <p>
+              Click a row to see its instances grouped by PO — with customer, factory, and each style's sample status.
+            </p>
+            <MockShot caption="In Progress tab — left rail lists components with unfinished work, right panel groups instances by PO.">
+              <InProgressMock />
             </MockShot>
-            <Callout type="info" title="Dedupe is per type">
-              Adding "Pocket" Strike Off to a style that already has "Pocket" Strike Off is skipped. But a Strike Off "Pocket" and a Lab Dip "Pocket" are treated as separate — both can coexist.
-            </Callout>
+            <Tips>
+              <Tip icon={Tag}>Type filter (All / SO / LD / LB) at the top of the left rail scopes the whole tab.</Tip>
+              <Tip icon={Tag}>Hide shipped drops components whose orders are already on a shipment.</Tip>
+              <Tip icon={Tag}>Needs attention only shrinks the list to just the urgent stuff.</Tip>
+            </Tips>
           </Step>
 
-          {/* 3. Tracking */}
-          <Step number="3.1" title="Tracking the sample">
+          <Step number="4.2" title="Editing a single instance">
             <p>
-              Once a component exists, expand it to see its sample tracking. There are three fields:
+              Click any instance card in the In Progress right panel and an edit modal opens on top — no page navigation. Set status, received date, approved date, or reject with a reason. Save and the change immediately reflects in both tabs.
             </p>
-            <Table>
-              <TableRow label="Status" value="OUTSTANDING (default — sample requested, not back yet), RECEIVED, APPROVED, REJECTED, or NOT REQUIRED." />
-              <TableRow label="Received" value="The date the sample physically arrived back at Source Lab / customer for inspection." />
-              <TableRow label="Approved" value="The date the sample was signed off. Setting this date moves the component to done." />
-            </Table>
-            <MockShot caption="A component card expanded — type badge, status chip, three field tiles, Remove at the bottom.">
+            <MockShot caption="Sample lifecycle inside the instance edit modal — status pill, three field tiles, attempt history.">
               <ComponentCardMock
-                name="Main Fabric"
+                name="CHEST PRINT — HOME KIT BLUE"
                 type="strike_off"
                 status="APPROVED"
                 received="14 May 2026"
                 approved="20 May 2026"
               />
             </MockShot>
-            <Callout type="info" title="Factory users see these read-only">
-              Suppliers can add / delete components and rename them, but the Status / Received / Approved fields are managed by Source Lab. You'll see them but won't be able to edit them.
+            <Callout type="info" title="Factories see this read-only">
+              Suppliers can add / detach components and edit identity fields on ones touching their POs, but Status / Received / Approved are Sourcelab's call.
             </Callout>
           </Step>
 
-          <Step number="3.2" title="The lifecycle">
+          {/* 5. Bulk edit */}
+          <Step number="5.1" title="Bulk edit across styles + POs">
+            <p>
+              Tick the checkbox on multiple instance cards (or use the PO-level checkbox to grab a whole PO). A <strong>Bulk edit… (N)</strong> button appears in the right-panel header — click it to open the modal.
+            </p>
+            <MockShot caption="Bulk edit modal — set status, received date, and approved date across every ticked instance at once.">
+              <BulkEditMock />
+            </MockShot>
+            <p>
+              You can set any combination of the three fields. If any of the ticked instances already have an Approved date and you're setting a new one, you'll see a warning before it overwrites.
+            </p>
+            <Callout type="info" title="This is the big merch win">
+              Approve "CHEST PRINT — HOME KIT BLUE" across 6 styles on 3 POs in one action — no more clicking through each style individually.
+            </Callout>
+          </Step>
+
+          {/* 6. Lifecycle */}
+          <Step number="6.1" title="The sample lifecycle">
             <div className="my-3 flex items-center gap-2 text-[11px] flex-wrap">
               <StatusPill tone="gray">OUTSTANDING</StatusPill>
               <span className="text-gray-400">→</span>
@@ -375,19 +496,19 @@ function FactoryGuideContent() {
               <span className="text-gray-400">→ opens v2</span>
             </div>
             <p>
-              <strong>OUTSTANDING</strong> is the default when a component is first created — Source Lab is waiting on the sample. Once it physically arrives, the Received date is set (this auto-bumps the status to RECEIVED). After review, either approved (signed off) or rejected.
+              <strong>OUTSTANDING</strong> is the default — sample requested, not back yet. Once it physically arrives, the Received date is set (this auto-bumps the status to RECEIVED). After review, either Approved (signed off) or Rejected.
             </p>
             <p>
-              <strong>NOT REQUIRED</strong> is a special status that says "we don't need this sample at all." Use it when, say, a Lab Dip isn't relevant because the colour's already a standard. NOT REQUIRED suppresses warnings and counts as done.
+              <strong>NOT REQUIRED</strong> is a special status that says "we don't need this sample at all." Use it when e.g. a Lab Dip isn't relevant because the colour's a standard. NOT REQUIRED suppresses warnings and counts as done.
             </p>
           </Step>
 
-          {/* 4. Rejections */}
-          <Step number="4.1" title="Rejections and v2 (rework)">
+          {/* 7. Rejections */}
+          <Step number="7.1" title="Rejections and v2 (rework)">
             <p>
-              When Source Lab rejects a sample, they pick a structured <strong>reason</strong> (Colour / Placement / Stitch / Material / Spec / Print / Other), add an optional <strong>note</strong>, and optionally a <strong>photo</strong>. Confirming closes the current attempt as REJECTED and opens v2 at OUTSTANDING. The Received and Approved dates are cleared on the new attempt — the clock starts fresh.
+              When Sourcelab rejects, they pick a structured <strong>reason</strong> (Colour / Placement / Stitch / Material / Spec / Print / Other), add an optional <strong>note</strong>, and optionally a <strong>photo</strong>. Confirming closes the attempt as REJECTED and opens v2 at OUTSTANDING with the clock reset.
             </p>
-            <MockShot caption="Same component on v2 with the rejection context banner. Factories see the reason + note read-only so they know what to fix.">
+            <MockShot caption="Same component on v2 with the rejection context banner — factories see the reason + note so they know what to fix.">
               <ComponentCardMock
                 name="CHEST EMB"
                 type="strike_off"
@@ -399,44 +520,11 @@ function FactoryGuideContent() {
                 }}
               />
             </MockShot>
-            <Callout type="warn" title="Stuck components need direct attention">
-              Anything on v3+ shows up on the Source Lab Resubmissions dashboard. There's usually a comms issue worth a phone call when things hit a third attempt.
+            <Callout type="warn" title="Stuck on v3+ needs direct attention">
+              Anything on v3+ shows on the Sourcelab Resubmissions dashboard. Usually a comms issue worth a phone call when things hit a third attempt.
             </Callout>
           </Step>
 
-          {/* 5. Catalogue */}
-          <Step number="5.1" title="The Components catalogue">
-            <p>
-              Reachable from <strong>Factory → Components</strong> in the nav. Two-pane layout: the sidebar lists every distinct (name, sample type) combination across your orders. The right pane shows the detail for whichever one you've selected.
-            </p>
-            <MockShot caption="Catalogue sidebar — same name with different SO / LD types appears as separate entries.">
-              <CatalogueSidebarMock />
-            </MockShot>
-            <Tips>
-              <Tip icon={Search}>Search matches name, PO, customer, and Chinese orderbook reference simultaneously.</Tip>
-              <Tip icon={Tag}>Sort by Used (most common at top), Pending (anything unresolved), or A–Z.</Tip>
-              <Tip icon={Tag}>Hide shipped to drop components whose orders are all on a shipment already.</Tip>
-            </Tips>
-          </Step>
-
-          {/* 6. Warnings */}
-          <Step number="6.1" title="When things go overdue">
-            <p>
-              The dashboard Warnings Centre fires automatically based on business-day thresholds:
-            </p>
-            <Table>
-              <TableRow label="Strike Off Overdue" value="Tech packs sent 20+ business days ago (25 for badge / woven label / woven tape), Strike Off not received." />
-              <TableRow label="Strike Off Needs Approval" value="Strike Off received 5+ business days ago, not approved." />
-              <TableRow label="Lab Dip Overdue" value="Tech packs sent 15+ business days ago, Lab Dip not received." />
-              <TableRow label="Lab Dip Needs Approval" value="Lab Dip received 5+ business days ago, not approved." />
-              <TableRow label="Fit Sample Overdue" value="Tech packs sent 15+ business days ago, no Fit Sample received. Order-level." />
-              <TableRow label="PPS Overdue" value="40+ days from the latest Lab Dip / Strike Off approval, PPS not received — roughly 5–6 weeks including weekends. Order-level." />
-            </Table>
-            <MockShot caption="A warning entry on the Source Lab dashboard — each row shows the PO, style, the affected component, and how long it's been overdue.">
-              <WarningEntryMock />
-            </MockShot>
-            <p className="mt-3"><strong>A warning won't show</strong> when the order is Cancelled / Delivered / Complete, or has a tracking reference (already on a shipment), or the component is NOT REQUIRED / APPROVED.</p>
-          </Step>
         </section>
         )}
 
@@ -1101,33 +1189,31 @@ function ConfirmedShipmentMock() {
 
 /* ============== Component mocks (for the Components tab) ============== */
 
-function TypeBadge({ type }: { type: 'strike_off' | 'lab_dip' }) {
+function TypeBadge({ type }: { type: 'strike_off' | 'lab_dip' | 'label' }) {
+  const styles = type === 'strike_off' ? 'bg-amber-100 text-amber-800'
+    : type === 'lab_dip'   ? 'bg-cyan-100 text-cyan-800'
+    :                        'bg-fuchsia-100 text-fuchsia-800';
+  const label = type === 'strike_off' ? 'SO' : type === 'lab_dip' ? 'LD' : 'LB';
   return (
-    <span
-      className={cn(
-        'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
-        type === 'strike_off' ? 'bg-amber-100 text-amber-800' : 'bg-cyan-100 text-cyan-800'
-      )}
-    >
-      {type === 'strike_off' ? 'SO' : 'LD'}
+    <span className={cn('text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded', styles)}>
+      {label}
     </span>
   );
 }
 
 function TypeComparisonMock() {
   return (
-    <div className="p-5 grid grid-cols-2 gap-4">
+    <div className="p-5 grid grid-cols-3 gap-4">
       <div className="bg-amber-50/50 rounded-xl ring-1 ring-amber-200 p-4">
         <div className="flex items-center gap-2 mb-2">
           <TypeBadge type="strike_off" />
           <span className="text-sm font-bold text-gray-900">Strike Off</span>
         </div>
-        <p className="text-[11px] text-gray-600 mb-3">Physical fabric / print sample. Sign off the pattern, weave, or print quality.</p>
+        <p className="text-[11px] text-gray-600 mb-3">Physical fabric / print sample. Sign off pattern, weave, or print quality.</p>
         <div className="space-y-1.5">
-          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Main Fabric</div>
-          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Rib Fabric</div>
-          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Chest Print</div>
-          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">Woven Label</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">MAIN FABRIC</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">CHEST PRINT</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-amber-100">SLEEVE EMBROIDERY</div>
         </div>
       </div>
       <div className="bg-cyan-50/50 rounded-xl ring-1 ring-cyan-200 p-4">
@@ -1138,14 +1224,25 @@ function TypeComparisonMock() {
         <p className="text-[11px] text-gray-600 mb-3">Colour-match sample. Sign off the exact shade.</p>
         <div className="space-y-1.5">
           <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-emerald-500" /> Main Fabric — Bottle Green
+            <span className="w-3 h-3 rounded-full bg-emerald-500" /> BOTTLE GREEN
           </div>
           <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-amber-400" /> Main Fabric — Mustard
+            <span className="w-3 h-3 rounded-full bg-amber-400" /> MUSTARD
           </div>
           <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-cyan-100 flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-rose-400" /> Trim — Coral
+            <span className="w-3 h-3 rounded-full bg-rose-400" /> CORAL
           </div>
+        </div>
+      </div>
+      <div className="bg-fuchsia-50/50 rounded-xl ring-1 ring-fuchsia-200 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <TypeBadge type="label" />
+          <span className="text-sm font-bold text-gray-900">Label</span>
+        </div>
+        <p className="text-[11px] text-gray-600 mb-3">Woven / printed labels. Colour is optional here.</p>
+        <div className="space-y-1.5">
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-fuchsia-100">CARE LABEL — STANDARD</div>
+          <div className="px-2.5 py-1.5 bg-white rounded-md text-[11px] text-gray-700 ring-1 ring-fuchsia-100">NECK LABEL — INTERIOR PRINT</div>
         </div>
       </div>
     </div>
@@ -1384,6 +1481,445 @@ function WarningEntryMock() {
               <span className="ml-2 text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">{r.days}d</span>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ─── New mocks for the library-first Add flow + In Progress + Bulk edit ─── */
+
+function LibraryTabMock() {
+  const items: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; colour?: string; position?: string; styles: number; customers: number; active?: boolean }[] = [
+    { name: 'CHEST PRINT — HOME KIT BLUE', type: 'strike_off', colour: 'Sky Captain', position: 'CHEST POSITION – CENTRAL', styles: 11, customers: 3, active: true },
+    { name: 'MAIN FABRIC — COTTON 200GSM', type: 'strike_off', colour: 'Bottle Green', styles: 14, customers: 4 },
+    { name: 'SLEEVE EMB — CHELSEA CREST', type: 'strike_off', colour: 'Gold', position: 'LEFT SLEEVE AS WORN', styles: 4, customers: 1 },
+    { name: 'CARE LABEL — STANDARD', type: 'label', styles: 22, customers: 5 },
+    { name: 'PEACOAT NAVY', type: 'lab_dip', colour: 'Peacoat', styles: 7, customers: 2 },
+  ];
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-4xl mx-auto">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+          <p className="text-sm font-bold text-gray-900">Components</p>
+          <div className="flex items-center gap-3 border-b-2 border-transparent">
+            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">Library</span>
+            <span className="pb-2 text-[11px] font-medium text-gray-500">In Progress</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="text-[10px] text-gray-400">+ Add component</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-[240px_1fr]">
+          {/* Left rail */}
+          <div className="border-r border-gray-100 bg-gray-50/40">
+            <div className="p-2.5 border-b border-gray-100">
+              <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[11px] text-gray-400 bg-white flex items-center">
+                <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
+                Search library…
+              </div>
+            </div>
+            <div>
+              {items.map((c, i) => (
+                <div key={i} className={cn(
+                  'px-3 py-2.5 border-b border-gray-100 text-[11px]',
+                  c.active ? 'bg-violet-50 border-l-4 border-l-violet-500 -ml-px' : ''
+                )}>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <TypeBadge type={c.type} />
+                    <span className="font-semibold text-gray-900 truncate flex-1">{c.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap mt-1">
+                    {c.colour && (
+                      <span className="text-[10px] font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 truncate max-w-[100px]">{c.colour}</span>
+                    )}
+                    {c.position && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 truncate max-w-[130px]">{c.position}</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-1 tabular-nums">{c.styles} styles · {c.customers} customer{c.customers === 1 ? '' : 's'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Right detail */}
+          <div className="p-4 space-y-3">
+            {/* Identity */}
+            <div className="rounded-lg border border-gray-200 p-3 flex items-start gap-3">
+              <div className="w-9 h-9 rounded bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-sm">📷</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <TypeBadge type="strike_off" />
+                  <p className="text-sm font-bold text-gray-900">CHEST PRINT — HOME KIT BLUE</p>
+                  <span className="text-[11px] font-semibold text-gray-700 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sky Captain</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5">Central</span>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-0.5 truncate">Digital transfer, cotton base, 2026 crest · 📎 spec-chest-print-v2.pdf</p>
+              </div>
+              <button className="text-[10px] font-semibold text-violet-600">Edit</button>
+            </div>
+            {/* Rollup */}
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="rounded border border-gray-200 bg-gray-50 p-1.5">
+                <p className="text-[9px] uppercase font-bold text-gray-500">Used</p>
+                <p className="text-sm font-bold text-gray-900 tabular-nums">11</p>
+              </div>
+              <div className="rounded border border-emerald-200 bg-emerald-50 p-1.5">
+                <p className="text-[9px] uppercase font-bold text-emerald-700">Approved</p>
+                <p className="text-sm font-bold text-emerald-700 tabular-nums">6</p>
+              </div>
+              <div className="rounded border border-blue-200 bg-blue-50 p-1.5">
+                <p className="text-[9px] uppercase font-bold text-blue-700">Received</p>
+                <p className="text-sm font-bold text-blue-700 tabular-nums">2</p>
+              </div>
+              <div className="rounded border border-amber-200 bg-amber-50 p-1.5">
+                <p className="text-[9px] uppercase font-bold text-amber-700">Outstanding</p>
+                <p className="text-sm font-bold text-amber-700 tabular-nums">3</p>
+              </div>
+            </div>
+            {/* Instance list */}
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">All styles using this</p>
+                <p className="text-[10px] font-semibold text-violet-600">Bulk edit…</p>
+              </div>
+              <div className="divide-y divide-gray-100 text-[11px]">
+                {[
+                  { code: 'S003883A-0001', po: '5202 · CHELSEA', st: 'Approved 12 Jun', tone: 'green' as const },
+                  { code: 'S004450A-0001', po: '5205 · STOKE', st: 'Received 4 Jun', tone: 'blue' as const },
+                  { code: 'S004612B-0002', po: '5251 · EVERTON', st: 'v1 out · 18 Jun', tone: 'amber' as const },
+                ].map((r, i) => (
+                  <div key={i} className="px-3 py-1.5 flex items-center gap-2">
+                    <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
+                    <span className="font-mono tabular-nums text-gray-700">{r.code}</span>
+                    <span className="flex-1 truncate text-gray-500">{r.po}</span>
+                    <StatusPill tone={r.tone}>{r.st}</StatusPill>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddModalMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-3xl mx-auto shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-gray-900">Add component</p>
+            <p className="text-[10px] text-gray-500">Pick from the library, or create a new one, then apply to styles.</p>
+          </div>
+          <X className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+        <div className="px-5 pt-3">
+          <div className="inline-flex p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
+            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">From library</span>
+            <span className="px-3 py-1 rounded-md text-gray-500">+ Create new</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-[220px_1fr]">
+          <div className="border-r border-gray-100 p-3 bg-gray-50/40 space-y-1.5">
+            <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[10px] text-gray-400 bg-white flex items-center">
+              <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
+              Search library…
+            </div>
+            <div className="p-2 rounded border-2 border-violet-500 bg-violet-50">
+              <div className="flex items-center gap-1.5">
+                <TypeBadge type="strike_off" />
+                <span className="text-[11px] font-bold text-gray-900 truncate">CHEST PRINT — HOME KIT BLUE</span>
+              </div>
+              <p className="text-[9px] text-gray-500 mt-0.5">11 styles · 3 customers · 📎</p>
+            </div>
+            <div className="p-2 rounded border border-gray-200 bg-white">
+              <div className="flex items-center gap-1.5">
+                <TypeBadge type="lab_dip" />
+                <span className="text-[11px] font-bold text-gray-900 truncate">PEACOAT NAVY</span>
+              </div>
+              <p className="text-[9px] text-gray-500 mt-0.5">7 styles · 2 customers</p>
+            </div>
+            <div className="p-2 rounded border border-gray-200 bg-white">
+              <div className="flex items-center gap-1.5">
+                <TypeBadge type="label" />
+                <span className="text-[11px] font-bold text-gray-900 truncate">CARE LABEL — STANDARD</span>
+              </div>
+              <p className="text-[9px] text-gray-500 mt-0.5">22 styles · 5 customers</p>
+            </div>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500 mb-1.5">Starting state for the new instances</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded border-2 border-violet-500 bg-violet-50 p-2">
+                  <p className="text-[11px] font-bold text-gray-900">Blank</p>
+                  <p className="text-[9px] text-gray-500 mt-0.5">Status empty, no dates. Standard for a new sample going out.</p>
+                </div>
+                <div className="rounded border border-gray-200 bg-white p-2">
+                  <p className="text-[11px] font-bold text-gray-900">Copy from another style</p>
+                  <p className="text-[9px] text-gray-500 mt-0.5">Inherit state, dates, and attempt history from a peer — even if it's already Approved.</p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500">Apply to styles</p>
+                <p className="text-[9px] font-semibold text-gray-500">Collapse all</p>
+              </div>
+              <div className="rounded border border-gray-200 overflow-hidden text-[10px]">
+                <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
+                  <span className="font-mono font-bold">PO 5310</span>
+                  <span className="text-gray-500">· CHELSEA · 4 styles</span>
+                </div>
+                <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
+                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
+                  <span className="font-mono">S004901A-0001</span>
+                  <span className="text-gray-500">Home Kit Body · Blue</span>
+                </div>
+                <div className="px-2 py-1 pl-8 bg-violet-50/50 border-t border-gray-100 flex items-center gap-2">
+                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
+                  <span className="font-mono">S004901A-0004</span>
+                  <span className="text-gray-500">Home Kit Body · Red</span>
+                </div>
+                <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
+                  <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
+                  <span className="font-mono font-bold">PO 5205</span>
+                  <span className="text-gray-500">· STOKE · 3 styles</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+          <p className="text-[10px] text-gray-500">2 styles selected</p>
+          <button className="px-3 py-1 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Add to 2 styles</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InProgressMock() {
+  const groups: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; styles: number; attention: number; active?: boolean }[] = [
+    { name: 'CHEST PRINT — HOME KIT BLUE', type: 'strike_off', styles: 5, attention: 3, active: true },
+    { name: 'PEACOAT NAVY', type: 'lab_dip', styles: 4, attention: 1 },
+    { name: 'CARE LABEL — STANDARD', type: 'label', styles: 3, attention: 0 },
+    { name: 'SLEEVE EMB — CHELSEA CREST', type: 'strike_off', styles: 2, attention: 0 },
+  ];
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-4xl mx-auto">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+          <p className="text-sm font-bold text-gray-900">Components</p>
+          <div className="flex items-center gap-3">
+            <span className="pb-2 text-[11px] font-medium text-gray-500">Library</span>
+            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">In Progress</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-[240px_1fr]">
+          {/* Left rail */}
+          <div className="border-r border-gray-100 bg-gray-50/40 p-2 space-y-1">
+            <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[10px] text-gray-400 bg-white flex items-center mb-2">
+              <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
+              Search components…
+            </div>
+            {groups.map((g, i) => (
+              <div key={i} className={cn(
+                'p-2 rounded border text-[11px]',
+                g.active ? 'bg-violet-50 border-l-4 border-l-violet-500 border-gray-200' : 'bg-white border-gray-200'
+              )}>
+                <div className="flex items-center gap-1.5">
+                  <TypeBadge type={g.type} />
+                  <span className="font-semibold text-gray-900 truncate flex-1">{g.name}</span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1 tabular-nums flex items-center gap-1.5">
+                  <span>{g.styles} styles</span>
+                  {g.attention > 0 && (
+                    <>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-red-600 font-semibold">{g.attention} needs attention</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Right */}
+          <div className="p-4 space-y-3">
+            <div className="rounded-lg border border-gray-200 p-3 flex items-center gap-3">
+              <TypeBadge type="strike_off" />
+              <p className="text-sm font-bold text-gray-900 flex-1">CHEST PRINT — HOME KIT BLUE</p>
+              <span className="text-[10px] font-bold text-red-700 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">3 needs attention</span>
+              <span className="text-[10px] font-semibold text-violet-600">Bulk edit… (0)</span>
+            </div>
+            {/* PO group */}
+            <div>
+              <div className="flex items-center gap-2 px-1 mb-1.5">
+                <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
+                <span className="px-2 py-0.5 rounded-md bg-gray-900 text-white text-[10px] font-bold tabular-nums">PO 5205 · S004450A</span>
+                <span className="text-[10px] text-gray-700 font-semibold">STOKE</span>
+                <span className="text-[10px] text-gray-500">· PRIME-23</span>
+                <span className="text-[10px] text-gray-400 ml-auto">3 styles</span>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { code: 'S004450A-0001', desc: 'Home Kit Body · Blue', status: 'OUTSTANDING', tone: 'amber' as const, days: '18d', attention: true },
+                  { code: 'S004450A-0003', desc: 'Home Kit Body · Red', status: 'RECEIVED', tone: 'blue' as const, days: '5d', attention: false },
+                  { code: 'S004450K-0001', desc: 'Kids Kit Body · Blue', status: 'OUTSTANDING', tone: 'amber' as const, days: '9d', attention: false },
+                ].map((r, i) => (
+                  <div key={i} className={cn(
+                    'rounded-lg bg-white ring-1 flex items-stretch',
+                    r.attention ? 'ring-red-100' : 'ring-amber-100'
+                  )}>
+                    <div className="flex items-center gap-2 pl-3 pr-3 py-2 min-w-[220px] border-r border-gray-100">
+                      <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
+                      <StatusPill tone={r.tone}>{r.status}</StatusPill>
+                      {r.attention && <span className="text-red-600 text-[10px] font-semibold tabular-nums ml-auto">{r.days}</span>}
+                    </div>
+                    <div className="flex-1 py-2 px-3 min-w-0">
+                      <p className="text-[11px] font-bold text-gray-900">{r.code}</p>
+                      <p className="text-[10px] text-gray-400 truncate">{r.desc}</p>
+                    </div>
+                    <div className="py-2 pr-3 flex items-center">
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateNewFormMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-3xl mx-auto shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-gray-900">Add component</p>
+            <p className="text-[10px] text-gray-500">Create a canonical component, then apply to styles.</p>
+          </div>
+          <X className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+        <div className="px-5 pt-3">
+          <div className="inline-flex p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
+            <span className="px-3 py-1 rounded-md text-gray-500">From library</span>
+            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">+ Create new</span>
+          </div>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="grid grid-cols-[1fr_120px] gap-3">
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Name</p>
+              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white uppercase">CHEST PRINT — HOME KIT BLUE</div>
+            </div>
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Sample type</p>
+              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white">Strike Off</div>
+            </div>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Description <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
+            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white min-h-[36px]">Digital transfer, cotton base, 2026 crest.</div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Colour <span className="lowercase font-normal text-red-500" style={{ letterSpacing: 0 }}>(required)</span></p>
+              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white">Sky Captain</div>
+            </div>
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Position <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
+              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white flex items-center justify-between">
+                <span>CHEST POSITION – CENTRAL</span>
+                <ChevronRight className="w-3 h-3 text-gray-400 rotate-90" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Spec URL <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
+            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-400 bg-white">https://…</div>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Supplier notes <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
+            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-400 bg-white min-h-[36px]">Anything the supplier should know…</div>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1 flex items-center justify-between">
+              <span>Apply to styles</span>
+              <span className="lowercase font-semibold text-gray-500 tracking-normal">Collapse all</span>
+            </p>
+            <div className="rounded border border-gray-200 overflow-hidden text-[10px]">
+              <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
+                <span className="font-mono font-bold">PO 5310</span>
+                <span className="text-gray-500">· CHELSEA · 4 styles</span>
+              </div>
+              <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
+                <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
+                <span className="font-mono">S004901A-0001</span>
+                <span className="text-gray-500">Home Kit Body · Blue</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+          <p className="text-[10px] text-gray-500">1 style selected</p>
+          <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Create &amp; add to 1 style</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkEditMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-md mx-auto shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <p className="text-sm font-bold text-gray-900">Bulk edit — 6 instances</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">CHEST PRINT — HOME KIT BLUE</p>
+          <p className="text-[10px] text-gray-400">PO 5202 · PO 5205 (3) · PO 5251</p>
+        </div>
+        <div className="p-5 space-y-2">
+          <label className="flex items-center gap-2 p-2.5 rounded border-2 border-violet-500 bg-violet-50">
+            <span className="w-3.5 h-3.5 rounded border border-violet-500 bg-violet-500 flex items-center justify-center text-white text-[9px]">✓</span>
+            <div className="flex-1">
+              <p className="text-[11px] font-bold text-gray-900">Status</p>
+              <p className="text-[9px] text-gray-500">Set on every ticked instance</p>
+            </div>
+            <span className="text-[10px] border border-gray-300 rounded px-2 py-0.5 bg-white">APPROVED</span>
+          </label>
+          <label className="flex items-center gap-2 p-2.5 rounded border-2 border-violet-500 bg-violet-50">
+            <span className="w-3.5 h-3.5 rounded border border-violet-500 bg-violet-500 flex items-center justify-center text-white text-[9px]">✓</span>
+            <div className="flex-1">
+              <p className="text-[11px] font-bold text-gray-900">Approved date</p>
+              <p className="text-[9px] text-gray-500">Applies where blank; overrides where set</p>
+            </div>
+            <span className="text-[10px] border border-gray-300 rounded px-2 py-0.5 bg-white">2026-07-07</span>
+          </label>
+          <label className="flex items-center gap-2 p-2.5 rounded border border-gray-200 bg-white">
+            <span className="w-3.5 h-3.5 rounded border border-gray-300 bg-white" />
+            <div className="flex-1">
+              <p className="text-[11px] font-bold text-gray-500">Received date</p>
+              <p className="text-[9px] text-gray-400">(unchecked)</p>
+            </div>
+          </label>
+          <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-[10px] text-amber-800">
+            <p><strong>Heads up:</strong> 2 of the 6 instances already have an Approved date set. Confirming will overwrite them.</p>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
+          <button className="px-3 py-1.5 text-[11px] font-medium text-gray-600 border border-gray-300 rounded-md">Cancel</button>
+          <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Update 6 instances</button>
         </div>
       </div>
     </div>
