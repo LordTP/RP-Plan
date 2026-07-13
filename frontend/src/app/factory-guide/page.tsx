@@ -269,6 +269,20 @@ function FactoryGuideContent() {
             blurb="What components are, the two views on the /components page, how the library-first Add flow works, single-instance edits, bulk edits across POs, and when warnings fire. Same content for both Source Lab and factory users."
           />
 
+          {/* Top-of-section key note — sets responsibility so everyone reads it before anything else. */}
+          <div className="my-4 rounded-xl bg-violet-50 ring-1 ring-violet-200 border-l-4 border-violet-500 px-5 py-4 flex items-start gap-4">
+            <div className="w-9 h-9 rounded-lg bg-violet-500 flex items-center justify-center flex-shrink-0">
+              <ArrowRight className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] uppercase tracking-widest font-bold text-violet-600 mb-1">Key note · Prime</p>
+              <p className="text-sm font-bold text-gray-900 mb-1">When a new order lands on Critical Path, add its components.</p>
+              <p className="text-[13px] text-gray-700 leading-relaxed">
+                As soon as a new order appears in CP, Prime need to add the components for it. Don't wait for Sourcelab to ask — the sample workflow doesn't start until the components exist. Everything downstream (statuses, dates, warnings) depends on them being there.
+              </p>
+            </div>
+          </div>
+
           {/* 1. Basics — the three sample types */}
           <Step number="1.1" title="Sample types — SO, LD, LB">
             <p>
