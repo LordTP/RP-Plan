@@ -26,6 +26,10 @@ interface Props {
   /** All active column filters across the table — needed so the distinct
    *  call narrows by other columns' selections (Excel behaviour). */
   allFilters: Record<string, string[]>;
+  /** Which tab the parent /orders view is on. Passed through so the
+   *  distinct-values call scopes to just the tab's rows (internal only —
+   *  suppliers don't see the shipped/active distinction). */
+  tab?: 'orders' | 'shipped';
   /** Called when the user clicks Apply. New array replaces the selection;
    *  pass empty to clear the filter on this column. */
   onApply: (values: string[]) => void;
@@ -38,6 +42,7 @@ export function ColumnFilterDropdown({
   label,
   selected,
   allFilters,
+  tab,
   onApply,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -75,12 +80,12 @@ export function ColumnFilterDropdown({
     setDraft(new Set(selected));
     setSearch('');
     setLoading(true);
-    ordersApi.getDistinctValues(column, allFilters)
+    ordersApi.getDistinctValues(column, allFilters, tab)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, column]);
+  }, [open, column, tab]);
 
   // Close on outside click / Escape
   useEffect(() => {

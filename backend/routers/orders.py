@@ -832,6 +832,17 @@ async def update_order(
     db.commit()
     db.refresh(order)
 
+    # Notifications trigger — check if this update just satisfied the
+    # "new PO needs components" condition. Runs against the whole PO
+    # (all styles under the same po_number). Guarded internally against
+    # re-firing so this is safe to call on every update.
+    try:
+        import notifications as _notifications
+        _notifications.check_new_po_needs_components(db, order.po_number)
+    except Exception as exc:
+        # Never let notification failures block the order update.
+        print(f"[notifications] check failed for PO {order.po_number}: {exc}")
+
     # Broadcast update
     await manager.broadcast({
         "type": "po_updated",
@@ -1216,6 +1227,9 @@ async def get_distinct_values(
     # column's filter — so the dropdown shows what's reachable given the
     # filters already in effect, the way Excel does.
     column_filter: Optional[str] = None,
+    # Match the listing endpoint's Active/Shipped tab so the dropdown only
+    # surfaces values reachable on the tab the user is looking at.
+    tab: Optional[str] = Query(None, description="'orders' or 'shipped' — mirror /api/orders tab"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -1232,6 +1246,13 @@ async def get_distinct_values(
 
     query = db.query(PurchaseOrder)
     query = apply_supplier_filter(query, current_user)
+
+    # Tab filtering (internal/admin only — same rule as the listing endpoint).
+    if current_user.role != UserRole.SUPPLIER and tab:
+        if tab == 'shipped':
+            query = query.filter(PurchaseOrder.tracking_reference.isnot(None))
+        elif tab == 'orders':
+            query = query.filter(PurchaseOrder.tracking_reference.is_(None))
 
     # Apply every column filter EXCEPT the one we're computing distinct
     # values for — that lets the user expand the current column's choices

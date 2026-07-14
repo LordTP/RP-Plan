@@ -177,11 +177,13 @@ export const ordersApi = {
   getDistinctValues: async (
     column: string,
     columnFilter?: Record<string, string[]>,
+    tab?: 'orders' | 'shipped',
   ): Promise<DistinctValuesResponse> => {
     const params: Record<string, unknown> = { column };
     if (columnFilter && Object.keys(columnFilter).length > 0) {
       params.column_filter = JSON.stringify(columnFilter);
     }
+    if (tab) params.tab = tab;
     const response = await api.get<DistinctValuesResponse>(
       '/api/orders/list/distinct-values', { params }
     );
@@ -548,6 +550,26 @@ export const settingsApi = {
   }> => {
     const response = await api.get('/api/settings/email-automations');
     return response.data;
+  },
+
+  // Notification rules — recipient list per automation. The on/off toggle
+  // still lives on the plain email-automations endpoint above; this one
+  // adds the per-type recipient CRUD used by the /settings Notifications tab.
+  getNotificationRules: async (): Promise<{ rules: NotificationRule[] }> => {
+    const response = await api.get('/api/notifications/rules');
+    return response.data;
+  },
+
+  addNotificationRecipient: async (
+    automationKey: string,
+    body: { user_id?: number; email?: string },
+  ): Promise<NotificationRecipient> => {
+    const response = await api.post(`/api/notifications/rules/${automationKey}/recipients`, body);
+    return response.data;
+  },
+
+  removeNotificationRecipient: async (automationKey: string, recipientId: number): Promise<void> => {
+    await api.delete(`/api/notifications/rules/${automationKey}/recipients/${recipientId}`);
   },
 
   /** Download a full pg_dump of the live prod DB as a .sql attachment.
@@ -1453,5 +1475,25 @@ export const qaApi = {
     return response.data;
   },
 };
+
+export interface NotificationRecipient {
+  id: number;
+  automation_key: string;
+  kind: 'user' | 'email';
+  user_id: number | null;
+  email: string | null;
+  display_email: string | null;
+  display_name: string | null;
+  created_at: string | null;
+}
+
+export interface NotificationRule {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  recipients: NotificationRecipient[];
+  open_fires: number;
+}
 
 export default api;

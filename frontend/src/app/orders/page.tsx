@@ -697,6 +697,7 @@ function OrdersContent() {
               isLoadingMore={isLoadingMore}
               columnFilters={columnFilters}
               onColumnFilterChange={handleColumnFilterChange}
+              activeTab={isInternal ? activeTab : undefined}
             />
           )}
         </div>

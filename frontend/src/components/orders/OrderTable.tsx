@@ -71,9 +71,12 @@ interface OrderTableProps {
   /** Fires when the user applies a column filter via the header dropdown.
    *  Pass an empty values array to clear that column's filter. */
   onColumnFilterChange?: (column: string, values: string[]) => void;
+  /** Active tab on /orders — passed to filter dropdowns so their distinct
+   *  values only include rows on the current tab. Internal-only concept. */
+  activeTab?: 'orders' | 'shipped';
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange, activeTab }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList, orders: storeOrders, totalOrders: storeTotal, setOrders: setStoreOrders } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -617,6 +620,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                           label={column.label}
                           selected={columnFilters?.[column.key as string] || []}
                           allFilters={columnFilters || {}}
+                          tab={activeTab}
                           onApply={(vals) => onColumnFilterChange(column.key as string, vals)}
                         />
                       )}
