@@ -439,7 +439,7 @@ export const componentsApi = {
 
   patchLibraryEntry: async (
     canonicalId: number,
-    data: Partial<Pick<CanonicalComponent, 'name' | 'description' | 'colour' | 'position' | 'spec_url' | 'supplier_notes'>>,
+    data: Partial<Pick<CanonicalComponent, 'name' | 'description' | 'colour' | 'spec_url' | 'supplier_notes'>> & { position?: string[] | null },
   ): Promise<CanonicalComponent & { changed: Record<string, { from: any; to: any }> }> => {
     const response = await api.patch(`/api/components/library/${canonicalId}`, data);
     return response.data;
@@ -476,7 +476,9 @@ export interface CanonicalComponent {
   sample_type: 'strike_off' | 'lab_dip' | 'label';
   description: string | null;
   colour: string | null;
-  position: CanonicalPosition | null;
+  /** Zero or more placement labels — strike-off only. Empty array on
+   *  non-strike-off or when nothing set. */
+  position: CanonicalPosition[];
   spec_url: string | null;
   supplier_notes: string | null;
   created_at: string | null;

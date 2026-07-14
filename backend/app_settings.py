@@ -26,6 +26,11 @@ EMAIL_AUTOMATIONS: List[EmailAutomation] = [
         'label': 'Comment @mentions',
         'description': 'Email a user when someone @mentions them in a comment.',
     },
+    {
+        'key': 'new_po_needs_components',
+        'label': 'New PO needs components',
+        'description': 'When a PO has all three sent-to-factory dates (Order / Tech packs / Specs) and still has zero components, notify the configured recipients. A single reminder fires 2 business days later if still empty.',
+    },
 ]
 
 

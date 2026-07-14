@@ -7,8 +7,11 @@ SAMPLE_PREFIXES_COMPONENT = ('fit_sample', 'strike_off', 'lab_dip', 'label')
 
 
 def reconcile_sample_status(obj, prefixes, skip_prefixes=None):
-    """Ensure invariant: if *_approved date is set, *_status must be APPROVED
-    (unless status is NOT REQUIRED, which wins).
+    """Keep sample status + date fields consistent:
+      - If *_received date is set AND status is empty or OUTSTANDING → RECEIVED
+      - If *_approved date is set AND status is anything but APPROVED / NOT REQUIRED → APPROVED
+
+    Approved wins over received when both dates are set.
 
     If the caller just explicitly updated a status field, pass that prefix in
     skip_prefixes so the user's choice is respected (otherwise we'd clobber it).
@@ -20,12 +23,19 @@ def reconcile_sample_status(obj, prefixes, skip_prefixes=None):
         if prefix in skip:
             continue
         approved = getattr(obj, f'{prefix}_approved', None)
-        if not approved:
-            continue
+        received = getattr(obj, f'{prefix}_received', None)
         status = (getattr(obj, f'{prefix}_status', '') or '').strip().upper()
-        if status in ('APPROVED', 'NOT REQUIRED'):
+
+        # Approved date wins — bump to APPROVED unless the user already
+        # picked APPROVED or NOT REQUIRED.
+        if approved and status not in ('APPROVED', 'NOT REQUIRED'):
+            setattr(obj, f'{prefix}_status', 'APPROVED')
             continue
-        setattr(obj, f'{prefix}_status', 'APPROVED')
+
+        # No approved date but received is set — bump OUTSTANDING/empty to
+        # RECEIVED. Don't clobber REJECTED / LATE / P23 ADVISE UPDATE etc.
+        if received and status in ('', 'OUTSTANDING'):
+            setattr(obj, f'{prefix}_status', 'RECEIVED')
 
 
 def is_sample_done(status_val, approved_date):

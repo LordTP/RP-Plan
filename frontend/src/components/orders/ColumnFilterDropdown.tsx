@@ -87,10 +87,22 @@ export function ColumnFilterDropdown({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, column, tab]);
 
-  // Close on outside click / Escape
+  // Close on outside click / Escape; Enter applies the current selection.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+      } else if (e.key === 'Enter') {
+        // Only fire when the popup owns focus — don't hijack Enter for the
+        // rest of the page (e.g. another dropdown could be open too).
+        if (popupRef.current?.contains(document.activeElement) || document.activeElement === document.body) {
+          e.preventDefault();
+          onApply(Array.from(draft));
+          setOpen(false);
+        }
+      }
+    };
     const onClick = (e: MouseEvent) => {
       const t = e.target as Node;
       if (popupRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
@@ -102,7 +114,10 @@ export function ColumnFilterDropdown({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onClick);
     };
-  }, [open]);
+    // draft + onApply are captured freshly each time we re-open because
+    // the effect re-runs on any of these changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draft, onApply]);
 
   const filteredValues = useMemo(() => {
     if (!data) return [] as string[];

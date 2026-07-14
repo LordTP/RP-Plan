@@ -827,11 +827,27 @@ async def list_component_library(
         query = query.filter(Component.sample_type == sample_type)
     if q:
         like = f"%{q.strip()}%"
+        # Match on canonical identity fields OR on style_code / po_number /
+        # customer_style_code of any linked instance. The style/PO branch is
+        # a subquery so it doesn't multiply rows in the outer group-by.
+        style_po_match_ids = (
+            db.query(OrderComponent.canonical_id)
+            .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+            .filter(OrderComponent.canonical_id.isnot(None))
+            .filter(
+                (PurchaseOrder.style_code.ilike(like))
+                | (PurchaseOrder.po_number.ilike(like))
+                | (PurchaseOrder.customer_style_code.ilike(like))
+            )
+            .distinct()
+            .subquery()
+        )
         query = query.filter(
             (Component.name.ilike(like))
             | (Component.description.ilike(like))
             | (Component.colour.ilike(like))
             | (Component.supplier_notes.ilike(like))
+            | (Component.id.in_(db.query(style_po_match_ids)))
         )
 
     # Supplier scoping: canonical must have at least one instance on their
@@ -862,7 +878,7 @@ async def list_component_library(
             "sample_type": r.sample_type,
             "description": r.description,
             "colour": r.colour,
-            "position": r.position,
+            "position": _read_positions_raw(r.position),
             "spec_url": r.spec_url,
             "supplier_notes": r.supplier_notes,
             "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -931,7 +947,7 @@ async def get_component_library_entry(
         "sample_type": canonical.sample_type,
         "description": canonical.description,
         "colour": canonical.colour,
-        "position": canonical.position,
+        "position": _read_positions(canonical),
         "spec_url": canonical.spec_url,
         "supplier_notes": canonical.supplier_notes,
         "created_at": canonical.created_at.isoformat() if canonical.created_at else None,
@@ -950,6 +966,70 @@ VALID_POSITIONS = {
     "LEFT SLEEVE AS WORN",
     "RIGHT SLEEVE AS WORN",
 }
+
+
+def _parse_positions_payload(raw, sample_type: str):
+    """Normalise a position payload to a JSON string (list of validated
+    values) or None. Accepts:
+      - list/tuple of strings
+      - single string (wrapped into a one-item list)
+      - null / empty / missing (returns None)
+
+    Raises HTTPException on unknown values or when set on a non-strike-off.
+    """
+    import json as _json
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        raw = [s]
+    if not isinstance(raw, (list, tuple)):
+        raise HTTPException(status_code=400, detail="position must be a list of strings")
+    normalised = []
+    for v in raw:
+        if not isinstance(v, str):
+            raise HTTPException(status_code=400, detail="position entries must be strings")
+        v = v.strip().upper()
+        if not v:
+            continue
+        if v not in VALID_POSITIONS:
+            raise HTTPException(status_code=400, detail=f"position '{v}' is not in the allowed set")
+        if v not in normalised:
+            normalised.append(v)
+    if not normalised:
+        return None
+    if sample_type != 'strike_off':
+        raise HTTPException(status_code=400, detail="position is only valid for strike-off components")
+    return _json.dumps(normalised)
+
+
+def _read_positions_raw(raw) -> list[str]:
+    """Parse a raw position column value into a list. Tolerates legacy
+    single-string rows and returns [] for null/empty."""
+    import json as _json
+    if not raw:
+        return []
+    if not isinstance(raw, str):
+        return []
+    s = raw.strip()
+    if not s:
+        return []
+    if s.startswith('['):
+        try:
+            parsed = _json.loads(s)
+            if isinstance(parsed, list):
+                return [str(v) for v in parsed if v]
+        except Exception:
+            pass
+    # Legacy single-string row.
+    return [s]
+
+
+def _read_positions(canonical) -> list[str]:
+    """Convenience wrapper for a Component ORM object."""
+    return _read_positions_raw(canonical.position)
 
 
 @router.post("/api/components/library", status_code=201)
@@ -979,18 +1059,14 @@ async def create_component_library_entry(
     if sample_type in ("strike_off", "lab_dip") and not colour:
         raise HTTPException(status_code=400, detail="colour is required for strike-off and lab-dip components")
 
-    position = (data.get("position") or "").strip().upper() or None
-    if position and sample_type != "strike_off":
-        raise HTTPException(status_code=400, detail="position is only valid for strike-off components")
-    if position and position not in VALID_POSITIONS:
-        raise HTTPException(status_code=400, detail=f"position must be one of {sorted(VALID_POSITIONS)}")
+    position_json = _parse_positions_payload(data.get("position"), sample_type)
 
     canonical = Component(
         name=name,
         sample_type=sample_type,
         description=(data.get("description") or None),
         colour=colour,
-        position=position,
+        position=position_json,
         spec_url=(data.get("spec_url") or None),
         supplier_notes=(data.get("supplier_notes") or None),
     )
@@ -1003,7 +1079,7 @@ async def create_component_library_entry(
         "sample_type": canonical.sample_type,
         "description": canonical.description,
         "colour": canonical.colour,
-        "position": canonical.position,
+        "position": _read_positions(canonical),
         "spec_url": canonical.spec_url,
         "supplier_notes": canonical.supplier_notes,
     }
@@ -1313,16 +1389,11 @@ async def update_component_library_entry(
             raise HTTPException(status_code=404, detail="Component not found")
 
     EDITABLE_FIELDS = {'name', 'description', 'colour', 'position', 'spec_url', 'supplier_notes'}
-    # Normalise: name goes uppercase, position goes uppercase + validated
+    # Normalise: name goes uppercase, position goes JSON-array + validated
     if 'name' in data and isinstance(data['name'], str):
         data['name'] = data['name'].strip().upper() or None
     if 'position' in data:
-        pos = (data['position'] or '').strip().upper() if isinstance(data['position'], str) else None
-        if pos and canonical.sample_type != 'strike_off':
-            raise HTTPException(status_code=400, detail="position is only valid for strike-off components")
-        if pos and pos not in VALID_POSITIONS:
-            raise HTTPException(status_code=400, detail=f"position must be one of {sorted(VALID_POSITIONS)}")
-        data['position'] = pos or None
+        data['position'] = _parse_positions_payload(data['position'], canonical.sample_type)
 
     changed = {}
     for field, value in data.items():
@@ -1344,7 +1415,7 @@ async def update_component_library_entry(
         "sample_type": canonical.sample_type,
         "description": canonical.description,
         "colour": canonical.colour,
-        "position": canonical.position,
+        "position": _read_positions(canonical),
         "spec_url": canonical.spec_url,
         "supplier_notes": canonical.supplier_notes,
         "changed": changed,

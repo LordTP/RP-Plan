@@ -207,7 +207,7 @@ function LibraryTab({ reloadKey }: { reloadKey: number }) {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search name, description, colour…"
+            placeholder="Search name, colour, PO, style code…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-200"
@@ -277,14 +277,15 @@ function LibraryTab({ reloadKey }: { reloadKey: number }) {
                       {c.colour}
                     </span>
                   )}
-                  {c.position && (
+                  {c.position && c.position.length > 0 && c.position.map((p) => (
                     <span
-                      title={c.position}
+                      key={p}
+                      title={p}
                       className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 truncate max-w-[140px]"
                     >
-                      {c.position}
+                      {p}
                     </span>
-                  )}
+                  ))}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-1 tabular-nums flex items-center gap-1.5">
                   <span>{c.styles_count} styles</span>
@@ -340,7 +341,7 @@ function CanonicalDetailPanel({
     name: string;
     description: string;
     colour: string;
-    position: '' | CanonicalPosition;
+    position: CanonicalPosition[];
     spec_url: string;
     supplier_notes: string;
   } | null>(null);
@@ -360,7 +361,7 @@ function CanonicalDetailPanel({
           name: data.name,
           description: data.description || '',
           colour: data.colour || '',
-          position: (data.position || '') as any,
+          position: (data.position || []) as CanonicalPosition[],
           spec_url: data.spec_url || '',
           supplier_notes: data.supplier_notes || '',
         });
@@ -386,7 +387,11 @@ function CanonicalDetailPanel({
         if (form.name !== detail.name) payload.name = form.name.trim().toUpperCase();
         if ((form.description || null) !== detail.description) payload.description = form.description || null;
         if ((form.colour || null) !== detail.colour) payload.colour = form.colour || null;
-        if ((form.position || null) !== (detail.position || null)) payload.position = form.position || null;
+        const detailPositions = (detail.position || []).slice().sort();
+        const formPositions = (form.position || []).slice().sort();
+        if (JSON.stringify(detailPositions) !== JSON.stringify(formPositions)) {
+          payload.position = form.position;
+        }
         if ((form.spec_url || null) !== detail.spec_url) payload.spec_url = form.spec_url || null;
         if ((form.supplier_notes || null) !== detail.supplier_notes) payload.supplier_notes = form.supplier_notes || null;
       }
@@ -402,7 +407,7 @@ function CanonicalDetailPanel({
         name: fresh.name,
         description: fresh.description || '',
         colour: fresh.colour || '',
-        position: (fresh.position || '') as any,
+        position: (fresh.position || []) as CanonicalPosition[],
         spec_url: fresh.spec_url || '',
         supplier_notes: fresh.supplier_notes || '',
       });
@@ -476,14 +481,15 @@ function CanonicalDetailPanel({
                   {detail.colour}
                 </span>
               )}
-              {detail.position && (
+              {detail.position && detail.position.length > 0 && detail.position.map((p) => (
                 <span
-                  title={detail.position}
+                  key={p}
+                  title={p}
                   className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5 truncate max-w-[280px]"
                 >
-                  {detail.position}
+                  {p}
                 </span>
-              )}
+              ))}
             </div>
           )}
           {!editing && (
@@ -497,7 +503,7 @@ function CanonicalDetailPanel({
           {editing && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { setEditing(false); setForm({ name: detail.name, description: detail.description || '', colour: detail.colour || '', position: (detail.position || '') as any, spec_url: detail.spec_url || '', supplier_notes: detail.supplier_notes || '' }); }}
+                onClick={() => { setEditing(false); setForm({ name: detail.name, description: detail.description || '', colour: detail.colour || '', position: (detail.position || []) as CanonicalPosition[], spec_url: detail.spec_url || '', supplier_notes: detail.supplier_notes || '' }); }}
                 className="text-xs font-medium text-slate-600 px-2 py-1 rounded hover:bg-slate-100"
               >
                 Cancel
@@ -543,20 +549,44 @@ function CanonicalDetailPanel({
           </div>
           {detail.sample_type === 'strike_off' && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Position</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Positions</div>
               {editing ? (
-                <select
-                  value={form.position}
-                  onChange={(e) => setForm((f) => f ? { ...f, position: e.target.value as CanonicalPosition | '' } : f)}
-                  className="w-full px-2 py-1 text-sm bg-white border border-slate-300 rounded"
-                >
-                  <option value="">—</option>
-                  {CANONICAL_POSITIONS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
+                <div className="border border-slate-300 rounded bg-white max-h-40 overflow-y-auto divide-y divide-slate-100">
+                  {CANONICAL_POSITIONS.map((p) => {
+                    const on = form.position.includes(p);
+                    return (
+                      <label
+                        key={p}
+                        className={cn(
+                          'flex items-center gap-2 px-2 py-1 text-[12px] cursor-pointer',
+                          on ? 'bg-primary-50' : 'hover:bg-slate-50',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setForm((f) => {
+                            if (!f) return f;
+                            const next = on ? f.position.filter((x) => x !== p) : [...f.position, p];
+                            return { ...f, position: next };
+                          })}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>{p}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : detail.position && detail.position.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {detail.position.map((p) => (
+                    <span key={p} className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                      {p}
+                    </span>
                   ))}
-                </select>
+                </div>
               ) : (
-                <div className="text-slate-700">{detail.position || <span className="text-slate-400 italic">—</span>}</div>
+                <span className="text-slate-400 italic">—</span>
               )}
             </div>
           )}

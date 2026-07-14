@@ -76,6 +76,7 @@ FILTERABLE_COLUMNS = {
     # Shipping
     'fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port',
     'revised_vessel_eta_to_port', 'estimated_del_to_customer',
+    'tracking_reference',
     # Numerics
     'total_quantity', 'trade_price', 'total_order_value',
 }

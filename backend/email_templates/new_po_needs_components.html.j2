@@ -1,0 +1,94 @@
+{% extends "base.html.j2" %}
+
+{% block body %}
+<!-- Callout: what and why -->
+<div style="background:{% if is_reminder %}#fef3c7{% else %}#eef2ff{% endif %};border-left:4px solid {% if is_reminder %}#d97706{% else %}#2563eb{% endif %};border-radius:8px;padding:14px 16px;margin-bottom:22px;">
+  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:{% if is_reminder %}#92400e{% else %}#1e40af{% endif %};margin-bottom:4px;">
+    {% if is_reminder %}Reminder · Still no components{% else %}New PO — components needed{% endif %}
+  </div>
+  <div style="font-size:14px;font-weight:600;color:#0b1220;line-height:1.4;">
+    {% if is_reminder %}
+    Two business days on and the PO below still doesn't have any components. Please add them — the sample workflow can't start without them.
+    {% else %}
+    This PO has been sent to factory (Order Sent, Tech Packs, Specs all dated). Please add its components so the sample workflow can start.
+    {% endif %}
+  </div>
+</div>
+
+<!-- PO summary -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;background:#f6f8fb;border-radius:8px;padding:14px 16px;">
+  <tr>
+    <td style="padding:2px 0;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:2px;">PO</div>
+      <div style="font-size:16px;font-weight:700;color:#0b1220;">#{{ po_number }}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 0 2px 0;border-top:1px solid #e3e8f0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          {% if customer %}
+          <td style="width:50%;vertical-align:top;padding-right:10px;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:2px;margin-top:6px;">Customer</div>
+            <div style="font-size:13px;font-weight:600;color:#0b1220;">{{ customer }}</div>
+          </td>
+          {% endif %}
+          {% if factory %}
+          <td style="width:50%;vertical-align:top;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:2px;margin-top:6px;">Factory</div>
+            <div style="font-size:13px;color:#0b1220;">{{ factory }}</div>
+          </td>
+          {% endif %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 0 2px 0;border-top:1px solid #e3e8f0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          {% if order_reference %}
+          <td style="width:50%;vertical-align:top;padding-right:10px;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:2px;margin-top:6px;">Order Reference</div>
+            <div style="font-size:13px;color:#0b1220;">{{ order_reference }}</div>
+          </td>
+          {% endif %}
+          <td style="width:50%;vertical-align:top;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:2px;margin-top:6px;">Requested Ex-Factory</div>
+            <div style="font-size:13px;font-weight:600;color:#0b1220;">{{ requested_ex_factory }}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<!-- Styles list -->
+{% if styles %}
+<div style="margin-bottom:6px;">
+  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8892a4;margin-bottom:8px;">Styles ({{ styles|length }})</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e3e8f0;border-radius:8px;overflow:hidden;">
+    {% for s in styles %}
+    <tr>
+      <td style="padding:10px 14px;{% if not loop.last %}border-bottom:1px solid #eef1f5;{% endif %}">
+        <div style="font-size:13px;font-weight:600;color:#0b1220;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">
+          {{ s.style_code }}{% if s.customer_style_code %} <span style="color:#8892a4;font-weight:400;">· {{ s.customer_style_code }}</span>{% endif %}
+        </div>
+        {% if s.description %}
+        <div style="font-size:12px;color:#5b6577;margin-top:2px;">{{ s.description }}</div>
+        {% endif %}
+        {% if s.colour or s.total_qty %}
+        <div style="font-size:11px;color:#8892a4;margin-top:2px;">
+          {% if s.colour %}{{ s.colour }}{% endif %}
+          {% if s.colour and s.total_qty %} · {% endif %}
+          {% if s.total_qty %}{{ s.total_qty }} units{% endif %}
+        </div>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

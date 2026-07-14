@@ -69,6 +69,7 @@ from routers import submissions as submissions_router
 from routers import shipment_drafts as shipment_drafts_router
 from routers import qa as qa_router
 from routers import size_guide as size_guide_router
+from routers import notifications as notifications_router
 app.include_router(users_router.router)
 app.include_router(components_router.router)
 app.include_router(tracking_router.router)
@@ -83,6 +84,7 @@ app.include_router(submissions_router.router)
 app.include_router(shipment_drafts_router.router)
 app.include_router(qa_router.router)
 app.include_router(size_guide_router.router)
+app.include_router(notifications_router.router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -310,6 +312,45 @@ async def startup_event():
     finally:
         widen_db.close()
 
+    # Migration: components.position becomes a JSON array so a strike-off
+    # can have multiple placements. Widen column to TEXT and JSON-wrap any
+    # existing single-string rows into a list. Idempotent via AppSetting flag.
+    POSITION_JSON_FLAG = 'components_position_json_v1'
+    json_db = SessionLocal()
+    try:
+        flag = json_db.query(AppSetting).filter(AppSetting.key == POSITION_JSON_FLAG).first()
+        if flag is None:
+            import json as _json
+            try:
+                if engine.dialect.name == 'postgresql':
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE components ALTER COLUMN position TYPE TEXT"))
+                    print("✓ Widened components.position to TEXT")
+                # Wrap existing single-string values into JSON arrays.
+                canonicals = json_db.query(Component).filter(Component.position.isnot(None)).all()
+                converted = 0
+                for c in canonicals:
+                    v = c.position.strip() if c.position else ''
+                    if not v:
+                        continue
+                    # If already a JSON array, leave alone.
+                    if v.startswith('['):
+                        try:
+                            parsed = _json.loads(v)
+                            if isinstance(parsed, list):
+                                continue
+                        except Exception:
+                            pass
+                    c.position = _json.dumps([v])
+                    converted += 1
+                json_db.add(AppSetting(key=POSITION_JSON_FLAG, value='done'))
+                json_db.commit()
+                print(f"✓ Position → JSON array: {converted} rows wrapped")
+            except Exception as exc:
+                print(f"⚠ Could not migrate position to JSON: {exc}")
+    finally:
+        json_db.close()
+
     # Migration: one-shot uppercase of existing canonical names so casing
     # drift no longer creates duplicates. Guarded by an AppSetting flag.
     UPPERCASE_FLAG = 'components_canonical_name_uppercase_v1'
@@ -393,7 +434,34 @@ async def startup_event():
     finally:
         seed_db.close()
 
+    # Start the notifications scheduler — runs the periodic check every 6h.
+    # An asyncio background task; in-process, resets on container restart.
+    import asyncio as _asyncio
+    _asyncio.create_task(_notifications_scheduler())
+
     print("✓ API server started successfully")
+
+
+async def _notifications_scheduler():
+    """6-hour background loop that fires the notification reminder + resolve
+    pass. Runs once shortly after startup, then every 6h thereafter."""
+    import asyncio as _asyncio
+    import notifications as _notifications
+    from database import SessionLocal as _SessionLocal
+    # Small initial delay so the first pass doesn't race the startup migrations.
+    await _asyncio.sleep(30)
+    while True:
+        try:
+            db = _SessionLocal()
+            try:
+                summary = _notifications.run_periodic_check(db)
+                if summary['resolved'] or summary['reminders_sent']:
+                    print(f"[notifications] periodic pass: {summary}")
+            finally:
+                db.close()
+        except Exception as exc:
+            print(f"[notifications] periodic pass failed: {exc}")
+        await _asyncio.sleep(6 * 60 * 60)  # 6 hours
 
 
 @app.get("/")

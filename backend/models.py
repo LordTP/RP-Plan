@@ -183,10 +183,12 @@ class Component(Base):
     sample_type = Column(String(20), nullable=False, index=True)  # 'strike_off' | 'lab_dip' | 'label'
     description = Column(Text, nullable=True)
     colour = Column(String(100), nullable=True)
-    # Strike-off-only field: placement label (e.g. "CHEST POSITION – CENTRAL",
-    # "BACK NECK", "LEFT SLEEVE AS WORN"). Nullable so existing rows +
-    # non-strike-off types stay valid. Valid values are enforced in the API.
-    position = Column(String(60), nullable=True)
+    # Strike-off-only field: JSON array of placement labels (e.g.
+    # ["CHEST POSITION – CENTRAL", "BACK NECK"]). Nullable so existing rows
+    # + non-strike-off types stay valid. Valid entries are enforced in the
+    # API. Stored as Text for JSON payloads; the reader in the router
+    # tolerates legacy single-string rows and wraps them into a list.
+    position = Column(Text, nullable=True)
     spec_url = Column(String(500), nullable=True)
     supplier_notes = Column(Text, nullable=True)
 
@@ -571,3 +573,40 @@ class SizeGuide(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NotificationRecipient(Base):
+    """One recipient row per (automation_key, target). Target is either an
+    existing app user (user_id) or an arbitrary external email address.
+
+    Storing both kinds side-by-side lets admins mix internal + external
+    stakeholders on the same notification without shoehorning external
+    contacts into the User table."""
+    __tablename__ = "notification_recipients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    automation_key = Column(String(50), nullable=False, index=True)
+    # Exactly one of the two should be set. user_id lets the resolved email
+    # stay fresh if the user changes theirs; email is the literal address.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    email = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class NotificationSent(Base):
+    """One-shot tracker so we don't spam. One row per (automation_key,
+    entity_key) — e.g. ('new_po_needs_components', '5202') — with timing
+    fields to gate the reminder + record resolution."""
+    __tablename__ = "notification_sent"
+    __table_args__ = (
+        UniqueConstraint('automation_key', 'entity_key', name='uq_notification_sent_key'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    automation_key = Column(String(50), nullable=False, index=True)
+    entity_key = Column(String(100), nullable=False, index=True)  # po_number for PO-based automations
+    first_sent_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reminder_sent_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)  # When the trigger condition no longer holds

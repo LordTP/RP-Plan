@@ -24,12 +24,13 @@ import {
   GripVertical,
   Database,
   Download,
+  ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
-import { usersApi, factoriesApi, settingsApi, ColumnSetting, sizeGuideApi, type SizeGuideRow } from '@/lib/api';
+import { usersApi, factoriesApi, settingsApi, ColumnSetting, sizeGuideApi, type SizeGuideRow, type NotificationRule } from '@/lib/api';
 import { refreshSizeGuide } from '@/lib/useSizeGuide';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
@@ -1738,6 +1739,241 @@ function BackupTab() {
   );
 }
 
+function AutomationRow({
+  automation,
+  rule,
+  users,
+  saving,
+  onToggle,
+  onRecipientsChanged,
+}: {
+  automation: EmailAutomation;
+  rule: NotificationRule | undefined;
+  users: Array<{ id: number; username: string; email: string; full_name: string | null }>;
+  saving: boolean;
+  onToggle: () => void;
+  onRecipientsChanged: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const recipients = rule?.recipients || [];
+  const openFires = rule?.open_fires || 0;
+
+  const existingUserIds = new Set(recipients.filter((r) => r.user_id !== null).map((r) => r.user_id!));
+  const availableUsers = users.filter((u) => !existingUserIds.has(u.id) && u.email);
+
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailInput.trim());
+  const emailAlreadyThere = recipients.some((r) => (r.email || r.display_email || '').toLowerCase() === emailInput.trim().toLowerCase());
+
+  async function addUser(userId: number) {
+    setAdding(true);
+    try {
+      await settingsApi.addNotificationRecipient(automation.key, { user_id: userId });
+      onRecipientsChanged();
+      toast.success('Recipient added');
+      setPickerOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to add recipient');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function addEmail() {
+    if (!emailValid || emailAlreadyThere) return;
+    setAdding(true);
+    try {
+      await settingsApi.addNotificationRecipient(automation.key, { email: emailInput.trim() });
+      setEmailInput('');
+      onRecipientsChanged();
+      toast.success('Recipient added');
+      setPickerOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to add recipient');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function remove(recipientId: number) {
+    setRemovingId(recipientId);
+    try {
+      await settingsApi.removeNotificationRecipient(automation.key, recipientId);
+      onRecipientsChanged();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to remove recipient');
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  const showNoRecipientsWarning = automation.enabled && recipients.length === 0;
+
+  return (
+    <div className="px-5 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-start gap-2 flex-1 min-w-0 text-left group"
+        >
+          <ChevronRight
+            className={cn('w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0 transition-transform group-hover:text-gray-600', expanded && 'rotate-90')}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-medium text-gray-900">{automation.label}</p>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 tabular-nums">
+                {recipients.length} recipient{recipients.length === 1 ? '' : 's'}
+              </span>
+              {openFires > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 tabular-nums">
+                  {openFires} open
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">{automation.description}</p>
+          </div>
+        </button>
+        <button
+          onClick={onToggle}
+          disabled={saving}
+          className={cn(
+            'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50',
+            automation.enabled ? 'bg-primary-600' : 'bg-gray-300'
+          )}
+          aria-pressed={automation.enabled}
+        >
+          <span
+            className={cn(
+              'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+              automation.enabled ? 'translate-x-6' : 'translate-x-1'
+            )}
+          />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 ml-6 space-y-2 pb-1">
+          {showNoRecipientsWarning && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              Turned on but no recipients — no one will get emails until you add someone below.
+            </div>
+          )}
+
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            {recipients.length === 0 ? (
+              <div className="px-3 py-3 text-[11px] text-gray-400 text-center bg-gray-50/60">
+                No recipients yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {recipients.map((r) => (
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 text-[12px]">
+                    <span className={cn(
+                      'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0',
+                      r.kind === 'user' ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'
+                    )}>
+                      {r.kind === 'user' ? 'User' : 'Email'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {r.display_name && (
+                        <div className="text-gray-900 font-medium truncate">{r.display_name}</div>
+                      )}
+                      <div className={cn('truncate', r.display_name ? 'text-[10px] text-gray-500' : 'text-gray-700')}>
+                        {r.display_email || r.email}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => remove(r.id)}
+                      disabled={removingId === r.id}
+                      className="text-gray-400 hover:text-red-600 p-1 disabled:opacity-40"
+                      aria-label="Remove recipient"
+                    >
+                      {removingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {pickerOpen ? (
+            <div className="rounded-lg border border-gray-200 bg-gray-50/40 p-2.5 space-y-2">
+              <div>
+                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Pick a user</label>
+                <select
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    if (id) addUser(id);
+                    e.target.value = '';
+                  }}
+                  disabled={adding || availableUsers.length === 0}
+                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white disabled:opacity-50"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    {availableUsers.length === 0 ? 'All users already added' : 'Choose a user…'}
+                  </option>
+                  {availableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name || u.username} — {u.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-[10px] text-gray-400 text-center">or</div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">External email</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="e.g. prime-orders@primeasia.com"
+                    className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  />
+                  <button
+                    onClick={addEmail}
+                    disabled={!emailValid || emailAlreadyThere || adding}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+                {emailInput && !emailValid && (
+                  <p className="text-[10px] text-red-600 mt-1">Not a valid email address.</p>
+                )}
+                {emailAlreadyThere && (
+                  <p className="text-[10px] text-amber-600 mt-1">Already added.</p>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { setPickerOpen(false); setEmailInput(''); }}
+                  className="text-[11px] font-medium text-gray-600 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="text-[11px] font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" />
+              Add recipient
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotificationsTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1747,17 +1983,25 @@ function NotificationsTab() {
   const [savingKey, setSavingKey] = useState(false);
   const [automations, setAutomations] = useState<EmailAutomation[]>([]);
   const [savingAutomation, setSavingAutomation] = useState<string | null>(null);
+  const [rulesByKey, setRulesByKey] = useState<Record<string, NotificationRule>>({});
+  const [allUsers, setAllUsers] = useState<Array<{ id: number; username: string; email: string; full_name: string | null }>>([]);
 
   const reload = async () => {
     try {
-      const [settingsRes, automationsRes] = await Promise.all([
+      const [settingsRes, automationsRes, rulesRes, usersRes] = await Promise.all([
         settingsApi.getAppSettings(),
         settingsApi.getEmailAutomations(),
+        settingsApi.getNotificationRules(),
+        usersApi.getUsers(),
       ]);
       const v = String(settingsRes.settings.emails_enabled || 'false').toLowerCase();
       setEmailsEnabled(v === 'true');
       setApiKeySet(!!settingsRes.settings.resend_api_key_set);
       setAutomations(automationsRes.automations);
+      const map: Record<string, NotificationRule> = {};
+      for (const r of rulesRes.rules) map[r.key] = r;
+      setRulesByKey(map);
+      setAllUsers(usersRes.map((u: any) => ({ id: u.id, username: u.username, email: u.email, full_name: u.full_name })));
     } catch {
       toast.error('Failed to load notification settings');
     }
@@ -1921,28 +2165,15 @@ function NotificationsTab() {
             <div className="px-5 py-6 text-xs text-gray-400">No automations registered yet.</div>
           ) : (
             automations.map((a) => (
-              <div key={a.key} className="px-5 py-3 flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{a.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{a.description}</p>
-                </div>
-                <button
-                  onClick={() => toggleAutomation(a)}
-                  disabled={savingAutomation === a.key}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50',
-                    a.enabled ? 'bg-primary-600' : 'bg-gray-300'
-                  )}
-                  aria-pressed={a.enabled}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                      a.enabled ? 'translate-x-6' : 'translate-x-1'
-                    )}
-                  />
-                </button>
-              </div>
+              <AutomationRow
+                key={a.key}
+                automation={a}
+                rule={rulesByKey[a.key]}
+                users={allUsers}
+                saving={savingAutomation === a.key}
+                onToggle={() => toggleAutomation(a)}
+                onRecipientsChanged={reload}
+              />
             ))
           )}
         </div>

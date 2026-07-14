@@ -144,7 +144,7 @@ async function runApply(
 
 async function runCreateAndApply(
   payload: {
-    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string; spec_url?: string; supplier_notes?: string };
+    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
     starting_state: StartingState;
   },
@@ -744,7 +744,7 @@ function CreateNewBody({
   isSupplier: boolean;
   submitting: boolean;
   onSubmit: (payload: {
-    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string; spec_url?: string; supplier_notes?: string };
+    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
     starting_state: StartingState;
   }) => Promise<void> | void;
@@ -753,7 +753,11 @@ function CreateNewBody({
   const [sampleType, setSampleType] = useState<SampleType>('strike_off');
   const [description, setDescription] = useState('');
   const [colour, setColour] = useState('');
-  const [position, setPosition] = useState<CanonicalPosition | ''>('');
+  const [positions, setPositions] = useState<CanonicalPosition[]>([]);
+
+  function togglePosition(p: CanonicalPosition) {
+    setPositions((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+  }
   const [specUrl, setSpecUrl] = useState('');
   const [supplierNotes, setSupplierNotes] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
@@ -786,7 +790,7 @@ function CreateNewBody({
                   const st = e.target.value as SampleType;
                   setSampleType(st);
                   // Position only applies to strike-offs; clear otherwise.
-                  if (st !== 'strike_off') setPosition('');
+                  if (st !== 'strike_off') setPositions([]);
                 }}
                 className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
               >
@@ -825,17 +829,34 @@ function CreateNewBody({
             </div>
             {sampleType === 'strike_off' ? (
               <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Position <span className="text-gray-400 normal-case tracking-normal">(optional)</span></label>
-                <select
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value as CanonicalPosition | '')}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
-                >
-                  <option value="">—</option>
-                  {CANONICAL_POSITIONS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Positions <span className="text-gray-400 normal-case tracking-normal">(optional, tick multiple)</span>
+                </label>
+                <div className="border border-gray-300 rounded-md bg-white max-h-40 overflow-y-auto divide-y divide-gray-100">
+                  {CANONICAL_POSITIONS.map((p) => {
+                    const on = positions.includes(p);
+                    return (
+                      <label
+                        key={p}
+                        className={cn(
+                          'flex items-center gap-2 px-2.5 py-1.5 text-[12px] cursor-pointer',
+                          on ? 'bg-violet-50 text-violet-900' : 'hover:bg-gray-50 text-gray-700',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => togglePosition(p)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500 focus:ring-offset-0"
+                        />
+                        <span>{p}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {positions.length > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-1">{positions.length} selected</p>
+                )}
               </div>
             ) : (
               <div>
@@ -899,7 +920,7 @@ function CreateNewBody({
               sample_type: sampleType,
               colour: colour.trim(),
               description: description.trim() || undefined,
-              position: sampleType === 'strike_off' && position ? position : undefined,
+              position: sampleType === 'strike_off' && positions.length > 0 ? positions : undefined,
               spec_url: specUrl.trim() || undefined,
               supplier_notes: supplierNotes.trim() || undefined,
             },
