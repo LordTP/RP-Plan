@@ -767,8 +767,14 @@ def _build_column_map(sheet) -> Dict[str, int]:
             col_map["terms"] = col_idx
         elif "SALES PERSON" in header_str or header_str == "SALESPERSON" or "SL SALES" in header_str:
             col_map["sales_person"] = col_idx
-        elif header_str == "STYLE CODE" or header_str == "STYLE":
+        elif header_str == "STYLE CODE":
             col_map["style_code"] = col_idx
+        # NOTE: "STYLE" (no CODE) is the auto-derived base column added to
+        # exports since 2026-06-16. It's read-only in the app — importing it
+        # would overwrite the real style_code with the truncated base, which
+        # is exactly the corruption we shipped and then rolled back. Skip it.
+        elif header_str == "STYLE":
+            continue
         elif header_str == "DESCRIPTION":
             col_map["description"] = col_idx
         elif header_str == "COLOUR" or header_str == "COLOR":
