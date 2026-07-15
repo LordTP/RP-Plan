@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, X, Loader2 } from 'lucide-react';
 import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from '@/lib/utils';
 import { ordersApi } from '@/lib/api';
@@ -260,8 +261,10 @@ export function EditableCell({
         {pendingChange && <span className="ml-1 text-orange-600">*</span>}
       </div>
 
-      {/* Edit Modal */}
-      {isEditing && (
+      {/* Edit Modal — portalled to document.body so it escapes the sticky
+          column's stacking context (which was leaving the PO# + Style Code
+          cells rendered ON TOP of the backdrop). */}
+      {isEditing && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Backdrop */}
           <div
@@ -493,7 +496,8 @@ export function EditableCell({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

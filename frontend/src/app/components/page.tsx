@@ -696,6 +696,7 @@ function CanonicalDetailPanel({
           }}
         />
       )}
+
     </div>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Loader2, X, Info } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2, X, Info, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
-import { componentsApi } from '@/lib/api';
+import { componentsApi, submissionsApi, type RejectReason } from '@/lib/api';
+import { SAMPLE_STATUS_OPTIONS } from '@/types';
 
 /** Minimal shape the bulk-edit modal needs. Any instance-like object from
  *  either the Library tab (CanonicalInstance) or the In Progress tab
@@ -26,21 +27,35 @@ interface Props {
 
 export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Props) {
   const [statusOn, setStatusOn] = useState(true);
-  const [statusVal, setStatusVal] = useState<'APPROVED' | 'RECEIVED' | 'OUTSTANDING'>('APPROVED');
+  const [statusVal, setStatusVal] = useState<string>('APPROVED');
   const [approvedOn, setApprovedOn] = useState(false);
   const [approvedVal, setApprovedVal] = useState(toIsoDate(new Date()));
   const [receivedOn, setReceivedOn] = useState(false);
   const [receivedVal, setReceivedVal] = useState(toIsoDate(new Date()));
   const [saving, setSaving] = useState(false);
 
+  const isRejecting = statusOn && statusVal === 'REJECTED';
+
+  // Reason taxonomy — loaded lazily the first time REJECTED is picked.
+  const [rejectReasons, setRejectReasons] = useState<RejectReason[]>([]);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectNotes, setRejectNotes] = useState('');
+
+  useEffect(() => {
+    if (!isRejecting || rejectReasons.length > 0) return;
+    submissionsApi.getRejectReasons()
+      .then((r) => setRejectReasons(r.reasons))
+      .catch(() => { /* form validation will still block submit */ });
+  }, [isRejecting, rejectReasons.length]);
+
   const overwriteWarning = useMemo(() => {
-    if (!approvedOn) return null;
+    if (!approvedOn || isRejecting) return null;
     const already = instances.filter((i) => i.approved).length;
     if (already > 0) {
       return `${already} of the ${instances.length} instance${instances.length === 1 ? '' : 's'} already have an Approved date. Confirming will overwrite.`;
     }
     return null;
-  }, [approvedOn, instances]);
+  }, [approvedOn, instances, isRejecting]);
 
   // Summarize which POs the ticked instances cover
   const poSummary = useMemo(() => {
@@ -52,15 +67,34 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
     return Array.from(counts.entries()).map(([po, n]) => `PO ${po}${n > 1 ? ` (${n})` : ''}`).join(' · ');
   }, [instances]);
 
+  const canSubmit = (() => {
+    if (saving) return false;
+    if (isRejecting) return !!rejectReason;
+    return statusOn || approvedOn || receivedOn;
+  })();
+
   async function save() {
     setSaving(true);
     try {
       const payload: any = { instance_ids: instances.map((i) => i.instance_id) };
-      if (statusOn) payload.status = statusVal;
-      if (approvedOn) payload.approved = approvedVal;
-      if (receivedOn) payload.received = receivedVal;
+      if (isRejecting) {
+        // REJECTED is a lifecycle event — backend closes the current attempt,
+        // opens v+1, and clears received/approved. Sending those dates here
+        // would be ignored anyway, so we deliberately skip them.
+        payload.status = 'REJECTED';
+        payload.reason = rejectReason;
+        if (rejectNotes.trim()) payload.notes = rejectNotes.trim();
+      } else {
+        if (statusOn) payload.status = statusVal;
+        if (approvedOn) payload.approved = approvedVal;
+        if (receivedOn) payload.received = receivedVal;
+      }
       const res = await componentsApi.bulkEditInstances(payload);
-      toast.success(`Updated ${res.changed_count}${res.unchanged_count > 0 ? ` (${res.unchanged_count} unchanged)` : ''} instances`);
+      if (isRejecting) {
+        toast.success(`Rejected ${res.changed_count} instance${res.changed_count === 1 ? '' : 's'} — v+1 opened OUTSTANDING`);
+      } else {
+        toast.success(`Updated ${res.changed_count}${res.unchanged_count > 0 ? ` (${res.unchanged_count} unchanged)` : ''} instances`);
+      }
       onDone();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Bulk edit failed');
@@ -91,47 +125,92 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
             on={statusOn}
             onToggle={() => setStatusOn((v) => !v)}
             label="Status"
-            hint="Set on every ticked instance"
+            hint={isRejecting
+              ? 'Closes current attempt on every ticked instance, opens v+1 outstanding'
+              : 'Set on every ticked instance'}
           >
             <select
               value={statusVal}
-              onChange={(e) => setStatusVal(e.target.value as any)}
+              onChange={(e) => setStatusVal(e.target.value)}
               disabled={!statusOn}
               className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white disabled:opacity-50"
             >
-              <option value="APPROVED">APPROVED</option>
-              <option value="RECEIVED">RECEIVED</option>
-              <option value="OUTSTANDING">OUTSTANDING</option>
+              {SAMPLE_STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
             </select>
           </BulkField>
-          <BulkField
-            on={approvedOn}
-            onToggle={() => setApprovedOn((v) => !v)}
-            label="Approved date"
-            hint="Applies where blank; overrides where set"
-          >
-            <input
-              type="date"
-              value={approvedVal}
-              onChange={(e) => setApprovedVal(e.target.value)}
-              disabled={!approvedOn}
-              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white disabled:opacity-50"
-            />
-          </BulkField>
-          <BulkField
-            on={receivedOn}
-            onToggle={() => setReceivedOn((v) => !v)}
-            label="Received date"
-            hint="Applies where blank; overrides where set"
-          >
-            <input
-              type="date"
-              value={receivedVal}
-              onChange={(e) => setReceivedVal(e.target.value)}
-              disabled={!receivedOn}
-              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white disabled:opacity-50"
-            />
-          </BulkField>
+
+          {isRejecting && (
+            <div className="p-3 rounded border-2 border-red-300 bg-red-50 space-y-2">
+              <div className="text-[11px] text-red-800 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  Received / Approved date fields are ignored for rejections — the backend clears them per instance and opens v+1 at OUTSTANDING with a fresh clock.
+                </span>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-900 block mb-1">
+                  Reason <span className="text-red-600 font-normal">(required)</span>
+                </label>
+                <select
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 bg-white"
+                >
+                  <option value="">— Pick a reason —</option>
+                  {rejectReasons.map((r) => (
+                    <option key={r.code} value={r.code}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-gray-900 block mb-1">
+                  Notes <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Anything the factory needs to know to fix this batch…"
+                  className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 bg-white"
+                />
+              </div>
+            </div>
+          )}
+
+          {!isRejecting && (
+            <>
+              <BulkField
+                on={approvedOn}
+                onToggle={() => setApprovedOn((v) => !v)}
+                label="Approved date"
+                hint="Applies where blank; overrides where set"
+              >
+                <input
+                  type="date"
+                  value={approvedVal}
+                  onChange={(e) => setApprovedVal(e.target.value)}
+                  disabled={!approvedOn}
+                  className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white disabled:opacity-50"
+                />
+              </BulkField>
+              <BulkField
+                on={receivedOn}
+                onToggle={() => setReceivedOn((v) => !v)}
+                label="Received date"
+                hint="Applies where blank; overrides where set"
+              >
+                <input
+                  type="date"
+                  value={receivedVal}
+                  onChange={(e) => setReceivedVal(e.target.value)}
+                  disabled={!receivedOn}
+                  className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white disabled:opacity-50"
+                />
+              </BulkField>
+            </>
+          )}
 
           {overwriteWarning && (
             <div className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800 flex items-start gap-2">
@@ -149,11 +228,16 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
           </button>
           <button
             onClick={save}
-            disabled={saving || (!statusOn && !approvedOn && !receivedOn)}
-            className="px-4 py-2 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded disabled:opacity-50 flex items-center gap-1.5"
+            disabled={!canSubmit}
+            className={cn(
+              'px-4 py-2 text-sm font-semibold text-white rounded disabled:opacity-50 flex items-center gap-1.5',
+              isRejecting ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700',
+            )}
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            Update {instances.length} instance{instances.length === 1 ? '' : 's'}
+            {isRejecting
+              ? `Reject ${instances.length} instance${instances.length === 1 ? '' : 's'}`
+              : `Update ${instances.length} instance${instances.length === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

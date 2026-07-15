@@ -1276,9 +1276,25 @@ async def bulk_edit_library_instances(
     if not updates:
         raise HTTPException(status_code=400, detail="At least one of status/received/approved must be provided")
 
-    ALLOWED_STATUSES = {"APPROVED", "RECEIVED", "OUTSTANDING", "NOT REQUIRED", None}
+    ALLOWED_STATUSES = {"APPROVED", "RECEIVED", "OUTSTANDING", "NOT REQUIRED", "REJECTED", None}
     if "status" in updates and updates["status"] not in ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{updates['status']}'")
+
+    # REJECTED is a full lifecycle event (closes current attempt, opens the
+    # next one, writes a DateChangeHistory entry) so it needs a reason. We
+    # dispatch to _reject_one_target per instance instead of just flipping
+    # the status column.
+    reject_reason = None
+    reject_notes = None
+    if updates.get("status") == "REJECTED":
+        from models import SAMPLE_REJECT_REASONS as _REASONS
+        reject_reason = (data.get("reason") or "").strip()
+        if not reject_reason:
+            raise HTTPException(status_code=400, detail="reason is required when status is REJECTED")
+        valid_codes = {code for code, _ in _REASONS}
+        if reject_reason not in valid_codes:
+            raise HTTPException(status_code=400, detail=f"Unknown rejection reason '{reject_reason}'")
+        reject_notes = (data.get("notes") or None)
 
     # Parse dates once
     for date_key in ("received", "approved"):
@@ -1299,7 +1315,15 @@ async def bulk_edit_library_instances(
     order_ids = list({c.order_id for c in rows})
     orders_by_id = {o.id: o for o in db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()}
 
-    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    from routers.submissions import (
+        sync_submission_on_status_change,
+        STATUS_FIELD_TO_SAMPLE_TYPE,
+        _reject_one_target,
+    )
+
+    # Component sample_type (long) → submissions sample_type (short) used by
+    # _reject_one_target and the SAMPLE_FIELD_MAP downstream.
+    LONG_TO_SHORT_SAMPLE_TYPE = {'strike_off': 'strike', 'lab_dip': 'lab', 'label': 'label'}
 
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Sourcelab"
@@ -1308,10 +1332,31 @@ async def bulk_edit_library_instances(
     unchanged_ids = []
     field_key_to_suffix = {"status": "status", "received": "received", "approved": "approved"}
 
+    is_rejection = updates.get("status") == "REJECTED"
+    now = datetime.utcnow()
+
     for comp in rows:
         prefix = comp.sample_type  # 'strike_off' | 'lab_dip' | 'label'
         if prefix not in SAMPLE_PREFIXES_COMPONENT:
             unchanged_ids.append(comp.id)
+            continue
+
+        # REJECTED goes through the full attempt-lifecycle path so it opens
+        # v+1, clears dates, and writes the same history/submission rows as
+        # a single-instance rejection.
+        if is_rejection:
+            short_type = LONG_TO_SHORT_SAMPLE_TYPE.get(prefix)
+            order = orders_by_id.get(comp.order_id)
+            if not short_type or order is None:
+                unchanged_ids.append(comp.id)
+                continue
+            _reject_one_target(
+                db, order, comp, short_type,
+                reject_reason, reject_notes, None,
+                current_user.id, now,
+            )
+            comp.updated_at = now
+            changed_ids.append(comp.id)
             continue
 
         touched_status_here = False
