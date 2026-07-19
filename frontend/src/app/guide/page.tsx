@@ -155,38 +155,41 @@ const GUIDE_SECTIONS: GuideSection[] = [
           {
             type: 'fields',
             items: [
-              { name: 'Library', desc: 'The canonical catalogue — one row per real-world component. Browse, edit identity (name, colour, position, spec), see every style using it, bulk-edit across every PO.' },
+              { name: 'Library', desc: 'The catalogue of add-events — one row per group of instances that were created together. Browse, edit shared identity (name, colour, position, spec), see every style in the group, bulk-edit across every PO in the group.' },
               { name: 'In Progress', desc: 'The working queue — components with unfinished samples. Left rail lists what needs chasing; right panel shows PO groups and instance cards.' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'Library = "what components exist?" · In Progress = "what needs chasing today?"' },
+          { type: 'callout', tone: 'info', text: 'Library = "what has been added?" · In Progress = "what needs chasing today?"' },
+          { type: 'callout', tone: 'info', text: 'Same name added twice = two separate library entries. Each add-event mints a fresh entry so groups only cover the styles you chose in that action — not everything with the same name across history.' },
         ],
       },
       {
-        title: 'Adding Components — library-first',
+        title: 'Adding Components — every add is a fresh entry',
         content: [
           'Click + Add component (page-level button on /components or the button on any style\'s Components section). Same modal opens with two tabs:',
           {
             type: 'fields',
             items: [
-              { name: 'From library', desc: 'Default. Search, pick a canonical, choose Blank or Copy-from-another-style, then tick target styles grouped by PO.' },
-              { name: '+ Create new', desc: 'Only when the component genuinely doesn\'t exist yet. Fill name (auto-uppercased), sample type, colour (required for SO+LD), position (SO only), then target styles.' },
+              { name: 'From library (as template)', desc: 'Search, pick an existing entry to copy its identity (name / sample type / colour / position / spec / notes), then tick target styles grouped by PO. A brand-new library entry is created — the picked entry is used as a form template only, no link back to it.' },
+              { name: '+ Create new', desc: 'Fill name (auto-uppercased), sample type, colour (required for SO+LD), position (SO only), then target styles. Every field starts blank.' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'To land a new instance as Approved, use Copy from another style and pick an approved peer. There\'s no "Mark approved" shortcut — every instance points at a real, signed-off peer or starts Blank.' },
+          { type: 'callout', tone: 'info', text: 'Both tabs behave the same way: every submit creates a fresh library entry that groups only the styles you ticked in this add-event. All instances start blank (OUTSTANDING, no dates). There is no "start approved" shortcut — samples move through the real lifecycle.' },
+          { type: 'callout', tone: 'success', text: 'When the add succeeds you\'re taken to the Library tab with the fresh entry pre-selected — so you can see exactly which styles you just linked.' },
         ],
       },
       {
         title: 'Editing + Bulk edit',
         content: [
           'Click any instance card in the In Progress right panel — an edit modal opens on top, no navigation. Set status, received, approved, or reject with a reason.',
-          'To update many at once: tick multiple instance checkboxes (or the PO-level checkbox), then click "Bulk edit… (N)" in the identity header. Set any combination of status / received / approved — applies across every ticked instance regardless of PO.',
+          'To update many at once: tick multiple instance checkboxes (or the PO-level checkbox), then click "Bulk edit… (N)" in the identity header. Set any combination of status / received / approved — applies across every ticked instance in the group regardless of PO. Pick REJECTED and an inline reason picker appears — closes the current attempt on each and opens v+1 at OUTSTANDING.',
+          { type: 'callout', tone: 'info', text: 'The bulk edit and single edit modals both stay open until you press Cancel or the X — a click outside won\'t dismiss them.' },
         ],
       },
       {
         title: 'Full reference',
         content: [
-          'For a top-to-bottom walkthrough — the two tabs, library-first Add flow, starting states, single + bulk edits, the sample lifecycle, and rejections/v2 — see the Components tab inside Factory → Guide. Same content, written so both Sourcelab and factory users get it.',
+          'For a top-to-bottom walkthrough — the two tabs, per-add-event Library entries, single + bulk edits, the sample lifecycle, and rejections/v2 — see the Components tab inside Factory → Guide. Same content, written so both Sourcelab and factory users get it.',
         ],
       },
     ],
@@ -276,27 +279,29 @@ const GUIDE_SECTIONS: GuideSection[] = [
           {
             type: 'fields',
             items: [
-              { name: 'Library', desc: 'Canonical catalogue. One row per real-world component. Left rail lists everything alphabetically; right panel shows identity (name, colour, position, spec, description), rollup counts, and every style using it.' },
+              { name: 'Library', desc: 'Add-event catalogue. One row per group of instances created together in a single "Add component" action. Left rail lists everything alphabetically; right panel shows shared identity (name, colour, position, spec, description), rollup counts, and every style in that group.' },
               { name: 'In Progress', desc: 'Working queue. Left rail shows components with unfinished samples plus a "N needs attention" red badge when things are stale or overdue. Right panel groups instance cards by PO.' },
             ],
           },
-          { type: 'callout', tone: 'info', text: 'Names are stored UPPERCASE across the app so casing drift no longer creates duplicates.' },
+          { type: 'callout', tone: 'info', text: 'Names are stored UPPERCASE. Two entries with the same name can exist side-by-side if they came from separate add-events — that\'s intentional, so a later merch decision doesn\'t retroactively yoke unrelated styles together.' },
         ],
       },
       {
-        title: 'Editing identity — propagates by design',
+        title: 'Editing identity — propagates within the add-event group',
         content: [
-          'Edit an identity field (name, colour, position, spec URL) on the Library tab and the change hits every instance using that canonical. That\'s the point of the canonical model.',
+          'Edit an identity field (name, colour, position, spec URL) on the Library tab and the change hits every instance in that add-event group. If you added the same component to 6 styles across 3 POs in one action, editing the name updates all 6.',
           { type: 'callout', tone: 'info', text: 'Colour is required for Strike Offs + Lab Dips (both are colour-specific samples). Optional for Labels. Position is Strike-Off only — pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).' },
-          { type: 'callout', tone: 'warn', text: 'If you need a genuinely different name for just one style, delete that instance and re-add. Detach action coming soon.' },
+          { type: 'callout', tone: 'warn', text: 'Edits do NOT reach across into other library entries — even ones with the same name. If you want a change to hit a style that\'s in a different entry, edit that entry too, or delete + re-add so it lands in the same group.' },
         ],
       },
       {
         title: 'Bulk editing across POs',
         content: [
-          'From the Library tab or In Progress tab, tick instance checkboxes (individual rows or the PO-level select) and hit "Bulk edit… (N)" in the identity header. Set any combination of status / received / approved — applies to every ticked instance regardless of PO. Overwrite warning fires if any of the ticked instances already have an Approved date.',
+          'From the Library tab or In Progress tab, tick instance checkboxes (individual rows or the PO-level select) and hit "Bulk edit… (N)" in the identity header. The modal has the full status list (NOT REQUIRED / OUTSTANDING / P23 ADVISE UPDATE / LATE / RECEIVED / APPROVED / REJECTED) plus optional received / approved date overrides — applies to every ticked instance in the group regardless of PO. Overwrite warning fires if any ticked instance already has an Approved date.',
+          'Picking REJECTED reveals an inline reason picker + notes field — confirming closes the current attempt on each and opens v+1 at OUTSTANDING with a fresh clock. No separate reject button.',
+          { type: 'callout', tone: 'info', text: 'The bulk edit modal only closes via the X or Cancel — an accidental click outside won\'t drop a partly-filled reject.' },
         ],
-        tips: ['The big merch win — approve one canonical across 6 styles on 3 POs in one action instead of clicking through each style.'],
+        tips: ['The big merch win — approve one add-event group across 6 styles on 3 POs in one action instead of clicking through each style.'],
       },
       {
         title: 'Filtering + search',

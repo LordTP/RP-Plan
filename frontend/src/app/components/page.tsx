@@ -38,6 +38,8 @@ function ComponentsContent() {
   const router = useRouter();
   const params = useSearchParams();
   const tabParam = params.get('tab');
+  const openParam = params.get('open');
+  const openCanonicalId = openParam ? Number(openParam) : null;
   const activeTab: TabKey = tabParam === 'in-progress' ? 'in-progress' : 'library';
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -119,7 +121,7 @@ function ComponentsContent() {
         </div>
 
         {activeTab === 'library' ? (
-          <LibraryTab reloadKey={libraryReloadKey} />
+          <LibraryTab reloadKey={libraryReloadKey} openCanonicalId={openCanonicalId} />
         ) : (
           <InProgressTab
             orders={orders}
@@ -135,10 +137,12 @@ function ComponentsContent() {
           onClose={() => setAddOpen(false)}
           orders={orders}
           isSupplier={String(useStore.getState().user?.role || '').toLowerCase() === 'supplier'}
-          onDone={() => {
+          onDone={(_name, _count, canonicalId) => {
             setAddOpen(false);
             loadOrders();
             setLibraryReloadKey((k) => k + 1);
+            // Land on the fresh entry in the Library tab so the user sees what they created.
+            router.replace(`/components?open=${canonicalId}`);
           }}
         />
 
@@ -163,7 +167,7 @@ function ComponentsContent() {
   );
 }
 
-function LibraryTab({ reloadKey }: { reloadKey: number }) {
+function LibraryTab({ reloadKey, openCanonicalId }: { reloadKey: number; openCanonicalId: number | null }) {
   const { user } = useStore();
   const isSupplier = String(user?.role || '').toLowerCase() === 'supplier';
   const [components, setComponents] = useState<CanonicalComponent[]>([]);
@@ -182,7 +186,11 @@ function LibraryTab({ reloadKey }: { reloadKey: number }) {
         include_blank: includeBlank,
       });
       setComponents(data.components);
-      if (!selectedId && data.components.length > 0) {
+      // Priority: URL ?open=<id> (from post-add redirect) > current selection > first row.
+      // A stale openCanonicalId that isn't in the list falls back to the current or first.
+      if (openCanonicalId && data.components.some((c) => c.id === openCanonicalId)) {
+        setSelectedId(openCanonicalId);
+      } else if (!selectedId && data.components.length > 0) {
         setSelectedId(data.components[0].id);
       }
     } catch (err: any) {
@@ -195,7 +203,7 @@ function LibraryTab({ reloadKey }: { reloadKey: number }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, sampleType, includeBlank, reloadKey]);
+  }, [q, sampleType, includeBlank, reloadKey, openCanonicalId]);
 
   const filtered = components;
 

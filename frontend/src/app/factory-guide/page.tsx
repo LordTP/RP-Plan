@@ -324,7 +324,7 @@ function FactoryGuideContent() {
             <Table>
               <TableRow
                 label="Library"
-                value="The canonical catalogue — one row per real-world component. Browse, edit identity (name, colour, position, spec), see rollup counts and every style using it. Bulk edit across every PO from here."
+                value="The add-event catalogue — one row per group of instances that were created together in a single Add Component action. Browse, edit shared identity (name, colour, position, spec), see rollup counts and every style in the group. Bulk edit across every PO in the group from here."
               />
               <TableRow
                 label="In Progress"
@@ -338,40 +338,46 @@ function FactoryGuideContent() {
 
           <Step number="2.2" title="Library — browse + edit identity">
             <p>
-              Left rail: alphabetical list of every canonical component, each with a colour chip and (for Strike Offs) a position chip. Click one to see identity + rollup + all styles using it.
+              Left rail: alphabetical list of every add-event group, each with a colour chip and (for Strike Offs) a position chip. Click one to see identity + rollup + all styles in that group.
             </p>
-            <MockShot caption="Library tab — left rail lists canonicals with a colour chip; right panel shows identity, rollup counts, and every style linked to the entry.">
+            <MockShot caption="Library tab — left rail lists add-event groups with a colour chip; right panel shows identity, rollup counts, and every style linked to the entry.">
               <LibraryTabMock />
             </MockShot>
             <Tips>
-              <Tip icon={Tag}>Names are stored UPPERCASE across the app — same input capitalisation doesn't create duplicates.</Tip>
+              <Tip icon={Tag}>Names are stored UPPERCASE, but the library does not dedupe by name. Two entries with the same name can exist side-by-side if they came from separate add-events.</Tip>
               <Tip icon={Tag}>Colour is <strong>required</strong> for Strike Offs + Lab Dips, optional for Labels.</Tip>
               <Tip icon={Tag}>Position is Strike-Off-only. Pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).</Tip>
               <Tip icon={Search}>Search on the left rail matches name, description, colour, and supplier notes.</Tip>
             </Tips>
-            <Callout type="warn" title="Editing identity propagates">
-              Rename or update the colour on the Library and it changes on every instance — that's the whole point of the canonical model. If you need a different name for just one style, delete that instance and re-add as a new canonical (Detach coming soon).
+            <Callout type="warn" title="Editing identity propagates within the add-event group">
+              Rename or update the colour on the Library and it hits every instance in that same add-event group — not other library entries that happen to share the name. If a change needs to reach a style in a different entry, edit that entry too, or delete + re-add so it lands in the same group.
             </Callout>
           </Step>
 
-          {/* 3. Adding — the new library-first flow */}
-          <Step number="3.1" title="Adding — library-first modal">
+          {/* 3. Adding — every add is a fresh library entry */}
+          <Step number="3.1" title="Adding — every add is a fresh library entry">
             <p>
               Click <strong>+ Add component</strong> — either the page-level button on <span className="font-mono">/components</span>, or the button on any style's Components section. Same modal opens with two tabs:
             </p>
             <Table>
               <TableRow
-                label="From library"
-                value="Default. Search the left rail, pick a canonical, then choose the starting state and target styles. Use this whenever the component already exists somewhere."
+                label="From library (as template)"
+                value="Search the left rail, pick an existing entry, then tick target styles. The picked entry's identity (name / sample type / colour / position / spec / supplier notes) is copied into the form so you don't retype — but a brand-new library entry is created for this add-event with no link back to the picked one."
               />
               <TableRow
                 label="+ Create new"
-                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec URL, supplier notes) and target styles. Use this only when the component genuinely doesn't exist yet."
+                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec URL, supplier notes) and target styles. Every field starts blank."
               />
             </Table>
-            <MockShot caption="Add Component modal — library-first with a tab to create if you can't find it.">
+            <MockShot caption="Add Component modal — pick an existing entry as a template or start blank. Either way, a fresh library entry is created.">
               <AddModalMock />
             </MockShot>
+            <Callout type="info" title="Both tabs behave the same way">
+              Every submit mints a fresh library entry that groups only the styles you ticked in this add-event. All instances start blank (OUTSTANDING, no dates). There is no way to inherit approved status from another style or start a new instance as APPROVED — the sample has to actually happen.
+            </Callout>
+            <Callout type="info" title="You land where the work is">
+              When the add succeeds you're taken straight to the Library tab with the fresh entry pre-selected — so you can see exactly which styles you just linked and start managing them from there.
+            </Callout>
           </Step>
 
           <Step number="3.2" title="Create new — filling the form">
@@ -416,32 +422,13 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          <Step number="3.3" title="From library — starting state (Blank or Copy)">
-            <p>
-              After picking a library entry, choose how the new instances start life:
-            </p>
-            <Table>
-              <TableRow
-                label="Blank"
-                value="Status empty, no dates. The default — most new samples start here."
-              />
-              <TableRow
-                label="Copy from another style"
-                value="Inherit the status, received / approved dates, and full attempt history from a peer style already using this component. Use this when the same sample was approved on another PO and you want to skip the workflow again."
-              />
-            </Table>
-            <Callout type="info" title="No more 'Mark approved' shortcut">
-              If you want a new instance to land Approved, pick <strong>Copy from another style</strong> and choose an approved peer. That way the new instance links back to a real, signed-off sample rather than a shortcut with no history.
-            </Callout>
-          </Step>
-
-          <Step number="3.4" title="Target styles — pick which to apply">
+          <Step number="3.3" title="Target styles — pick which to apply">
             <p>
               Style picker groups by PO. Search matches PO number, style code, customer, or orderbook reference. Tick individual styles, or tick the PO row to select all its styles at once. <strong>Collapse all / Expand all</strong> in the top-right for fast scanning of a long list.
             </p>
             <Tips>
-              <Tip icon={Tag}>Styles already using this component are hidden automatically — the count of hidden styles shows in the header.</Tip>
-              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to Chelsea PO 5310 and Stoke PO 5205 in one go.</Tip>
+              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to Chelsea PO 5310 and Stoke PO 5205 in one go, and both POs will show up in the same Library entry.</Tip>
+              <Tip icon={Tag}>Ticking a style that already has a same-named component from a previous add-event is allowed — the new instance sits alongside the old one and belongs to a separate group. Only detach + re-add if you need them under a single group.</Tip>
             </Tips>
           </Step>
 
@@ -484,9 +471,12 @@ function FactoryGuideContent() {
           {/* 5. Bulk edit */}
           <Step number="5.1" title="Bulk edit across styles + POs">
             <p>
-              Tick the checkbox on multiple instance cards (or use the PO-level checkbox to grab a whole PO). A <strong>Bulk edit… (N)</strong> button appears in the right-panel header — click it to open the modal.
+              Tick the checkbox on multiple instance cards (or use the PO-level checkbox to grab a whole PO). A <strong>Bulk edit… (N)</strong> button appears in the right-panel header — click it to open the modal. The status dropdown has the full seven options (NOT REQUIRED / OUTSTANDING / P23 ADVISE UPDATE / LATE / RECEIVED / APPROVED / REJECTED). Received + Approved dates are separate optional field overrides.
             </p>
-            <MockShot caption="Bulk edit modal — set status, received date, and approved date across every ticked instance at once.">
+            <p>
+              Picking <strong>REJECTED</strong> swaps in a red panel with the standard reason list (Colour / Placement / Stitch / Material / Spec / Print / Other) plus an optional note. Confirming closes the current attempt on each ticked instance and opens v+1 at OUTSTANDING with a fresh clock. Received / Approved dates are cleared per instance — this is a lifecycle event, not a field edit.
+            </p>
+            <MockShot caption="Bulk edit modal — set status, received date, and approved date across every ticked instance at once. Picking REJECTED reveals the reason picker inline.">
               <BulkEditMock />
             </MockShot>
             <p>
@@ -494,6 +484,9 @@ function FactoryGuideContent() {
             </p>
             <Callout type="info" title="This is the big merch win">
               Approve "CHEST PRINT — HOME KIT BLUE" across 6 styles on 3 POs in one action — no more clicking through each style individually.
+            </Callout>
+            <Callout type="info" title="No accidental dismiss">
+              The bulk edit modal only closes via the X or Cancel — clicking outside the card won't drop your work. Same behaviour on the single-instance edit modal.
             </Callout>
           </Step>
 
@@ -1627,13 +1620,13 @@ function AddModalMock() {
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <div>
             <p className="text-sm font-bold text-gray-900">Add component</p>
-            <p className="text-[10px] text-gray-500">Pick from the library, or create a new one, then apply to styles.</p>
+            <p className="text-[10px] text-gray-500">Every add creates a fresh library entry. Pick an existing entry to copy its identity, or fill from scratch.</p>
           </div>
           <X className="w-3.5 h-3.5 text-gray-400" />
         </div>
         <div className="px-5 pt-3">
           <div className="inline-flex p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
-            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">From library</span>
+            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">From library (as template)</span>
             <span className="px-3 py-1 rounded-md text-gray-500">+ Create new</span>
           </div>
         </div>
@@ -1666,18 +1659,9 @@ function AddModalMock() {
             </div>
           </div>
           <div className="p-4 space-y-3">
-            <div>
-              <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500 mb-1.5">Starting state for the new instances</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded border-2 border-violet-500 bg-violet-50 p-2">
-                  <p className="text-[11px] font-bold text-gray-900">Blank</p>
-                  <p className="text-[9px] text-gray-500 mt-0.5">Status empty, no dates. Standard for a new sample going out.</p>
-                </div>
-                <div className="rounded border border-gray-200 bg-white p-2">
-                  <p className="text-[11px] font-bold text-gray-900">Copy from another style</p>
-                  <p className="text-[9px] text-gray-500 mt-0.5">Inherit state, dates, and attempt history from a peer — even if it's already Approved.</p>
-                </div>
-              </div>
+            <div className="rounded border border-violet-200 bg-violet-50/60 p-2">
+              <p className="text-[10px] font-bold text-violet-800">A new library entry will be created</p>
+              <p className="text-[9px] text-violet-700/80 mt-0.5">Identity below is copied from the picked entry — no link back. Every ticked style starts blank (OUTSTANDING, no dates).</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1.5">

@@ -1886,6 +1886,7 @@ export function ComponentsSection({
   // prop from every call site.
   const { user: currentUser } = useStore();
   const isSupplierUser = currentUser?.role === 'supplier';
+  const router = useRouter();
   const [components, setComponents] = useState<OrderComponent[]>([]);
   const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -2158,9 +2159,12 @@ export function ComponentsSection({
         orders={addModalOrders}
         isSupplier={isSupplierUser}
         onClose={() => setAddModalOpen(false)}
-        onDone={() => {
+        onDone={(_name, _count, canonicalId) => {
           setAddModalOpen(false);
           loadComponents();
+          // Land in the library on the fresh entry — so the user can see what
+          // they just created and which styles now link to it.
+          router.push(`/components?open=${canonicalId}`);
         }}
       />
     </div>

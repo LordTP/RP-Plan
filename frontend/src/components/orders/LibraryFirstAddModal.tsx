@@ -15,7 +15,7 @@ interface Props {
   onClose: () => void;
   orders: Order[];
   isSupplier: boolean;
-  onDone: (canonicalName: string, createdCount: number) => void;
+  onDone: (canonicalName: string, createdCount: number, canonicalId: number) => void;
 }
 
 const SAMPLE_TAGS: Record<SampleType, { label: string; className: string }> = {
@@ -116,7 +116,7 @@ async function runCreateAndApply(
     order_ids: number[];
   },
   setSubmitting: (b: boolean) => void,
-  onDone: (name: string, count: number) => void,
+  onDone: (name: string, count: number, canonicalId: number) => void,
 ) {
   setSubmitting(true);
   try {
@@ -128,7 +128,7 @@ async function runCreateAndApply(
     });
     const createdCount = res.data?.created_count ?? 0;
     toast.success(`Added "${payload.identity.name}" to ${createdCount} style${createdCount === 1 ? '' : 's'}`);
-    onDone(payload.identity.name, createdCount);
+    onDone(payload.identity.name, createdCount, canonicalId);
   } catch (err: any) {
     toast.error(err?.response?.data?.detail || 'Failed to add component');
   } finally {

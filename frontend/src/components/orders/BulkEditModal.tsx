@@ -104,8 +104,11 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40" onClick={onClose}>
-      <div className="w-full max-w-lg bg-white rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
+    // Backdrop is click-inert on purpose — bulk edits + rejections shouldn't
+    // vanish if the user accidentally clicks outside the card. Use the X or
+    // Cancel to close.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40">
+      <div className="w-full max-w-lg bg-white rounded-lg shadow-xl">
         <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between">
           <div>
             <h3 className="text-base font-bold text-gray-900">
