@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, Loader2, X, FileText, Info, ChevronDown, ChevronRight, Plus, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
-import api, { componentsApi, CANONICAL_POSITIONS, type CanonicalComponent, type CanonicalDetail, type CanonicalInstance, type CanonicalPosition } from '@/lib/api';
+import api, { componentsApi, CANONICAL_POSITIONS, type CanonicalComponent, type CanonicalDetail, type CanonicalPosition } from '@/lib/api';
 import type { Order } from '@/types';
 
 type SampleType = 'strike_off' | 'lab_dip' | 'label';
 type ModalTab = 'library' | 'create';
-type StartingState = 'blank' | 'copy';
 
 interface Props {
   open: boolean;
@@ -30,7 +29,6 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
   const [selectedCanonicalId, setSelectedCanonicalId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset on open/close
   useEffect(() => {
     if (open) {
       setTab('library');
@@ -50,7 +48,9 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between flex-shrink-0">
           <div>
             <h3 className="text-lg font-bold text-gray-900">Add component</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Pick from the library, or create a new one, then apply to styles.</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Every add creates a fresh library entry. Pick from library to reuse an existing entry's identity as a template, or create new to fill from scratch.
+            </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1">
             <X className="w-4 h-4" />
@@ -67,7 +67,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
                 tab === 'library' ? 'bg-white shadow-sm text-violet-700' : 'text-gray-500 hover:text-gray-700',
               )}
             >
-              From library
+              From library (as template)
             </button>
             <button
               onClick={() => { setTab('create'); setSelectedCanonicalId(null); }}
@@ -88,9 +88,8 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
               selectedCanonicalId={selectedCanonicalId}
               onSelect={setSelectedCanonicalId}
               orders={orders}
-              isSupplier={isSupplier}
               submitting={submitting}
-              onSubmit={(payload) => runApply(payload, setSubmitting, onDone)}
+              onSubmit={(payload) => runCreateAndApply(payload, setSubmitting, onDone)}
             />
           ) : (
             <CreateNewBody
@@ -106,47 +105,15 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
   );
 }
 
-async function runApply(
-  payload: {
-    canonicalName: string;
-    canonicalId: number;
-    order_ids: number[];
-    starting_state: StartingState;
-    peer_instance_id?: number;
-  },
-  setSubmitting: (b: boolean) => void,
-  onDone: (name: string, count: number) => void,
-) {
-  setSubmitting(true);
-  try {
-    const body: any = {
-      order_ids: payload.order_ids,
-      starting_state: payload.starting_state,
-    };
-    if (payload.peer_instance_id) body.peer_instance_id = payload.peer_instance_id;
-    const res = await api.post(`/api/components/library/${payload.canonicalId}/apply`, body);
-    const created = res.data?.created_count ?? 0;
-    const skipped = (res.data?.skipped_order_ids || []).length;
-    if (created === 0 && skipped > 0) {
-      toast(`No new instances — all ${skipped} target styles already have this component.`);
-    } else if (skipped > 0) {
-      toast.success(`Added to ${created} styles · ${skipped} already had it`);
-    } else {
-      toast.success(`Added to ${created} style${created === 1 ? '' : 's'}`);
-    }
-    onDone(payload.canonicalName, created);
-  } catch (err: any) {
-    toast.error(err?.response?.data?.detail || 'Failed to add component');
-  } finally {
-    setSubmitting(false);
-  }
-}
-
+/** Both tabs now converge on the same server flow: create a new canonical,
+ *  then apply it to the picked order_ids at blank state. The From-library
+ *  tab uses the picked entry's identity as a template; Create-new fills
+ *  identity from scratch. Either way, a brand-new canonical is minted per
+ *  add event — no linking to prior entries. */
 async function runCreateAndApply(
   payload: {
     identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
-    starting_state: StartingState;
   },
   setSubmitting: (b: boolean) => void,
   onDone: (name: string, count: number) => void,
@@ -155,16 +122,15 @@ async function runCreateAndApply(
   try {
     const created = await api.post('/api/components/library', payload.identity);
     const canonicalId = created.data.id;
-    const applyBody: any = {
+    const res = await api.post(`/api/components/library/${canonicalId}/apply`, {
       order_ids: payload.order_ids,
-      starting_state: payload.starting_state,
-    };
-    const res = await api.post(`/api/components/library/${canonicalId}/apply`, applyBody);
+      starting_state: 'blank',
+    });
     const createdCount = res.data?.created_count ?? 0;
-    toast.success(`Created "${payload.identity.name}" · added to ${createdCount} style${createdCount === 1 ? '' : 's'}`);
+    toast.success(`Added "${payload.identity.name}" to ${createdCount} style${createdCount === 1 ? '' : 's'}`);
     onDone(payload.identity.name, createdCount);
   } catch (err: any) {
-    toast.error(err?.response?.data?.detail || 'Failed to create component');
+    toast.error(err?.response?.data?.detail || 'Failed to add component');
   } finally {
     setSubmitting(false);
   }
@@ -178,21 +144,16 @@ function FromLibraryBody({
   selectedCanonicalId,
   onSelect,
   orders,
-  isSupplier,
   submitting,
   onSubmit,
 }: {
   selectedCanonicalId: number | null;
   onSelect: (id: number | null) => void;
   orders: Order[];
-  isSupplier: boolean;
   submitting: boolean;
   onSubmit: (payload: {
-    canonicalName: string;
-    canonicalId: number;
+    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
-    starting_state: StartingState;
-    peer_instance_id?: number;
   }) => void;
 }) {
   const [q, setQ] = useState('');
@@ -233,7 +194,7 @@ function FromLibraryBody({
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search library…"
+              placeholder="Search name, colour, PO, style code…"
               className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
             />
           </div>
@@ -276,19 +237,25 @@ function FromLibraryBody({
                     on ? 'bg-violet-50 border-l-4 border-l-violet-500' : 'hover:bg-gray-50',
                   )}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', tag.className)}>
                       {tag.label}
                     </span>
                     <span className="text-[13px] font-semibold text-gray-900 truncate">{c.name}</span>
                   </div>
-                  <div className="text-[10px] text-gray-500 mt-1 tabular-nums flex items-center gap-1.5">
-                    <span>{c.styles_count} styles</span>
-                    <span className="text-gray-300">·</span>
-                    <span>{c.customers_count} customer{c.customers_count === 1 ? '' : 's'}</span>
-                    {c.has_spec && <><span className="text-gray-300">·</span><span>📎</span></>}
-                    {c.is_blank && <><span className="text-gray-300">·</span><span className="text-violet-600 font-semibold">seeded</span></>}
+                  <div className="flex items-center gap-1 flex-wrap mt-1">
+                    {c.colour && (
+                      <span className="text-[10px] font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 truncate max-w-[100px]">{c.colour}</span>
+                    )}
+                    {c.position && c.position.length > 0 && c.position.map((p) => (
+                      <span key={p} className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 truncate max-w-[130px]">
+                        {p}
+                      </span>
+                    ))}
                   </div>
+                  <p className="text-[10px] text-gray-500 mt-1 tabular-nums">
+                    {c.styles_count} style{c.styles_count === 1 ? '' : 's'} · {c.customers_count} customer{c.customers_count === 1 ? '' : 's'}
+                  </p>
                 </button>
               );
             })
@@ -298,15 +265,17 @@ function FromLibraryBody({
 
       {/* Right configure */}
       {selectedCanonicalId === null ? (
-        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-          Pick a component from the library to configure.
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 text-sm gap-2 px-8 text-center">
+          <p>Pick a component from the library to reuse its identity as a template.</p>
+          <p className="text-[11px] text-gray-400">
+            A fresh library entry will be created for this add — no link to the picked one.
+          </p>
         </div>
       ) : (
         <ConfigureFromLibrary
           key={selectedCanonicalId}
           canonicalId={selectedCanonicalId}
           orders={orders}
-          isSupplier={isSupplier}
           submitting={submitting}
           onBack={() => onSelect(null)}
           onSubmit={onSubmit}
@@ -319,28 +288,21 @@ function FromLibraryBody({
 function ConfigureFromLibrary({
   canonicalId,
   orders,
-  isSupplier,
   submitting,
   onBack,
   onSubmit,
 }: {
   canonicalId: number;
   orders: Order[];
-  isSupplier: boolean;
   submitting: boolean;
   onBack: () => void;
   onSubmit: (payload: {
-    canonicalName: string;
-    canonicalId: number;
+    identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
-    starting_state: StartingState;
-    peer_instance_id?: number;
   }) => void;
 }) {
   const [detail, setDetail] = useState<CanonicalDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [startingState, setStartingState] = useState<StartingState>('blank');
-  const [peerId, setPeerId] = useState<number | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -352,7 +314,6 @@ function ConfigureFromLibrary({
         if (cancel) return;
         setDetail(d);
         setSelectedOrderIds(new Set());
-        setPeerId(null);
       } catch (err: any) {
         if (!cancel) toast.error(err?.response?.data?.detail || 'Failed to load component detail');
       } finally {
@@ -371,18 +332,12 @@ function ConfigureFromLibrary({
     );
   }
 
-  // Exclude orders already using this canonical from the target picker
-  const excludedOrderIds = new Set(detail.instances.map((i) => i.order_id));
-  const eligibleOrders = orders.filter((o) => !excludedOrderIds.has(o.id));
-
-  const canCopy = detail.instances.length > 0;
   const tag = SAMPLE_TAGS[detail.sample_type];
-
-  const canSubmit = selectedOrderIds.size > 0 && (startingState !== 'copy' || peerId !== null);
+  const canSubmit = selectedOrderIds.size > 0 && !submitting;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Identity mini-header */}
+      {/* Identity mini-header — read-only preview of what will be copied */}
       <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0">
         <button onClick={onBack} className="p-1 text-gray-400 hover:text-gray-700 md:hidden">
           <ArrowLeft className="w-4 h-4" />
@@ -392,50 +347,30 @@ function ConfigureFromLibrary({
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-bold text-gray-900 truncate">{detail.name}</div>
-          <div className="text-[11px] text-gray-500 truncate">
-            {detail.description || <span className="italic text-gray-400">No description</span>}
-            {detail.spec_url && <> · 📎 spec</>}
-            <span> · used on {detail.instances.length} style{detail.instances.length === 1 ? '' : 's'}</span>
+          <div className="text-[11px] text-gray-500 truncate flex items-center gap-1.5 flex-wrap">
+            {detail.colour && <span>{detail.colour}</span>}
+            {detail.position && detail.position.length > 0 && detail.position.map((p) => (
+              <span key={p} className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 rounded px-1 py-0.5">{p}</span>
+            ))}
+            {detail.spec_url && <span>· 📎 spec</span>}
+            {detail.description && <span className="italic">· {detail.description}</span>}
           </div>
         </div>
       </div>
 
-      {/* Scrollable configure area */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-        {/* Starting state */}
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Starting state for the new instances</div>
-          <div className="grid grid-cols-2 gap-2">
-            <StartingStateTile
-              on={startingState === 'blank'}
-              onClick={() => setStartingState('blank')}
-              title="Blank"
-              body="Status empty, no dates. Standard for a new sample going out."
-            />
-            <StartingStateTile
-              on={startingState === 'copy'}
-              onClick={() => canCopy && setStartingState('copy')}
-              disabled={!canCopy}
-              disabledHint="No existing instances to copy from"
-              title="Copy from another style"
-              body="Inherit state, dates, and attempt history from a peer style — including if it's already Approved."
-            />
-          </div>
-        </div>
+      {/* Notice: fresh canonical every time */}
+      <div className="px-6 py-2 border-b border-gray-100 bg-violet-50/40 flex items-start gap-2 flex-shrink-0">
+        <Info className="w-3.5 h-3.5 text-violet-600 mt-0.5 flex-shrink-0" />
+        <p className="text-[11px] text-violet-800 leading-relaxed">
+          A new library entry will be created using the identity above. Instances start blank on the styles you pick — no link to the entry above, no state inheritance.
+        </p>
+      </div>
 
-        {/* Copy peer picker */}
-        {startingState === 'copy' && (
-          <CopyPeerPicker
-            instances={detail.instances}
-            peerId={peerId}
-            onPickPeer={setPeerId}
-          />
-        )}
-
-        {/* Target style picker */}
+      {/* Scrollable target picker */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
         <TargetStylePicker
-          orders={eligibleOrders}
-          excludedCount={detail.instances.length}
+          orders={orders}
+          excludedCount={0}
           selected={selectedOrderIds}
           onChange={setSelectedOrderIds}
         />
@@ -453,13 +388,18 @@ function ConfigureFromLibrary({
           Back
         </button>
         <button
-          disabled={!canSubmit || submitting}
+          disabled={!canSubmit}
           onClick={() => onSubmit({
-            canonicalName: detail.name,
-            canonicalId: detail.id,
+            identity: {
+              name: detail.name,
+              sample_type: detail.sample_type,
+              colour: detail.colour || '',
+              description: detail.description || undefined,
+              position: detail.position && detail.position.length > 0 ? detail.position : undefined,
+              spec_url: detail.spec_url || undefined,
+              supplier_notes: detail.supplier_notes || undefined,
+            },
             order_ids: Array.from(selectedOrderIds),
-            starting_state: startingState,
-            peer_instance_id: startingState === 'copy' ? (peerId || undefined) : undefined,
           })}
           className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -467,103 +407,6 @@ function ConfigureFromLibrary({
           Add to {selectedOrderIds.size} style{selectedOrderIds.size === 1 ? '' : 's'}
         </button>
       </div>
-    </div>
-  );
-}
-
-function StartingStateTile({
-  on,
-  onClick,
-  title,
-  body,
-  disabled,
-  disabledHint,
-}: {
-  on: boolean;
-  onClick: () => void;
-  title: string;
-  body: string;
-  disabled?: boolean;
-  disabledHint?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? disabledHint : undefined}
-      className={cn(
-        'rounded-lg border p-3 text-left transition',
-        on ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-200' : 'border-gray-200 bg-white hover:border-gray-300',
-        disabled && 'opacity-40 cursor-not-allowed',
-      )}
-    >
-      <div className="text-[12px] font-bold text-gray-900">{title}</div>
-      <div className="text-[10px] text-gray-500 mt-0.5 leading-snug">{body}</div>
-      {disabled && disabledHint && (
-        <div className="text-[10px] text-gray-400 italic mt-1">{disabledHint}</div>
-      )}
-    </button>
-  );
-}
-
-function CopyPeerPicker({
-  instances,
-  peerId,
-  onPickPeer,
-}: {
-  instances: CanonicalInstance[];
-  peerId: number | null;
-  onPickPeer: (id: number) => void;
-}) {
-  const peer = instances.find((i) => i.instance_id === peerId) || null;
-  return (
-    <div className="rounded-lg border border-gray-200 overflow-hidden">
-      <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Copy state from</span>
-        <span className="text-[10px] text-gray-500 tabular-nums">{instances.length} styles use this component</span>
-      </div>
-      <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
-        {instances.map((i) => {
-          const on = i.instance_id === peerId;
-          const s = (i.status || '').toUpperCase();
-          const pill =
-            s === 'APPROVED' ? 'bg-green-100 text-green-700'
-            : s === 'RECEIVED' ? 'bg-blue-100 text-blue-700'
-            : s === 'OUTSTANDING' ? 'bg-amber-100 text-amber-700'
-            : 'bg-gray-100 text-gray-500';
-          const dateLabel =
-            i.approved ? `Approved ${fmt(i.approved)}`
-            : i.received ? `Received ${fmt(i.received)}`
-            : s || 'Not started';
-          return (
-            <label
-              key={i.instance_id}
-              className={cn('flex items-center gap-3 px-3 py-2 text-[12px] cursor-pointer', on ? 'bg-violet-50' : 'hover:bg-gray-50')}
-            >
-              <input
-                type="radio"
-                name="peer"
-                checked={on}
-                onChange={() => onPickPeer(i.instance_id)}
-                className="w-3.5 h-3.5 text-violet-600 focus:ring-violet-500 focus:ring-offset-0"
-              />
-              <span className="font-mono tabular-nums text-gray-700">{i.style_code || `#${i.order_id}`}</span>
-              <span className="flex-1 truncate text-gray-500">
-                {i.customer || '—'} · PO {i.po_number}{i.description ? ` · ${i.description}` : ''}
-              </span>
-              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-semibold', pill)}>{dateLabel}</span>
-            </label>
-          );
-        })}
-      </div>
-      {peer && (
-        <div className="px-3 py-2 border-t border-gray-100 bg-violet-50/50 text-[11px] text-violet-900">
-          Copying from <span className="font-semibold">{peer.style_code}</span> —
-          new instances will land as <span className="font-semibold">{(peer.status || 'blank').toUpperCase()}</span>
-          {peer.approved && <> (dated {fmt(peer.approved)})</>}
-          , attempt history carried over.
-        </div>
-      )}
     </div>
   );
 }
@@ -731,7 +574,7 @@ function TargetStylePicker({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Create new body — identity form + starting state + target picker
+// Create new body — identity form + target picker
 // ─────────────────────────────────────────────────────────────────────────
 
 function CreateNewBody({
@@ -746,7 +589,6 @@ function CreateNewBody({
   onSubmit: (payload: {
     identity: { name: string; sample_type: SampleType; colour: string; description?: string; position?: string[]; spec_url?: string; supplier_notes?: string };
     order_ids: number[];
-    starting_state: StartingState;
   }) => Promise<void> | void;
 }) {
   const [name, setName] = useState('');
@@ -754,13 +596,13 @@ function CreateNewBody({
   const [description, setDescription] = useState('');
   const [colour, setColour] = useState('');
   const [positions, setPositions] = useState<CanonicalPosition[]>([]);
+  const [specUrl, setSpecUrl] = useState('');
+  const [supplierNotes, setSupplierNotes] = useState('');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
 
   function togglePosition(p: CanonicalPosition) {
     setPositions((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
-  const [specUrl, setSpecUrl] = useState('');
-  const [supplierNotes, setSupplierNotes] = useState('');
-  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
 
   const colourRequired = sampleType === 'strike_off' || sampleType === 'lab_dip';
   const colourMissing = colourRequired && !colour.trim();
@@ -789,7 +631,6 @@ function CreateNewBody({
                 onChange={(e) => {
                   const st = e.target.value as SampleType;
                   setSampleType(st);
-                  // Position only applies to strike-offs; clear otherwise.
                   if (st !== 'strike_off') setPositions([]);
                 }}
                 className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
@@ -893,11 +734,6 @@ function CreateNewBody({
           </div>
         </div>
 
-        {/* New canonicals always start blank — there's no peer to copy from
-            and marking-approved is intentionally not a shortcut here. Users
-            who want an approved starting state pick From library and Copy
-            from another style that's already been approved. */}
-
         {/* Target styles */}
         <TargetStylePicker
           orders={orders}
@@ -925,20 +761,13 @@ function CreateNewBody({
               supplier_notes: supplierNotes.trim() || undefined,
             },
             order_ids: Array.from(selectedOrderIds),
-            starting_state: 'blank',
           })}
           className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Create & add to {selectedOrderIds.size} style{selectedOrderIds.size === 1 ? '' : 's'}
+          Create &amp; add to {selectedOrderIds.size} style{selectedOrderIds.size === 1 ? '' : 's'}
         </button>
       </div>
     </div>
   );
-}
-
-function fmt(iso: string | null | undefined) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }

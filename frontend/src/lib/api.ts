@@ -422,6 +422,17 @@ export const componentsApi = {
     return response.data;
   },
 
+  /** Cross-PO sibling lookup — every style whose component instance is
+   *  linked to the same canonical (i.e. was added in the same batch). */
+  getStylesWithCanonical: async (canonicalId: number): Promise<{
+    styles: { id: number; po_number: string; customer: string; style_code: string; description: string; colour: string; component_id: number }[];
+  }> => {
+    const response = await api.get('/api/components/styles-with-canonical', {
+      params: { canonical_id: canonicalId },
+    });
+    return response.data;
+  },
+
   // Component library (canonical entries) — /components page
   listLibrary: async (params?: {
     q?: string;

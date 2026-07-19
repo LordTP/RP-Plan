@@ -52,7 +52,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   // Sticky scope for the whole modal session: edit only this component, all
   // siblings on the PO with the same name, or a hand-picked subset.
   const [scope, setScope] = useState<'single' | 'all' | 'selected'>('single');
-  const [siblings, setSiblings] = useState<{ id: number; style_code: string; description: string; colour: string; component_id: number }[]>([]);
+  const [siblings, setSiblings] = useState<{ id: number; po_number?: string; customer?: string; style_code: string; description: string; colour: string; component_id: number }[]>([]);
   const [selectedSiblingOrderIds, setSelectedSiblingOrderIds] = useState<Set<number>>(new Set());
   const siblingCount = siblings.length;
 
@@ -61,26 +61,34 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   const [comp, setComp] = useState<OrderComponent>(component);
   useEffect(() => { setComp(component); }, [component]);
 
-  // How many other styles on this PO have a component with the same name?
-  // Used to label the "All on PO" scope option.
+  // Sibling lookup — prefer canonical (across POs, added-together batch)
+  // when the instance has one; fall back to the legacy by-name / same-PO
+  // lookup for pre-canonical rows.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    componentsApi.getStylesWithComponent(order.po_number, component.name)
-      .then((res) => {
+    const lookup = component.canonical_id != null
+      ? componentsApi.getStylesWithCanonical(component.canonical_id).then((res) => res.styles)
+      : componentsApi.getStylesWithComponent(order.po_number, component.name)
+          .then((res) => res.styles.map((s) => ({
+            ...s,
+            po_number: order.po_number,
+            customer: order.customer || '',
+          })));
+    lookup
+      .then((styles) => {
         if (cancelled) return;
-        const others = res.styles.filter((s) => s.component_id !== component.id);
+        const others = styles.filter((s) => s.component_id !== component.id);
         setSiblings(others);
         // Default the selected-subset to all siblings ticked, so the user
         // can quickly DESELECT the ones they don't want.
         setSelectedSiblingOrderIds(new Set(others.map((s) => s.id)));
       })
       .catch((err) => {
-        // Don't fail silently — let us see if the lookup is broken.
         console.error('Failed to fetch sibling components', err);
       });
     return () => { cancelled = true; };
-  }, [open, component.id, component.name, order.po_number]);
+  }, [open, component.id, component.name, component.canonical_id, order.po_number, order.customer]);
 
   // Esc to close
   useEffect(() => {
@@ -111,9 +119,13 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
       const useBulk = (scope === 'all' && siblingCount > 0) ||
                       (scope === 'selected' && selectedSiblingOrderIds.size > 0);
       if (useBulk) {
-        // Always include the current order so the edit applies to it.
+        // For 'all' scope with a canonical link, siblings can span POs so we
+        // must send the full order_id list — the backend's fallback "all on
+        // this PO" would miss cross-PO siblings otherwise. Legacy rows (no
+        // canonical) still use "all on PO" via the undefined shortcut.
+        const canonicalAware = component.canonical_id != null;
         const orderIds = scope === 'all'
-          ? undefined  // omit → backend treats as "all on PO"
+          ? (canonicalAware ? [order.id, ...siblings.map((s) => s.id)] : undefined)
           : [order.id, ...Array.from(selectedSiblingOrderIds)];
         const res = await componentsApi.applyFieldToPO(component.id, {
           [field]: value,
@@ -230,7 +242,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
               onClick={() => siblingCount > 0 && setScope('all')}
               disabled={siblingCount === 0}
               title={siblingCount === 0
-                ? `No other styles on ${order.po_number} have a component called "${comp.name}".`
+                ? `No other styles share "${comp.name}" with this one.`
                 : undefined}
               className={cn(
                 'px-2.5 py-1 rounded-md font-medium transition-colors',
@@ -241,7 +253,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                     : 'text-gray-600 hover:bg-white ring-1 ring-gray-200'
               )}
             >
-              All {siblingCount + 1} styles on PO
+              All {siblingCount + 1} styles with this component
             </button>
             <button
               onClick={() => siblingCount > 0 && setScope('selected')}
@@ -264,12 +276,13 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
             </button>
             {scope === 'all' && siblingCount > 0 && (
               <span className="text-violet-700 italic ml-1">
-                Pushes to every <strong>"{comp.name}"</strong> on {order.po_number}
+                Pushes to every style linked to <strong>"{comp.name}"</strong>
+                {component.canonical_id != null ? ' (across POs where applicable)' : ` on ${order.po_number}`}
               </span>
             )}
             {siblingCount === 0 && (
               <span className="text-gray-400 italic ml-1">
-                Only one style on {order.po_number} has <strong>"{comp.name}"</strong>.
+                No other styles share <strong>"{comp.name}"</strong> with this one.
               </span>
             )}
           </div>
@@ -289,20 +302,56 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                   {selectedSiblingOrderIds.size === siblings.length ? 'Deselect all' : 'Select all'}
                 </button>
               </div>
-              <div className="border border-gray-200 rounded-md bg-white max-h-40 overflow-y-auto divide-y divide-gray-100">
-                {siblings.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-3 h-3 rounded border-gray-300"
-                      checked={selectedSiblingOrderIds.has(s.id)}
-                      onChange={() => toggleSelectedSibling(s.id)}
-                    />
-                    <span className="font-mono text-gray-700">{s.style_code}</span>
-                    <span className="text-gray-500 truncate flex-1">{s.description}</span>
-                    {s.colour && <span className="text-gray-400">{s.colour}</span>}
-                  </label>
-                ))}
+              <div className="border border-gray-200 rounded-md bg-white max-h-48 overflow-y-auto divide-y divide-gray-100">
+                {(() => {
+                  // Group siblings by PO number so cross-PO cases read clearly.
+                  const groups = new Map<string, typeof siblings>();
+                  for (const s of siblings) {
+                    const po = s.po_number || order.po_number || '—';
+                    if (!groups.has(po)) groups.set(po, []);
+                    groups.get(po)!.push(s);
+                  }
+                  const ordered = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+                  return ordered.map(([po, group]) => {
+                    const anyOn = group.some((s) => selectedSiblingOrderIds.has(s.id));
+                    const allOn = group.every((s) => selectedSiblingOrderIds.has(s.id));
+                    const customer = group[0]?.customer;
+                    return (
+                      <div key={po}>
+                        <div className="flex items-center gap-2 px-2.5 py-1 bg-gray-50 text-[10px] uppercase tracking-widest font-bold text-gray-500 border-b border-gray-100">
+                          <input
+                            type="checkbox"
+                            className="w-3 h-3 rounded border-gray-300"
+                            checked={allOn}
+                            ref={(el) => { if (el) el.indeterminate = !allOn && anyOn; }}
+                            onChange={() => {
+                              const next = new Set(selectedSiblingOrderIds);
+                              if (allOn) group.forEach((s) => next.delete(s.id));
+                              else group.forEach((s) => next.add(s.id));
+                              setSelectedSiblingOrderIds(next);
+                            }}
+                          />
+                          <span>PO {po}</span>
+                          {customer && <span className="normal-case tracking-normal font-medium text-gray-600 truncate">· {customer}</span>}
+                          <span className="ml-auto text-gray-400 tabular-nums normal-case tracking-normal">{group.length}</span>
+                        </div>
+                        {group.map((s) => (
+                          <label key={s.id} className="flex items-center gap-2 px-2.5 py-1.5 pl-6 text-[11px] hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="w-3 h-3 rounded border-gray-300"
+                              checked={selectedSiblingOrderIds.has(s.id)}
+                              onChange={() => toggleSelectedSibling(s.id)}
+                            />
+                            <span className="font-mono text-gray-700">{s.style_code}</span>
+                            <span className="text-gray-500 truncate flex-1">{s.description}</span>
+                            {s.colour && <span className="text-gray-400">{s.colour}</span>}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

@@ -169,6 +169,9 @@ export type ComponentSampleType = 'strike_off' | 'lab_dip' | 'label';
 export interface OrderComponent {
   id: number;
   order_id: number;
+  /** FK to the canonical library entry. Populated for every instance
+   *  created via the library-first Add modal + auto-migrated legacy rows. */
+  canonical_id?: number | null;
   name: string;
   sample_type: ComponentSampleType;
   fit_sample_status?: string | null;

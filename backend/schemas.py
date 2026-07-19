@@ -193,6 +193,9 @@ class PurchaseOrderSupplierUpdate(BaseModel):
 class ComponentResponse(BaseModel):
     id: int
     order_id: int
+    # FK to the canonical library entry. Nullable so legacy rows and
+    # supplier-scoped queries stay backwards-compatible.
+    canonical_id: Optional[int] = None
     name: str
     # Which sample type this component tracks. 'strike_off' or 'lab_dip'.
     sample_type: str

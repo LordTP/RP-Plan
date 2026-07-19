@@ -668,14 +668,19 @@ async def apply_component_field_to_po(
     else:
         sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number)
     sibling_ids = [r[0] for r in apply_supplier_filter(sibling_ids_q, current_user).all()]
-    # Match by name AND sample_type so we only apply to siblings of the same
-    # type as the source. e.g. updating a strike-off "Pocket" component
-    # doesn't touch a lab-dip "Pocket" component on a sibling order.
-    matching = db.query(OrderComponent).filter(
-        OrderComponent.order_id.in_(sibling_ids),
-        OrderComponent.name == component.name,
-        OrderComponent.sample_type == component.sample_type,
-    ).all()
+    # Match sibling instances. When the source has a canonical_id, prefer
+    # that — under the per-add-event model it's the truest "linked" signal
+    # and avoids accidentally hitting a same-named but unrelated canonical.
+    # Fall back to name + sample_type for legacy rows with no canonical link.
+    match_q = db.query(OrderComponent).filter(OrderComponent.order_id.in_(sibling_ids))
+    if component.canonical_id is not None:
+        match_q = match_q.filter(OrderComponent.canonical_id == component.canonical_id)
+    else:
+        match_q = match_q.filter(
+            OrderComponent.name == component.name,
+            OrderComponent.sample_type == component.sample_type,
+        )
+    matching = match_q.all()
     # Remaining keys in body are the fields to update
     allowed_fields = {
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
@@ -753,6 +758,37 @@ async def get_styles_with_component(
                 "colour": o.colour or "",
                 "component_id": comp.id,
             })
+    return {"styles": results}
+
+
+@router.get("/api/components/styles-with-canonical")
+async def get_styles_with_canonical(
+    canonical_id: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every style with a component instance linked to this canonical, joined
+    with basic order metadata so the caller can render a PO-grouped picker.
+    Supplier scope respected."""
+    supplier_clauses = supplier_filter_clause(current_user)
+    query = (
+        db.query(OrderComponent, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+        .filter(OrderComponent.canonical_id == canonical_id)
+    )
+    if supplier_clauses:
+        query = query.filter(*supplier_clauses)
+    results = []
+    for oc, po in query.all():
+        results.append({
+            "id": po.id,
+            "po_number": po.po_number or "",
+            "customer": po.customer or "",
+            "style_code": po.style_code or "",
+            "description": po.description or "",
+            "colour": po.colour or "",
+            "component_id": oc.id,
+        })
     return {"styles": results}
 
 
