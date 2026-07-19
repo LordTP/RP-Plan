@@ -592,7 +592,10 @@ function CreateNewBody({
   }) => Promise<void> | void;
 }) {
   const [name, setName] = useState('');
-  const [sampleType, setSampleType] = useState<SampleType>('strike_off');
+  // Sample type has no sensible default — Strike Off / Lab Dip / Label are
+  // fundamentally different sample flows, and picking the wrong one is
+  // permanent (locked after creation). Force an explicit choice.
+  const [sampleType, setSampleType] = useState<SampleType | ''>('');
   const [description, setDescription] = useState('');
   const [colour, setColour] = useState('');
   const [positions, setPositions] = useState<CanonicalPosition[]>([]);
@@ -604,9 +607,10 @@ function CreateNewBody({
     setPositions((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
+  const sampleTypeMissing = !sampleType;
   const colourRequired = sampleType === 'strike_off' || sampleType === 'lab_dip';
   const colourMissing = colourRequired && !colour.trim();
-  const canSubmit = name.trim() && !colourMissing && selectedOrderIds.size > 0;
+  const canSubmit = name.trim() && !sampleTypeMissing && !colourMissing && selectedOrderIds.size > 0;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -625,16 +629,22 @@ function CreateNewBody({
               />
             </div>
             <div>
-              <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Sample type</label>
+              <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                Sample type <span className="text-red-500 normal-case tracking-normal">(required)</span>
+              </label>
               <select
                 value={sampleType}
                 onChange={(e) => {
-                  const st = e.target.value as SampleType;
+                  const st = e.target.value as SampleType | '';
                   setSampleType(st);
                   if (st !== 'strike_off') setPositions([]);
                 }}
-                className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className={cn(
+                  'w-full px-3 py-1.5 text-sm bg-white border rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500',
+                  sampleTypeMissing ? 'border-red-300 text-gray-400' : 'border-gray-300',
+                )}
               >
+                <option value="" disabled>— Pick a type —</option>
                 <option value="strike_off">Strike Off</option>
                 <option value="lab_dip">Lab Dip</option>
                 <option value="label">Label</option>
@@ -750,18 +760,26 @@ function CreateNewBody({
         </span>
         <button
           disabled={!canSubmit || submitting}
-          onClick={() => onSubmit({
-            identity: {
-              name: name.trim().toUpperCase(),
-              sample_type: sampleType,
-              colour: colour.trim(),
-              description: description.trim() || undefined,
-              position: sampleType === 'strike_off' && positions.length > 0 ? positions : undefined,
-              spec_url: specUrl.trim() || undefined,
-              supplier_notes: supplierNotes.trim() || undefined,
-            },
-            order_ids: Array.from(selectedOrderIds),
-          })}
+          onClick={() => {
+            // canSubmit guarantees sampleType is set — narrow for TS + belt-and-braces
+            // guard against a stale keyboard-triggered click bypassing the disabled state.
+            if (!sampleType) {
+              toast.error('Pick a sample type before creating.');
+              return;
+            }
+            onSubmit({
+              identity: {
+                name: name.trim().toUpperCase(),
+                sample_type: sampleType,
+                colour: colour.trim(),
+                description: description.trim() || undefined,
+                position: sampleType === 'strike_off' && positions.length > 0 ? positions : undefined,
+                spec_url: specUrl.trim() || undefined,
+                supplier_notes: supplierNotes.trim() || undefined,
+              },
+              order_ids: Array.from(selectedOrderIds),
+            });
+          }}
           className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
