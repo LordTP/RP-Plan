@@ -84,7 +84,11 @@ services:
       # secure' in Sep 2026 after the Aug 24 expiry (cert on disk was
       # already Oct 23, nginx just hadn't been told).
       - /var/run/docker.sock:/var/run/docker.sock
-    entrypoint: "/bin/sh -c 'apk add --no-cache docker-cli >/dev/null 2>&1; trap exit TERM; while :; do certbot renew --deploy-hook \"docker exec app_nginx_1 nginx -s reload\"; sleep 12h & wait $${!}; done;'"
+    # Hook uses a name-pattern lookup rather than a hardcoded container name
+    # so it survives docker-compose v2's underscore->hyphen rename on any
+    # future `up -d --force-recreate nginx` (would change app_nginx_1 to
+    # app-nginx-1 and silently break a hardcoded hook).
+    entrypoint: "/bin/sh -c 'apk add --no-cache docker-cli >/dev/null 2>&1; trap exit TERM; while :; do certbot renew --deploy-hook \"docker exec \\$$(docker ps -qf name=nginx) nginx -s reload\"; sleep 12h & wait $${!}; done;'"
 
 volumes:
   postgres_data:
