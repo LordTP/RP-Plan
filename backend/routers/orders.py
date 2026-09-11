@@ -251,15 +251,15 @@ async def get_orders(
     
     # Apply pagination
     offset = (page - 1) * page_size
-    # Deterministic multi-tier sort: PO# → Customer PO# → Style Code → id.
-    # The previous single-field sort on system_po_number tied on "TBC" for
-    # most rows and let PostgreSQL return them in physical order, which
-    # interleaved POs as rows got updated. This guarantees rows for the
-    # same PO always sit together and never shuffle on edit.
+    # Sort by insertion id (Sep 2026 change) so the /orders list mirrors the
+    # order rows arrived — Excel imports land in file order at the bottom;
+    # newly-added-via-app rows always appear at the end. Previous multi-tier
+    # sort (PO#/Customer PO#/Style/id) grouped rows by PO for lookup ergonomics
+    # but reshuffled the list every import, which surprised merch and made
+    # "what did I just add?" invisible. If we ever want the PO-cluster view
+    # back, plan is to add a sort-by-PO toggle on the /orders header rather
+    # than flip the default again.
     orders = query.order_by(
-        PurchaseOrder.po_number.asc(),
-        PurchaseOrder.customer_po_number.asc(),
-        PurchaseOrder.style_code.asc(),
         PurchaseOrder.id.asc(),
     ).offset(offset).limit(page_size).all()
     
@@ -680,6 +680,17 @@ async def update_order(
                 apply_date_field(order, key, value)
                 new_date = getattr(order, key)
                 new_note = (order.date_notes or {}).get(key)
+                # Throwaway logging for the reported "set new revised ex-factory,
+                # toast saved but value doesn't persist" bug. Captures the full
+                # incoming/parsed/final state so the next repro is diagnosable
+                # from container logs. Safe to remove once the report is closed.
+                if key == 'revised_po_ex_factory':
+                    print(
+                        f"[revised_po_ex_factory] po_id={order.id} user={current_user.username}"
+                        f" incoming={value!r} old_date={old_date} old_note={old_note!r}"
+                        f" new_date={new_date} new_note={new_note!r}",
+                        flush=True,
+                    )
                 if (old_date != new_date) or (old_note != new_note):
                     role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
                     change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
@@ -799,8 +810,27 @@ async def update_order(
     if order.trade_price is not None and order.total_quantity is not None:
         order.total_order_value = round(order.trade_price * order.total_quantity, 2)
 
-    # If revised_po_ex_factory is blank, default to factory_confirmed_ex_factory
-    if not order.revised_po_ex_factory and order.factory_confirmed_ex_factory:
+    # If revised_po_ex_factory is blank AND the incoming payload didn't touch
+    # it, default to factory_confirmed_ex_factory. The payload check is the
+    # important bit: without it, a Sourcelab user clearing the field (payload
+    # says "revised_po_ex_factory: null" or "") gets silently reverted to
+    # factory_confirmed on the way out, toast fires "Updated successfully",
+    # UI shows the reverted date. Real user report Aug 2026. The default-back
+    # itself is still useful for orders that never had a revised set (e.g.
+    # freshly imported rows where an unrelated field is being edited later).
+    if (
+        'revised_po_ex_factory' not in order_data
+        and not order.revised_po_ex_factory
+        and order.factory_confirmed_ex_factory
+    ):
+        # Throwaway log — see the DATE_NOTE_FIELDS block for revised_po_ex_factory
+        # above. Confirms auto-default didn't fire on a payload that included
+        # the field (which would be the silent-revert bug).
+        print(
+            f"[revised_po_ex_factory] po_id={order.id} auto-default fired"
+            f" (payload didn't include field) -> {order.factory_confirmed_ex_factory}",
+            flush=True,
+        )
         order.revised_po_ex_factory = order.factory_confirmed_ex_factory
 
     # Auto-calculate ETA dates when revised_po_ex_factory changes
