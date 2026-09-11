@@ -8,6 +8,7 @@ import {
   X,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Package,
   MessageSquare,
   Calendar,
@@ -27,7 +28,7 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { useStore } from '@/store/useStore';
-import { ordersApi, statusesApi, settingsApi, componentsApi, OrderFilters } from '@/lib/api';
+import { ordersApi, statusesApi, settingsApi, componentsApi, excelApi, OrderFilters } from '@/lib/api';
 import { LibraryFirstAddModal } from '@/components/orders/LibraryFirstAddModal';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
@@ -38,6 +39,24 @@ import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, BulkBar } from '@/components/orders/v2-list-primitives';
+import {
+  OrderTableV2,
+  sortGroups,
+  compareStyles,
+  effectiveExFactory,
+  matchesExFacWindow,
+  statusDotHex,
+  getStatusStyle,
+  timeAgo,
+  formatDate,
+  formatCurrency,
+  formatQty,
+  EXFAC_WINDOW_LABEL,
+  type POGroup,
+  type SortKey,
+  type ExFacWindow,
+} from '@/components/orders/v2-list-shared';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
@@ -46,64 +65,14 @@ import { SupplierChangeTracker } from '@/components/supplier/SupplierChangeTrack
 
 // ─── Helpers ───────────────────────────────────────────────
 
-function timeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return '';
-  try {
-    return formatDistanceToNow(parseISO(dateStr), { addSuffix: true });
-  } catch {
-    return '';
-  }
-}
 
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—';
-  try {
-    return format(parseISO(dateStr), 'dd MMM yyyy');
-  } catch {
-    return dateStr;
-  }
-}
 
-function formatCurrency(val: number | null | undefined): string {
-  if (val == null) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-}
 
-function formatQty(val: number | null | undefined): string {
-  if (val == null) return '—';
-  return val.toLocaleString();
-}
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  'In Production': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400' },
-  'Pending Approval': { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
-  'Shipped': { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-400' },
-  'Delivered': { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-400' },
-  'Cancelled': { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-400' },
-  'On Hold': { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
-  'In Transit': { bg: 'bg-indigo-50', text: 'text-indigo-700', dot: 'bg-indigo-400' },
-  'Order Confirmed': { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-400' },
-};
 
-function getStatusStyle(status: string | undefined) {
-  if (!status) return { bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-300' };
-  return STATUS_COLORS[status] || { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
-}
 
 // ─── Types ─────────────────────────────────────────────────
 
-interface POGroup {
-  po_number: string;
-  customer: string;
-  factory: string;
-  styles: Order[];
-  totalQty: number;
-  totalValue: number;
-  statusSummary: string;
-  latestDate: string | null;
-  unreadComments: number;
-  latestUpdate: string;
-}
 
 // ─── Public Props ──────────────────────────────────────────
 
@@ -175,6 +144,32 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [dateReqModal, setDateReqModal] = useState<{ orderId: number } | null>(null);
   const [dateReqField, setDateReqField] = useState<string>('revised_po_ex_factory');
   const [dateReqValue, setDateReqValue] = useState<string>('');
+
+  // ─── List rework state (Sep 2026) ───────────────────────────────────
+  // Mirrors /orders-v2. Factory keeps its own copy rather than sharing a
+  // hook because the surrounding data flow differs (local state, no
+  // global store) — the shared parts are the table + model, not this.
+  const [customerF, setCustomerF] = useState<string | null>(null);
+  const [exFacWindow, setExFacWindow] = useState<ExFacWindow>('');
+  const [lateOnly, setLateOnly] = useState(false);
+  const [missingDatesOnly, setMissingDatesOnly] = useState(false);
+  const [groupByPO, setGroupByPO] = useState(true);
+  const [sortKey, setSortKey] = useState<SortKey>('exfac');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const lastClickedId = useRef<number | null>(null);
+
+  const toggleSort = useCallback((key: string) => {
+    const k = key as SortKey;
+    setSortKey((prev) => {
+      if (prev === k) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDir(k === 'qty' || k === 'value' ? 'desc' : 'asc');
+      return k;
+    });
+  }, []);
   // Bumped after every successful date request, to nudge SupplierChangeTracker
   // to re-fetch and show the new pending entry.
   const [trackerRefreshKey, setTrackerRefreshKey] = useState(0);
@@ -239,6 +234,14 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
+    // Chip filters — line-level, so a mixed PO survives if any of its
+    // styles match. No factory chip here: a supplier only ever sees their
+    // own factory, so it would be a one-option dropdown.
+    if (customerF) filtered = filtered.filter(o => (o.customer || '') === customerF);
+    if (exFacWindow) filtered = filtered.filter(o => matchesExFacWindow(o, exFacWindow));
+    if (lateOnly) filtered = filtered.filter(o => !!o.is_late);
+    if (missingDatesOnly) filtered = filtered.filter(o => !effectiveExFactory(o));
+
     const groups: Record<string, POGroup> = {};
     for (const order of filtered) {
       const po = order.po_number;
@@ -292,7 +295,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       if (!a.latestDate && b.latestDate) return 1;
       return b.latestUpdate.localeCompare(a.latestUpdate);
     });
-  }, [orders, searchQuery, statusFilter]);
+  }, [orders, searchQuery, statusFilter, customerF, exFacWindow, lateOnly, missingDatesOnly]);
 
   const statusCounts = useMemo(() => {
     // Line-level counts (this view aggregates by line, not PO).
@@ -306,6 +309,152 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
     }
     return counts;
   }, [orders]);
+
+  // ─── Tiles, chips, sorting, selection ───────────────────────────────
+  // Tile counts are PO-level (unlike statusCounts above, which this view
+  // keeps line-level for its existing chips) and come off the UNFILTERED
+  // set so the row keeps showing the whole picture while drilled in.
+  const statusTiles = useMemo(() => {
+    const byStatus = new Map<string, { pos: Set<string>; units: number; value: number }>();
+    for (const o of orders) {
+      const s = o.status || 'Unknown';
+      let e = byStatus.get(s);
+      if (!e) { e = { pos: new Set(), units: 0, value: 0 }; byStatus.set(s, e); }
+      e.pos.add(o.po_number);
+      e.units += o.total_quantity || 0;
+      e.value += o.total_order_value || 0;
+    }
+    return Array.from(byStatus.entries())
+      .map(([status, e]) => ({ status, poCount: e.pos.size, units: e.units, value: e.value }))
+      .sort((a, b) => b.poCount - a.poCount);
+  }, [orders]);
+
+  const lateTile = useMemo(() => {
+    const pos = new Set<string>();
+    let units = 0;
+    for (const o of orders) {
+      if (!o.is_late) continue;
+      pos.add(o.po_number);
+      units += o.total_quantity || 0;
+    }
+    return { poCount: pos.size, units };
+  }, [orders]);
+
+  const openPoCount = useMemo(() => {
+    const TERMINAL = new Set(['Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled']);
+    const pos = new Set<string>();
+    for (const o of orders) if (!TERMINAL.has(o.status || '')) pos.add(o.po_number);
+    return pos.size;
+  }, [orders]);
+
+  const allPoCount = useMemo(() => new Set(orders.map(o => o.po_number)).size, [orders]);
+
+  const customerOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of orders) {
+      const c = o.customer || '';
+      if (!c) continue;
+      if (!m.has(c)) m.set(c, new Set());
+      m.get(c)!.add(o.po_number);
+    }
+    return Array.from(m.entries())
+      .map(([v, pos]) => [v, pos.size] as [string, number])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [orders]);
+
+  const anyFilter = !!(customerF || exFacWindow || lateOnly || missingDatesOnly || searchQuery.trim());
+
+  const clearFilters = () => {
+    setCustomerF(null);
+    setExFacWindow('');
+    setLateOnly(false);
+    setMissingDatesOnly(false);
+    setSearchQuery('');
+  };
+
+  const visibleTotals = useMemo(() => {
+    let styles = 0, units = 0, value = 0;
+    for (const g of poGroups) {
+      styles += g.styles.length;
+      units += g.totalQty;
+      value += g.totalValue;
+    }
+    return { pos: poGroups.length, styles, units, value };
+  }, [poGroups]);
+
+  const sortedGroups = useMemo(() => sortGroups(poGroups, sortKey, sortDir), [poGroups, sortKey, sortDir]);
+
+  const flatRows = useMemo(
+    () => poGroups.flatMap(g => g.styles).sort((a, b) => compareStyles(a, b, sortKey, sortDir)),
+    [poGroups, sortKey, sortDir],
+  );
+
+  const selectableRows = useMemo(() => {
+    if (!groupByPO) return flatRows;
+    return sortedGroups.flatMap(g => expandedPOs.has(g.po_number) ? g.styles : []);
+  }, [groupByPO, flatRows, sortedGroups, expandedPOs]);
+
+  const toggleRow = useCallback((order: Order, shiftKey: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const anchor = lastClickedId.current;
+      if (shiftKey && anchor != null && anchor !== order.id) {
+        const ids = selectableRows.map(r => r.id);
+        const from = ids.indexOf(anchor);
+        const to = ids.indexOf(order.id);
+        if (from !== -1 && to !== -1) {
+          const [lo, hi] = from < to ? [from, to] : [to, from];
+          const turningOn = !next.has(order.id);
+          for (let i = lo; i <= hi; i++) {
+            if (turningOn) next.add(ids[i]);
+            else next.delete(ids[i]);
+          }
+          return next;
+        }
+      }
+      if (next.has(order.id)) next.delete(order.id);
+      else next.add(order.id);
+      lastClickedId.current = order.id;
+      return next;
+    });
+  }, [selectableRows]);
+
+  const toggleGroup = useCallback((group: POGroup) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allOn = group.styles.every(s => next.has(s.id));
+      for (const s of group.styles) {
+        if (allOn) next.delete(s.id);
+        else next.add(s.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const allVisibleIds = useMemo(() => poGroups.flatMap(g => g.styles.map(s => s.id)), [poGroups]);
+
+  const toggleAllVisible = useCallback((checked: boolean) => {
+    setSelectedIds(checked ? new Set(allVisibleIds) : new Set());
+    lastClickedId.current = null;
+  }, [allVisibleIds]);
+
+  const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.has(id));
+
+  // Drop selection that's been filtered out from under the user so a bulk
+  // action can't hit rows they can no longer see.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(allVisibleIds);
+      let changed = false;
+      const next = new Set<number>();
+      Array.from(prev).forEach((id) => {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [allVisibleIds]);
 
   const togglePO = (po: string) => {
     setExpandedPOs(prev => {
@@ -362,6 +511,63 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
     if (!selectedStyleId) return null;
     return orders.find(o => o.id === selectedStyleId) || null;
   }, [selectedStyleId, orders]);
+
+  // Drawer stays mounted through its slide-out so the transition plays.
+  // Must match the duration on the drawer's transition-transform class.
+  const DRAWER_ANIM_MS = 300;
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeDrawer = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setDrawerClosing(true);
+    closeTimer.current = setTimeout(() => {
+      setSelectedStyleId(null);
+      setDrawerClosing(false);
+      closeTimer.current = null;
+    }, DRAWER_ANIM_MS);
+  }, []);
+
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  // Prev/next follow the rendered order under the current filters, not
+  // raw id order.
+  const flatStyles = useMemo(() => sortedGroups.flatMap(g => g.styles), [sortedGroups]);
+
+  const { prevStyle, nextStyle } = useMemo(() => {
+    if (selectedStyleId == null) return { prevStyle: null, nextStyle: null };
+    const i = flatStyles.findIndex(s => s.id === selectedStyleId);
+    if (i === -1) return { prevStyle: null, nextStyle: null };
+    return {
+      prevStyle: i > 0 ? flatStyles[i - 1] : null,
+      nextStyle: i < flatStyles.length - 1 ? flatStyles[i + 1] : null,
+    };
+  }, [flatStyles, selectedStyleId]);
+
+  const [isExportingSelection, setIsExportingSelection] = useState(false);
+
+  /** Export exactly the ticked styles rather than every style on their
+   *  POs — a chase list should stay a chase list. */
+  const exportSelection = async () => {
+    if (selectedIds.size === 0) return;
+    setIsExportingSelection(true);
+    try {
+      const blob = await excelApi.exportExcel({ order_ids: Array.from(selectedIds) });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `factory_selection_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Exported ${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Export failed');
+    } finally {
+      setIsExportingSelection(false);
+    }
+  };
 
   const handleRefresh = () => {
     loadOrders();
@@ -871,72 +1077,136 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
             </button>
           </div>
 
-          {/* Status Chips */}
-          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-            <button
-              onClick={() => setStatusFilter('open')}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                statusFilter === 'open'
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-              )}
+          {/* Status tiles — KPI cards that double as the status filter. */}
+          <div
+            className="grid gap-2 mb-3 shrink-0"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+          >
+            <StatusTile
+              label="Open orders"
+              count={openPoCount}
+              secondary={`${poGroups.length} shown`}
+              active={statusFilter === 'open' && !lateOnly}
+              onClick={() => { setStatusFilter('open'); setLateOnly(false); }}
+            />
+            {statusTiles.map(({ status, poCount, units, value }) => (
+              <StatusTile
+                key={status}
+                label={status}
+                dotColor={statusDotHex(status)}
+                count={poCount}
+                secondary={
+                  isSupplier
+                    ? `${units.toLocaleString()} units`
+                    : `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                }
+                active={statusFilter === status && !lateOnly}
+                onClick={() => {
+                  setStatusFilter(statusFilter === status ? 'open' : status);
+                  setLateOnly(false);
+                }}
+              />
+            ))}
+            {lateTile.poCount > 0 && (
+              <StatusTile
+                label="Late"
+                dotColor="#dc2626"
+                tone="danger"
+                count={lateTile.poCount}
+                secondary={`${lateTile.units.toLocaleString()} units`}
+                active={lateOnly}
+                onClick={() => { setLateOnly(v => !v); setStatusFilter('open'); }}
+              />
+            )}
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-3 shrink-0">
+            <Chip
+              label="Customer"
+              active={!!customerF}
+              valueText={customerF}
+              onClear={() => setCustomerF(null)}
             >
-              Open Orders
-              <span className="ml-1.5 opacity-70">{statusCounts.open || 0}</span>
-            </button>
-            {statuses.filter(s => s !== 'Shipped').map(status => {
-              const style = getStatusStyle(status);
-              const count = statusCounts[status] || 0;
-              if (count === 0) return null;
-              return (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'open' : status)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === status
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  {status}
-                  <span className="ml-1.5 opacity-70">{count}</span>
-                </button>
-              );
-            })}
-            {(statusCounts.shipped || 0) > 0 && (() => {
-              const style = getStatusStyle('Shipped');
-              return (
-                <button
-                  onClick={() => setStatusFilter(statusFilter === 'shipped' ? 'open' : 'shipped')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === 'shipped'
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  Shipped
-                  <span className="ml-1.5 opacity-70">{statusCounts.shipped}</span>
-                </button>
-              );
-            })()}
+              {(close) => (
+                <>
+                  <Opt label="All customers" on={!customerF} onClick={() => { setCustomerF(null); close(); }} />
+                  {customerOpts.map(([v, n]) => (
+                    <Opt key={v} label={v} count={n} on={customerF === v} onClick={() => { setCustomerF(v); close(); }} />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            <Chip
+              label="Ex-factory"
+              active={!!exFacWindow}
+              valueText={exFacWindow ? EXFAC_WINDOW_LABEL[exFacWindow] : null}
+              onClear={() => setExFacWindow('')}
+            >
+              {(close) => (
+                <>
+                  {(['', 'week', '14', '30', 'overdue', 'unset'] as ExFacWindow[]).map((w) => (
+                    <Opt
+                      key={w || 'any'}
+                      label={EXFAC_WINDOW_LABEL[w]}
+                      on={exFacWindow === w}
+                      onClick={() => { setExFacWindow(w); close(); }}
+                    />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            <span className="w-px h-4 bg-gray-200 mx-1" />
+
+            <TogglePill
+              on={missingDatesOnly}
+              label="Missing dates"
+              title="Styles with no ex-factory date set"
+              tone="warn"
+              onClick={() => setMissingDatesOnly(v => !v)}
+            />
+
+            {anyFilter && (
+              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-gray-800 px-2">
+                Clear all
+              </button>
+            )}
+
+            <div className="flex-1" />
+
+            <TogglePill
+              on={groupByPO}
+              label="Group by PO"
+              title="Group styles under their PO, or show one flat sortable list"
+              onClick={() => setGroupByPO(v => !v)}
+            />
+
+            {groupByPO && poGroups.length > 0 && (
+              <button
+                onClick={() => setExpandedPOs(prev =>
+                  prev.size ? new Set() : new Set(poGroups.map(g => g.po_number))
+                )}
+                className="text-[11px] text-gray-500 hover:text-gray-800 px-1.5"
+              >
+                {expandedPOs.size ? 'Collapse all' : 'Expand all'}
+              </button>
+            )}
+
+            <Segmented
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'all', label: 'All' },
+                { value: 'shipped', label: 'Shipped' },
+              ] as const}
+              value={(statusFilter === 'open' || statusFilter === 'all' || statusFilter === 'shipped') ? statusFilter : 'all'}
+              onChange={(v) => { setStatusFilter(v); setLateOnly(false); }}
+            />
           </div>
 
-          {/* Summary Bar */}
-          <div className="flex items-center gap-6 mb-4 text-xs text-gray-500">
-            <span>{poGroups.length} purchase orders</span>
-            <span className="text-gray-300">·</span>
-            <span>{orders.length} total lines</span>
-            <span className="text-gray-300">·</span>
-            <span>{formatCurrency(orders.reduce((sum, o) => sum + (o.total_order_value || 0), 0))} total value</span>
-          </div>
-
-          {/* PO List */}
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {/* Order table */}
+          <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-200 rounded-t-xl">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
@@ -949,32 +1219,63 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                 <div className="text-center">
                   <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm font-medium text-gray-500">No orders found</p>
-                  <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {anyFilter ? 'Try clearing a filter above.' : 'Nothing in this view.'}
+                  </p>
                 </div>
               </div>
             ) : (
-              poGroups.map(group => (
-                <POCard
-                  key={group.po_number}
-                  group={group}
-                  isExpanded={expandedPOs.has(group.po_number)}
-                  onToggle={() => togglePO(group.po_number)}
-                  onStyleClick={handleStyleClick}
-                  onCommentClick={handleCommentClick}
-                  onDateRequest={openDateRequest}
-                  selectedStyleId={selectedStyleId}
-                  isSupplier={isSupplier}
-                />
-              ))
+              <OrderTableV2
+                groups={sortedGroups}
+                flatRows={flatRows}
+                groupByPO={groupByPO}
+                expandedPOs={expandedPOs}
+                onTogglePO={togglePO}
+                onStyleClick={handleStyleClick}
+                onCommentClick={handleCommentClick}
+                selectedStyleId={selectedStyleId}
+                selectedIds={selectedIds}
+                onToggleRow={toggleRow}
+                onToggleGroup={toggleGroup}
+                onToggleAll={toggleAllVisible}
+                allVisibleSelected={allVisibleSelected}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+                isSupplier={isSupplier}
+                rowExtra={isSupplier ? (style) => (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openDateRequest(style); }}
+                    className="p-1 hover:bg-amber-50 rounded transition-colors"
+                    title="Request a date change"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                  </button>
+                ) : undefined}
+              />
             )}
           </div>
+
+          <StatusBar
+            segments={[
+              `${visibleTotals.pos} of ${allPoCount} POs`,
+              `${visibleTotals.styles} styles · ${visibleTotals.units.toLocaleString()} units`,
+              isSupplier ? null : formatCurrency(visibleTotals.value),
+            ]}
+            hint={groupByPO
+              ? 'click a PO to expand · click a style to open detail · shift-click to select a range'
+              : 'click a row to open detail · tick to select · shift-click for a range'}
+          />
         </div>
 
         {/* ─── Right: Detail Panel ─── */}
         {selectedStyle && (
           <DetailPanel
             order={selectedStyle}
-            onClose={() => setSelectedStyleId(null)}
+            onClose={closeDrawer}
+            closing={drawerClosing}
+            onPrev={prevStyle ? () => setSelectedStyleId(prevStyle.id) : null}
+            onNext={nextStyle ? () => setSelectedStyleId(nextStyle.id) : null}
             onCommentClick={() => handleCommentClick(selectedStyle)}
             isSupplier={isSupplier}
             viewType={viewType}
@@ -985,6 +1286,33 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
             }}
           />
         )}
+      </div>
+
+      {/* Floating bulk bar. Suppliers get Export only — every date they
+          can touch goes through the approval queue, and that flow needs a
+          per-field reason, which the existing Request-date-change modal
+          already handles properly (including its own scope picker). A
+          second, shallower path to the same thing would just be a way to
+          submit worse requests. */}
+      <div
+        className={cn(
+          'fixed left-1/2 -translate-x-1/2 bottom-6 z-40 transition-all duration-200',
+          selectedIds.size > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none',
+        )}
+      >
+        <BulkBar
+          count={selectedIds.size}
+          onClear={() => { setSelectedIds(new Set()); lastClickedId.current = null; }}
+        >
+          <button
+            onClick={exportSelection}
+            disabled={isExportingSelection}
+            className="px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap transition-colors disabled:opacity-40"
+            title="Export exactly these styles to Excel"
+          >
+            {isExportingSelection ? 'Exporting…' : 'Export'}
+          </button>
+        </BulkBar>
       </div>
 
       <CommentSidebar />
@@ -1000,202 +1328,6 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
 
 // ─── PO Card ───────────────────────────────────────────────
 
-function POCard({
-  group,
-  isExpanded,
-  onToggle,
-  onStyleClick,
-  onCommentClick,
-  onDateRequest,
-  selectedStyleId,
-  isSupplier,
-}: {
-  group: POGroup;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onStyleClick: (order: Order) => void;
-  onCommentClick: (order: Order) => void;
-  onDateRequest: (order: Order) => void;
-  selectedStyleId: number | null;
-  isSupplier: boolean;
-}) {
-  const statusStyle = getStatusStyle(group.statusSummary);
-  const hasMultipleStatuses = new Set(group.styles.map(s => s.status)).size > 1;
-
-  return (
-    <div className={cn(
-      'bg-white rounded-xl border transition-all',
-      isExpanded ? 'border-primary-200 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-    )}>
-      {/* PO Header */}
-      <button
-        onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center gap-4 text-left"
-      >
-        <ChevronRight className={cn(
-          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
-          isExpanded && 'rotate-90'
-        )} />
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-gray-900">{group.po_number}</span>
-            <span className="text-xs text-gray-400">·</span>
-            <span className="text-xs text-gray-500 truncate">{group.customer}</span>
-          </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-gray-400">{group.factory}</span>
-            <span className="text-xs text-gray-300">·</span>
-            <span className="text-xs text-gray-400">{group.styles.length} style{group.styles.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-
-        <div className="text-right flex-shrink-0 w-20">
-          <p className="text-sm font-semibold text-gray-900">{formatQty(group.totalQty)}</p>
-          <p className="text-[11px] text-gray-400">units</p>
-        </div>
-
-        {!isSupplier && (
-          <div className="text-right flex-shrink-0 w-24">
-            <p className="text-sm font-semibold text-gray-900">{formatCurrency(group.totalValue)}</p>
-            <p className="text-[11px] text-gray-400">value</p>
-          </div>
-        )}
-
-        <div className="text-right flex-shrink-0 w-24">
-          <p className="text-xs font-medium text-gray-700">{formatDate(group.latestDate)}</p>
-          <p className="text-[11px] text-gray-400">ex-factory</p>
-        </div>
-
-        <div className="flex-shrink-0 w-32 text-right">
-          <span className={cn(
-            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
-            statusStyle.bg, statusStyle.text
-          )}>
-            <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
-            {group.statusSummary || 'Unknown'}
-          </span>
-          {hasMultipleStatuses && (
-            <p className="text-[10px] text-gray-400 mt-0.5">mixed</p>
-          )}
-        </div>
-
-        {group.unreadComments > 0 && (
-          <div className="flex-shrink-0 w-8 flex items-center justify-center">
-            <div className="relative">
-              <MessageSquare className="w-4 h-4 text-primary-400" />
-              <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                {group.unreadComments > 9 ? '9+' : group.unreadComments}
-              </span>
-            </div>
-          </div>
-        )}
-      </button>
-
-      {/* Expanded: Style List */}
-      {isExpanded && (
-        <div className="border-t border-gray-100">
-          <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60">
-            <div className="col-span-2">Style</div>
-            <div className="col-span-2">Description</div>
-            <div className="col-span-1">Colour</div>
-            <div className="col-span-1 text-right">Qty</div>
-            {!isSupplier && <div className="col-span-1 text-right">Value</div>}
-            <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-1')}>Ex-Factory</div>
-            <div className="col-span-2">Status</div>
-            <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-2')} />
-          </div>
-
-          {group.styles.map((style) => {
-            const ss = getStatusStyle(style.status);
-            const isSelected = style.id === selectedStyleId;
-            return (
-              <div
-                key={style.id}
-                onClick={() => onStyleClick(style)}
-                className={cn(
-                  'grid grid-cols-12 gap-2 px-5 py-3 items-center cursor-pointer transition-colors border-t border-gray-50',
-                  isSelected ? 'bg-primary-50/60' : 'hover:bg-gray-50/60'
-                )}
-              >
-                <div className="col-span-2">
-                  <p className="text-sm font-medium text-gray-900 truncate">{style.style_code || '—'}</p>
-                  {style.customer_style_code && (
-                    <p className="text-[11px] text-gray-400 truncate">{style.customer_style_code}</p>
-                  )}
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-600 truncate">{style.description || '—'}</p>
-                </div>
-                <div className="col-span-1">
-                  <p className="text-sm text-gray-600 truncate">{style.colour || '—'}</p>
-                </div>
-                <div className="col-span-1 text-right">
-                  <p className="text-sm font-medium text-gray-900">{formatQty(style.total_quantity)}</p>
-                </div>
-                {!isSupplier && (
-                  <div className="col-span-1 text-right">
-                    <p className="text-xs text-gray-500">{formatCurrency(style.total_order_value)}</p>
-                  </div>
-                )}
-                <div className={cn('text-right', isSupplier ? 'col-span-2' : 'col-span-1')}>
-                  <p className="text-xs text-gray-600">
-                    {formatDate(style.revised_po_ex_factory || style.original_po_ex_factory)}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <span className={cn(
-                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold',
-                    ss.bg, ss.text
-                  )}>
-                    <span className={cn('w-1 h-1 rounded-full', ss.dot)} />
-                    {style.status || 'Unknown'}
-                  </span>
-                </div>
-                <div className={cn('flex items-center justify-end gap-2', isSupplier ? 'col-span-2' : 'col-span-2')}>
-                  {(style.comment_count || 0) > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onCommentClick(style); }}
-                      className="relative p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
-                    >
-                      {(style.unread_comment_count || 0) > 0 ? (
-                        <MessageSquare className="w-3.5 h-3.5 text-primary-500 fill-current" />
-                      ) : (
-                        <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
-                      )}
-                      {(style.unread_comment_count || 0) > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 bg-primary-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                          {style.unread_comment_count}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                  {isSupplier ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDateRequest(style); }}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 rounded-md text-[11px] font-bold transition-colors"
-                      title="Request a date change"
-                    >
-                      <Calendar className="w-3.5 h-3.5" strokeWidth={2.5} />
-                      Date change
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
-                      className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Size Guide ───────────────────────────────────────────
 
@@ -1315,6 +1447,9 @@ function DetailPanel({
   onSave,
   supplierColumnSettings,
   onCommentCountChange,
+  closing = false,
+  onPrev,
+  onNext,
 }: {
   order: Order;
   onClose: () => void;
@@ -1324,6 +1459,11 @@ function DetailPanel({
   onSave?: (orderId: number, field: string, value: any) => void;
   supplierColumnSettings: { column_key: string; is_visible: boolean; is_editable: boolean }[];
   onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
+  /** Parent is animating the drawer out — it stays mounted for the slide. */
+  closing?: boolean;
+  /** Page to the previous/next style in the visible list. Null at either end. */
+  onPrev?: (() => void) | null;
+  onNext?: (() => void) | null;
 }) {
   const allowedCols = viewType === 'factory-product'
     ? new Set(FACTORY_PRODUCT_COLUMNS)
@@ -1476,20 +1616,53 @@ function DetailPanel({
     : daysToExFac < 7 ? 'border-amber-200 bg-amber-50/30'
     : 'border-gray-200 bg-white';
 
-  // Close on Escape
+  // Drive the slide-in. Mounting with translate-x-full then flipping on
+  // the next frame is what makes the transition play — setting the final
+  // transform in the mount paint would just snap.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const shown = entered && !closing;
+
+  // Escape closes; arrow keys page between styles. Ignored while typing so
+  // inline edits aren't hijacked.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (
+        el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+      );
+      if (e.key === 'Escape') { onClose(); return; }
+      if (typing) return;
+      if (e.key === 'ArrowUp' && onPrev) { e.preventDefault(); onPrev(); }
+      if (e.key === 'ArrowDown' && onNext) { e.preventDefault(); onNext(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onPrev, onNext]);
 
   return (
+    // Scrim wraps the drawer (same nesting the modal had, so the closing
+    // tags are untouched) — click the scrim to close, drawer stops
+    // propagation. Lighter than the old overlay and no blur: the list
+    // stays readable behind it, which is the point of a drawer.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-fade-in"
+      className={cn(
+        'fixed inset-0 z-50 transition-colors duration-300 motion-reduce:transition-none',
+        shown ? 'bg-gray-900/30' : 'bg-transparent pointer-events-none',
+      )}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[1200px] max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
+        className={cn(
+          'absolute top-0 right-0 bottom-0 w-full max-w-[860px] bg-white border-l border-gray-200 shadow-2xl flex flex-col',
+          'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
+          shown ? 'translate-x-0' : 'translate-x-full',
+        )}
+        role="dialog"
+        aria-modal="true"
         onClick={(e) => e.stopPropagation()}
       >
       {/* Header */}
@@ -1540,6 +1713,28 @@ function DetailPanel({
                 </span>
               )}
             </button>
+            {/* Page between styles without closing — the main win of the
+                drawer over the old centred modal. */}
+            {(onPrev || onNext) && (
+              <div className="inline-flex rounded-md border border-gray-300 bg-white overflow-hidden">
+                <button
+                  onClick={() => onPrev?.()}
+                  disabled={!onPrev}
+                  title="Previous style (↑)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed border-r border-gray-300"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => onNext?.()}
+                  disabled={!onNext}
+                  title="Next style (↓)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
