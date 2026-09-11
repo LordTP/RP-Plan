@@ -9,6 +9,8 @@ import {
   X,
   Download,
   ChevronDown,
+  ChevronUp,
+  AlertTriangle,
   ChevronRight,
   Loader2,
   Package,
@@ -35,8 +37,27 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
+import {
+  OrderTableV2,
+  SampleStatusPill,
+  sortGroups,
+  compareStyles,
+  effectiveExFactory,
+  matchesExFacWindow,
+  statusDotHex,
+  getStatusStyle,
+  timeAgo,
+  formatDate,
+  formatCurrency,
+  formatQty,
+  EXFAC_WINDOW_LABEL,
+  type POGroup,
+  type SortKey,
+  type ExFacWindow,
+} from '@/components/orders/v2-list-shared';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, statusesApi, submissionsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
+import { ordersApi, excelApi, statusesApi, submissionsApi, componentsApi, OrderFilters, type SampleSubmission, type SampleType, type RejectReason } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { useSizeGuide } from '@/lib/useSizeGuide';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
@@ -46,64 +67,55 @@ import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_
 
 // ─── Helpers ───────────────────────────────────────────────
 
-function timeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return '';
-  try {
-    return formatDistanceToNow(parseISO(dateStr), { addSuffix: true });
-  } catch {
-    return '';
-  }
+
+
+
+
+
+
+/** Raw hex for a status dot — the StatusTile takes a CSS colour rather
+ *  than a Tailwind class because statuses are DB-driven, so the palette
+ *  can't be resolved at build time from a static class map. */
+
+
+/** Sample-lifecycle status styling. Separate from getStatusStyle, which
+ *  colours ORDER status (In Production / Shipped / …) — these are the
+ *  APPROVED / OUTSTANDING / LATE family and need their own semantics. */
+
+
+// ─── Ex-factory window filter ─────────────────────────────────────────
+
+
+
+/** The date a style is actually working to — revised wins over original,
+ *  matching the rule used everywhere else in the app. */
+
+/** One writable sample record inside a bulk selection. `kind` decides
+ *  which endpoint the write goes to: component instances resolve their
+ *  own column server-side, order-level styles go through the PO-scoped
+ *  order endpoint. */
+interface SampleTarget {
+  key: string;            // 'c:<instanceId>' | 'o:<orderId>' — stable selection key
+  kind: 'component' | 'order';
+  id: number;             // instance id, or order id for order-level
+  poNumber: string;
+  customer: string;
+  styleCode: string;
+  componentName: string | null;
+  currentStatus: string | null;
 }
 
-function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—';
-  try {
-    return format(parseISO(dateStr), 'dd MMM yyyy');
-  } catch {
-    return dateStr;
-  }
-}
+// ─── Table sorting ────────────────────────────────────────────────────
 
-function formatCurrency(val: number | null | undefined): string {
-  if (val == null) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-}
 
-function formatQty(val: number | null | undefined): string {
-  if (val == null) return '—';
-  return val.toLocaleString();
-}
+/** Comparable value for a style row under a given sort key. Strings come
+ *  back lowercased so sorting is case-insensitive; nulls are normalised
+ *  so blanks always sink to the bottom regardless of direction. */
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  'In Production': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400' },
-  'Pending Approval': { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
-  'Shipped': { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-400' },
-  'Delivered': { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-400' },
-  'Cancelled': { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-400' },
-  'On Hold': { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' },
-  'In Transit': { bg: 'bg-indigo-50', text: 'text-indigo-700', dot: 'bg-indigo-400' },
-  'Order Confirmed': { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-400' },
-};
 
-function getStatusStyle(status: string | undefined) {
-  if (!status) return { bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-300' };
-  return STATUS_COLORS[status] || { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
-}
 
 // ─── Types ─────────────────────────────────────────────────
 
-interface POGroup {
-  po_number: string;
-  customer: string;
-  factory: string;
-  styles: Order[];
-  totalQty: number;
-  totalValue: number;
-  statusSummary: string;
-  latestDate: string | null;
-  unreadComments: number;
-  latestUpdate: string;
-}
 
 // ─── Page Entry ────────────────────────────────────────────
 
@@ -159,6 +171,39 @@ function OrdersV2Content() {
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // Chip filters (Sep 2026 list rework). These narrow the same working set
+  // the status tiles filter, so a tile + a chip compose rather than fight.
+  const [customerF, setCustomerF] = useState<string | null>(null);
+  const [factoryF, setFactoryF] = useState<string | null>(null);
+  const [exFacWindow, setExFacWindow] = useState<ExFacWindow>('');
+  const [lateOnly, setLateOnly] = useState(false);
+  const [missingDatesOnly, setMissingDatesOnly] = useState(false);
+
+  // Table state. Grouping defaults ON so the view still reads PO-first
+  // the way the card stack did; flipping it off gives a flat list that
+  // sorts across every style regardless of PO.
+  const [groupByPO, setGroupByPO] = useState(true);
+  const [sortKey, setSortKey] = useState<SortKey>('exfac');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Anchor for shift-click range selection — the last row clicked without
+  // shift held. Null until the user ticks something.
+  const lastClickedId = useRef<number | null>(null);
+
+  const toggleSort = useCallback((key: string) => {
+    const k = key as SortKey;
+    setSortKey((prev) => {
+      if (prev === k) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      // New column starts ascending, except the numeric/value columns
+      // where "biggest first" is almost always what you want.
+      setSortDir(k === 'qty' || k === 'value' ? 'desc' : 'asc');
+      return k;
+    });
+  }, []);
 
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -265,6 +310,15 @@ function OrdersV2Content() {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
+    // Chip filters — applied at the LINE level so a PO only survives if
+    // it still has at least one matching style. Keeps mixed POs visible
+    // when part of the PO matches, same principle as the 'open' filter.
+    if (customerF) filtered = filtered.filter(o => (o.customer || '') === customerF);
+    if (factoryF) filtered = filtered.filter(o => (o.factory || '') === factoryF);
+    if (exFacWindow) filtered = filtered.filter(o => matchesExFacWindow(o, exFacWindow));
+    if (lateOnly) filtered = filtered.filter(o => !!o.is_late);
+    if (missingDatesOnly) filtered = filtered.filter(o => !effectiveExFactory(o));
+
     // Group by PO
     const groups: Record<string, POGroup> = {};
     for (const order of filtered) {
@@ -324,7 +378,7 @@ function OrdersV2Content() {
       if (!a.latestDate && b.latestDate) return 1;
       return b.latestUpdate.localeCompare(a.latestUpdate);
     });
-  }, [orders, searchQuery, statusFilter]);
+  }, [orders, searchQuery, statusFilter, customerF, factoryF, exFacWindow, lateOnly, missingDatesOnly]);
 
   // Status counts for chips
   const statusCounts = useMemo(() => {
@@ -346,6 +400,495 @@ function OrdersV2Content() {
     }
     return counts;
   }, [orders]);
+
+  // ─── Status tiles ───────────────────────────────────────────────────
+  // One tile per status that actually has rows, plus a Late tile. Each
+  // carries a PO count (the headline number) and a units/value secondary
+  // line. Computed off the UNFILTERED working set so the tiles keep
+  // showing the whole picture while you drill into one of them — the
+  // thing that makes them usable as navigation rather than just readouts.
+  const statusTiles = useMemo(() => {
+    const byStatus = new Map<string, { pos: Set<string>; units: number; value: number }>();
+    for (const o of orders) {
+      const s = o.status || 'Unknown';
+      let e = byStatus.get(s);
+      if (!e) { e = { pos: new Set(), units: 0, value: 0 }; byStatus.set(s, e); }
+      e.pos.add(o.po_number);
+      e.units += o.total_quantity || 0;
+      e.value += o.total_order_value || 0;
+    }
+    return Array.from(byStatus.entries())
+      .map(([status, e]) => ({ status, poCount: e.pos.size, units: e.units, value: e.value }))
+      .sort((a, b) => b.poCount - a.poCount);
+  }, [orders]);
+
+  const lateTile = useMemo(() => {
+    const pos = new Set<string>();
+    let units = 0;
+    let value = 0;
+    for (const o of orders) {
+      if (!o.is_late) continue;
+      pos.add(o.po_number);
+      units += o.total_quantity || 0;
+      value += o.total_order_value || 0;
+    }
+    return { poCount: pos.size, units, value };
+  }, [orders]);
+
+  // ─── Chip option lists ──────────────────────────────────────────────
+  // Counts are PO-level so they line up with what the tiles report.
+  const customerOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of orders) {
+      const c = o.customer || '';
+      if (!c) continue;
+      if (!m.has(c)) m.set(c, new Set());
+      m.get(c)!.add(o.po_number);
+    }
+    return Array.from(m.entries())
+      .map(([v, pos]) => [v, pos.size] as [string, number])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [orders]);
+
+  const factoryOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of orders) {
+      const f = o.factory || '';
+      if (!f) continue;
+      if (!m.has(f)) m.set(f, new Set());
+      m.get(f)!.add(o.po_number);
+    }
+    return Array.from(m.entries())
+      .map(([v, pos]) => [v, pos.size] as [string, number])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [orders]);
+
+  const anyFilter = !!(customerF || factoryF || exFacWindow || lateOnly || missingDatesOnly || searchQuery.trim());
+
+  const clearFilters = () => {
+    setCustomerF(null);
+    setFactoryF(null);
+    setExFacWindow('');
+    setLateOnly(false);
+    setMissingDatesOnly(false);
+    setSearchQuery('');
+  };
+
+  // Totals across whatever's currently visible — drives the status bar.
+  const visibleTotals = useMemo(() => {
+    let styles = 0, units = 0, value = 0;
+    for (const g of poGroups) {
+      styles += g.styles.length;
+      units += g.totalQty;
+      value += g.totalValue;
+    }
+    return { pos: poGroups.length, styles, units, value };
+  }, [poGroups]);
+
+  // ─── Sorting ────────────────────────────────────────────────────────
+  // Grouped mode sorts the GROUPS by their aggregate for the active key
+  // and the styles within each group by the same key, so clicking a
+  // column reorders both levels coherently. Flat mode just sorts every
+  // style across every PO.
+  // Grouped mode sorts the GROUPS by their aggregate for the active key
+  // and the styles within each group by the same key, so one click
+  // reorders both levels coherently. See sortGroups in v2-list-shared.
+  const sortedGroups = useMemo(
+    () => sortGroups(poGroups, sortKey, sortDir),
+    [poGroups, sortKey, sortDir],
+  );
+
+  const flatRows = useMemo(
+    () => poGroups.flatMap(g => g.styles).sort((a, b) => compareStyles(a, b, sortKey, sortDir)),
+    [poGroups, sortKey, sortDir],
+  );
+
+  // ─── Row selection ──────────────────────────────────────────────────
+  // Rows visible for selection purposes: in grouped mode only styles
+  // inside an EXPANDED group can be range-selected, because shift-click
+  // ranges have to follow what's actually on screen.
+  const selectableRows = useMemo(() => {
+    if (!groupByPO) return flatRows;
+    return sortedGroups.flatMap(g => expandedPOs.has(g.po_number) ? g.styles : []);
+  }, [groupByPO, flatRows, sortedGroups, expandedPOs]);
+
+  const toggleRow = useCallback((order: Order, shiftKey: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const anchor = lastClickedId.current;
+
+      // Shift-click extends from the last plain click to here, matching
+      // the rendered row order rather than id order.
+      if (shiftKey && anchor != null && anchor !== order.id) {
+        const ids = selectableRows.map(r => r.id);
+        const from = ids.indexOf(anchor);
+        const to = ids.indexOf(order.id);
+        if (from !== -1 && to !== -1) {
+          const [lo, hi] = from < to ? [from, to] : [to, from];
+          // Range takes the state we're moving the clicked row INTO, so a
+          // shift-click on a ticked row clears the range instead of
+          // stubbornly re-ticking it.
+          const turningOn = !next.has(order.id);
+          for (let i = lo; i <= hi; i++) {
+            if (turningOn) next.add(ids[i]);
+            else next.delete(ids[i]);
+          }
+          return next;
+        }
+      }
+
+      if (next.has(order.id)) next.delete(order.id);
+      else next.add(order.id);
+      lastClickedId.current = order.id;
+      return next;
+    });
+  }, [selectableRows]);
+
+  const toggleGroup = useCallback((group: POGroup) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allOn = group.styles.every(s => next.has(s.id));
+      for (const s of group.styles) {
+        if (allOn) next.delete(s.id);
+        else next.add(s.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const allVisibleIds = useMemo(() => poGroups.flatMap(g => g.styles.map(s => s.id)), [poGroups]);
+
+  const toggleAllVisible = useCallback((checked: boolean) => {
+    setSelectedIds(checked ? new Set(allVisibleIds) : new Set());
+    lastClickedId.current = null;
+  }, [allVisibleIds]);
+
+  const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.has(id));
+
+  // Drop any selection that's been filtered out from under the user —
+  // otherwise a bulk action could hit rows they can no longer see.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(allVisibleIds);
+      let changed = false;
+      const next = new Set<number>();
+      // Array.from rather than for-of: tsconfig targets ES5 here, so
+      // iterating a Set directly needs downlevelIteration.
+      Array.from(prev).forEach((id) => {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [allVisibleIds]);
+
+  const selectedOrders = useMemo(
+    () => orders.filter(o => selectedIds.has(o.id)),
+    [orders, selectedIds],
+  );
+
+  // ─── Bulk actions ───────────────────────────────────────────────────
+  // Both supported actions route through /api/orders/bulk-update-date,
+  // which is PO-scoped — so a selection spanning multiple POs fans out
+  // into one call per PO. Suppliers hitting a DATE field go down the
+  // backend's pending-approval path and must supply a reason; sample
+  // statuses are Sourcelab's call, so that action is internal-only.
+  const [bulkPanel, setBulkPanel] = useState<'date' | 'sample' | 'fitreq' | null>(null);
+  const [bulkDate, setBulkDate] = useState('');
+  const [bulkSampleField, setBulkSampleField] = useState('strike_off_status');
+  const [bulkSampleValue, setBulkSampleValue] = useState('');
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+  /** Which lifecycle field the sample panel writes — the status column,
+   *  or one of the two dates. Dates matter because a batch physically
+   *  lands on one day; typing that date per style is the tedium this is
+   *  meant to kill. */
+  const [bulkSampleMode, setBulkSampleMode] = useState<'status' | 'received' | 'approved'>('status');
+  const [bulkSampleDate, setBulkSampleDate] = useState('');
+  const [bulkRejectReason, setBulkRejectReason] = useState('');
+  const [bulkRejectNotes, setBulkRejectNotes] = useState('');
+  const [rejectReasons, setRejectReasons] = useState<RejectReason[]>([]);
+  const [bulkFitRequired, setBulkFitRequired] = useState('');
+
+  const isBulkRejecting = bulkSampleMode === 'status' && bulkSampleValue === 'REJECTED';
+
+  // Reason taxonomy loads lazily the first time REJECTED is picked.
+  useEffect(() => {
+    if (!isBulkRejecting || rejectReasons.length > 0) return;
+    submissionsApi.getRejectReasons()
+      .then(r => setRejectReasons(r.reasons))
+      .catch(() => { /* submit stays blocked by the empty-reason guard */ });
+  }, [isBulkRejecting, rejectReasons.length]);
+  /** Which targets the sample-status write lands on — component names,
+   *  plus the ORDER_LEVEL sentinel for styles that track this sample at
+   *  order level. */
+  const [bulkSampleTargets, setBulkSampleTargets] = useState<Set<string>>(new Set());
+
+  // Strike Off and Lab Dip move INSIDE components when a style has them —
+  // the order-level column is left blank in that case (see the export's
+  // _COMPONENT_ROLLUP_FIELDS). Fit Sample and PPS are whole-garment
+  // concerns and always stay at order level. So only these two sample
+  // types ever need a component picker.
+  const COMPONENT_BACKED_SAMPLE: Record<string, 'strike_off' | 'lab_dip'> = {
+    strike_off_status: 'strike_off',
+    lab_dip_status: 'lab_dip',
+  };
+
+  // Expand the selection into the ACTUAL sample records that will be
+  // written — one target per component instance for component-backed
+  // sample types, one per style otherwise. Without this the bulk write
+  // would land on the order-level column for component styles, a field
+  // that's blank by design and read by nothing.
+  const sampleTargets = useMemo((): SampleTarget[] => {
+    const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
+    const out: SampleTarget[] = [];
+    for (const o of selectedOrders) {
+      const comps = compType ? (o.components || []).filter(c => c.sample_type === compType) : [];
+      if (comps.length > 0) {
+        for (const c of comps) {
+          out.push({
+            key: `c:${c.id}`,
+            kind: 'component',
+            id: c.id,
+            poNumber: o.po_number,
+            customer: o.customer || '',
+            styleCode: o.style_code || `#${o.id}`,
+            componentName: c.name,
+            currentStatus: (c as any)[bulkSampleField] ?? null,
+          });
+        }
+      } else {
+        out.push({
+          key: `o:${o.id}`,
+          kind: 'order',
+          id: o.id,
+          poNumber: o.po_number,
+          customer: o.customer || '',
+          styleCode: o.style_code || `#${o.id}`,
+          componentName: null,
+          currentStatus: (o as any)[bulkSampleField] ?? null,
+        });
+      }
+    }
+    return out;
+  }, [selectedOrders, bulkSampleField]);
+
+  // Grouped by PO for display — merch read the world PO-first, so a flat
+  // list of 40 instances across 6 POs is much harder to audit than the
+  // same 40 nested under their PO headers.
+  const sampleTargetGroups = useMemo(() => {
+    const m = new Map<string, { poNumber: string; customer: string; targets: SampleTarget[] }>();
+    for (const t of sampleTargets) {
+      let g = m.get(t.poNumber);
+      if (!g) { g = { poNumber: t.poNumber, customer: t.customer, targets: [] }; m.set(t.poNumber, g); }
+      g.targets.push(t);
+    }
+    return Array.from(m.values())
+      .map(g => ({
+        ...g,
+        targets: g.targets.sort((a, b) =>
+          a.styleCode.localeCompare(b.styleCode) || (a.componentName || '').localeCompare(b.componentName || ''),
+        ),
+      }))
+      .sort((a, b) => a.poNumber.localeCompare(b.poNumber));
+  }, [sampleTargets]);
+
+  // Default every target on whenever the set changes — picking a sample
+  // type shouldn't leave the user with nothing ticked.
+  useEffect(() => {
+    setBulkSampleTargets(new Set(sampleTargets.map(t => t.key)));
+  }, [sampleTargets]);
+
+  const bulkSampleTargetCount = useMemo(
+    () => sampleTargets.filter(t => bulkSampleTargets.has(t.key)).length,
+    [sampleTargets, bulkSampleTargets],
+  );
+
+  const closeBulkPanel = () => {
+    setBulkPanel(null);
+    setBulkDate('');
+    setBulkSampleValue('');
+    setBulkSampleDate('');
+    setBulkSampleMode('status');
+    setBulkRejectReason('');
+    setBulkRejectNotes('');
+    setBulkFitRequired('');
+    setBulkReason('');
+  };
+
+  /** Sample-status writes fan out to TWO different endpoints depending on
+   *  where each target actually stores the value: component instances go
+   *  through the components bulk-edit (which resolves the right column
+   *  from each instance's own sample_type), order-level styles go through
+   *  the PO-scoped order bulk endpoint. */
+  const applyBulkSample = async () => {
+    const writingDate = bulkSampleMode !== 'status';
+    const value = writingDate ? bulkSampleDate : bulkSampleValue;
+    if (!value || bulkSampleTargetCount === 0) return;
+    if (isBulkRejecting && !bulkRejectReason) return;
+
+    setBulkSaving(true);
+    try {
+      let changed = 0;
+
+      const chosen = sampleTargets.filter(t => bulkSampleTargets.has(t.key));
+      const instanceIds = chosen.filter(t => t.kind === 'component').map(t => t.id);
+      const orderTargets = chosen.filter(t => t.kind === 'order');
+
+      // The order-level column this write lands on. Component instances
+      // don't need it — the components endpoint resolves the column from
+      // each instance's own sample_type.
+      const samplePrefix = bulkSampleField.replace('_status', '');
+      const orderField = writingDate ? `${samplePrefix}_${bulkSampleMode}` : bulkSampleField;
+
+      if (instanceIds.length > 0) {
+        const payload: any = { instance_ids: instanceIds };
+        if (writingDate) payload[bulkSampleMode] = value;
+        else {
+          payload.status = value;
+          // REJECTED is a lifecycle event — the endpoint dispatches each
+          // instance through _reject_one_target (closes the attempt, opens
+          // v+1, clears dates), which needs a structured reason.
+          if (isBulkRejecting) {
+            payload.reason = bulkRejectReason;
+            if (bulkRejectNotes.trim()) payload.notes = bulkRejectNotes.trim();
+          }
+        }
+        const res = await componentsApi.bulkEditInstances(payload);
+        changed += res.changed_count;
+      }
+
+      if (orderTargets.length > 0) {
+        const byPo = new Map<string, number[]>();
+        for (const t of orderTargets) {
+          const arr = byPo.get(t.poNumber) || [];
+          arr.push(t.id);
+          byPo.set(t.poNumber, arr);
+        }
+        for (const [po, ids] of Array.from(byPo.entries())) {
+          const res: any = await ordersApi.bulkUpdateDate(po, orderField, value, ids);
+          changed += res?.orders_updated ?? 0;
+        }
+      }
+
+      // Optimistic patch — order-level styles get the column written,
+      // component styles get the matching nested instances updated so the
+      // drawer and any component summary reflect it without a refetch.
+      // Rejections are the exception: the server clears dates and rolls
+      // the attempt number, so a naive local patch would lie. Refetch
+      // those instead.
+      if (isBulkRejecting) {
+        await loadOrders();
+      } else {
+        const touchedInstances = new Set(instanceIds);
+        const touchedOrderIds = new Set(orderTargets.map(t => t.id));
+        const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
+        const instanceField = writingDate ? `${samplePrefix}_${bulkSampleMode}` : bulkSampleField;
+        const patch = (o: Order): Order => {
+          let next = o;
+          if (touchedOrderIds.has(o.id)) {
+            next = { ...next, [orderField]: value } as Order;
+          }
+          if (compType && next.components?.some(c => touchedInstances.has(c.id))) {
+            next = {
+              ...next,
+              components: next.components.map(c =>
+                touchedInstances.has(c.id) ? { ...c, [instanceField]: value } : c,
+              ),
+            } as Order;
+          }
+          return next;
+        };
+        if (isFactoryView) setLocalOrders(prev => prev.map(patch));
+        else setStoreOrders(orders.map(patch), totalOrders);
+      }
+
+      toast.success(
+        isBulkRejecting
+          ? `Rejected ${changed} sample${changed === 1 ? '' : 's'} — v+1 opened OUTSTANDING`
+          : `Updated ${changed} sample${changed === 1 ? '' : 's'}`,
+      );
+      setSelectedIds(new Set());
+      lastClickedId.current = null;
+      closeBulkPanel();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  /** Export exactly the ticked styles. Deliberately NOT the export modal,
+   *  which works PO-at-a-time — a chase list of 9 specific styles across
+   *  4 POs shouldn't come back as every style on those 4 POs. */
+  const exportSelection = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSaving(true);
+    try {
+      const blob = await excelApi.exportExcel({ order_ids: Array.from(selectedIds) });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${isSupplier ? 'factory' : 'orderbook'}_selection_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Exported ${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Export failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const applyBulk = async (field: string, value: string | null) => {
+    if (selectedOrders.length === 0) return;
+    setBulkSaving(true);
+    try {
+      const byPo = new Map<string, number[]>();
+      for (const o of selectedOrders) {
+        const arr = byPo.get(o.po_number) || [];
+        arr.push(o.id);
+        byPo.set(o.po_number, arr);
+      }
+
+      let updated = 0;
+      let pending = 0;
+      for (const [po, ids] of Array.from(byPo.entries())) {
+        const res: any = await ordersApi.bulkUpdateDate(
+          po,
+          field,
+          value,
+          ids,
+          isSupplier ? bulkReason.trim() : undefined,
+        );
+        if (res?.pending_approval) pending += res.pending_count ?? ids.length;
+        else updated += res?.orders_updated ?? 0;
+      }
+
+      if (pending > 0) {
+        toast.success(`${pending} date change${pending === 1 ? '' : 's'} submitted for approval`);
+      } else {
+        // Optimistic patch so the table reflects the change straight away
+        // — same no-refetch principle as the /orders bulk save.
+        const touched = new Set(selectedIds);
+        const patch = (o: Order) => (touched.has(o.id) ? { ...o, [field]: value } as Order : o);
+        if (isFactoryView) setLocalOrders(prev => prev.map(patch));
+        else setStoreOrders(orders.map(patch), totalOrders);
+        toast.success(`Updated ${updated} style${updated === 1 ? '' : 's'}`);
+      }
+
+      setSelectedIds(new Set());
+      lastClickedId.current = null;
+      closeBulkPanel();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   const togglePO = (po: string) => {
     setExpandedPOs(prev => {
@@ -381,6 +924,43 @@ function OrdersV2Content() {
     if (!selectedStyleId) return null;
     return orders.find(o => o.id === selectedStyleId) || null;
   }, [selectedStyleId, orders]);
+
+  // ─── Drawer open/close ──────────────────────────────────────────────
+  // The drawer stays mounted through its slide-out so the transition
+  // actually plays — `drawerClosing` drives the transform, and the real
+  // unmount happens after the animation window. Matches the duration on
+  // the drawer's transition-transform class; if one changes, change both.
+  const DRAWER_ANIM_MS = 300;
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeDrawer = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setDrawerClosing(true);
+    closeTimer.current = setTimeout(() => {
+      setSelectedStyleId(null);
+      setOpenOnComments(false);
+      setDrawerClosing(false);
+      closeTimer.current = null;
+    }, DRAWER_ANIM_MS);
+  }, []);
+
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  // Flat style list in the order they're rendered — drives the drawer's
+  // prev/next so paging through styles follows what's on screen rather
+  // than raw id order.
+  const flatStyles = useMemo(() => poGroups.flatMap(g => g.styles), [poGroups]);
+
+  const { prevStyle, nextStyle } = useMemo(() => {
+    if (selectedStyleId == null) return { prevStyle: null, nextStyle: null };
+    const i = flatStyles.findIndex(s => s.id === selectedStyleId);
+    if (i === -1) return { prevStyle: null, nextStyle: null };
+    return {
+      prevStyle: i > 0 ? flatStyles[i - 1] : null,
+      nextStyle: i < flatStyles.length - 1 ? flatStyles[i + 1] : null,
+    };
+  }, [flatStyles, selectedStyleId]);
 
   const handleRefresh = () => {
     loadOrders();
@@ -483,76 +1063,163 @@ function OrdersV2Content() {
             </button>
           </div>
 
-          {/* Status Chips */}
-          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-            <button
-              onClick={() => setStatusFilter('open')}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                statusFilter === 'open'
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-              )}
+          {/* Status tiles — KPI cards that double as the status filter.
+              Counts are PO-level and computed off the unfiltered set, so
+              the row keeps showing the whole picture while you're drilled
+              into one of them. */}
+          <div
+            className="grid gap-2 mb-3 shrink-0"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+          >
+            <StatusTile
+              label="Open orders"
+              count={statusCounts.open || 0}
+              secondary={`${poGroups.length} shown`}
+              active={statusFilter === 'open' && !lateOnly}
+              onClick={() => { setStatusFilter('open'); setLateOnly(false); }}
+            />
+            {statusTiles.map(({ status, poCount, units, value }) => (
+              <StatusTile
+                key={status}
+                label={status}
+                dotColor={statusDotHex(status)}
+                count={poCount}
+                secondary={
+                  isDesigner
+                    ? `${units.toLocaleString()} units`
+                    : `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                }
+                active={statusFilter === status && !lateOnly}
+                onClick={() => {
+                  setStatusFilter(statusFilter === status ? 'open' : status);
+                  setLateOnly(false);
+                }}
+              />
+            ))}
+            {lateTile.poCount > 0 && (
+              <StatusTile
+                label="Late"
+                dotColor="#dc2626"
+                tone="danger"
+                count={lateTile.poCount}
+                secondary={
+                  isDesigner
+                    ? `${lateTile.units.toLocaleString()} units`
+                    : `${lateTile.units.toLocaleString()} units · ${formatCurrency(lateTile.value)}`
+                }
+                active={lateOnly}
+                onClick={() => { setLateOnly(v => !v); setStatusFilter('open'); }}
+              />
+            )}
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-3 shrink-0">
+            <Chip
+              label="Customer"
+              active={!!customerF}
+              valueText={customerF}
+              onClear={() => setCustomerF(null)}
             >
-              Open Orders
-              <span className="ml-1.5 opacity-70">{statusCounts.open || 0}</span>
-            </button>
-            {statuses.filter(s => s !== 'Shipped').map(status => {
-              const style = getStatusStyle(status);
-              const count = statusCounts[status] || 0;
-              if (count === 0) return null;
-              return (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'open' : status)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === status
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  {status}
-                  <span className="ml-1.5 opacity-70">{count}</span>
-                </button>
-              );
-            })}
-            {(statusCounts.shipped || 0) > 0 && (() => {
-              const style = getStatusStyle('Shipped');
-              return (
-                <button
-                  onClick={() => setStatusFilter(statusFilter === 'shipped' ? 'open' : 'shipped')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === 'shipped'
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  Shipped
-                  <span className="ml-1.5 opacity-70">{statusCounts.shipped}</span>
-                </button>
-              );
-            })()}
+              {(close) => (
+                <>
+                  <Opt label="All customers" on={!customerF} onClick={() => { setCustomerF(null); close(); }} />
+                  {customerOpts.map(([v, n]) => (
+                    <Opt key={v} label={v} count={n} on={customerF === v} onClick={() => { setCustomerF(v); close(); }} />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            {!isSupplier && (
+              <Chip
+                label="Factory"
+                active={!!factoryF}
+                valueText={factoryF}
+                onClear={() => setFactoryF(null)}
+              >
+                {(close) => (
+                  <>
+                    <Opt label="All factories" on={!factoryF} onClick={() => { setFactoryF(null); close(); }} />
+                    {factoryOpts.map(([v, n]) => (
+                      <Opt key={v} label={v} count={n} on={factoryF === v} onClick={() => { setFactoryF(v); close(); }} />
+                    ))}
+                  </>
+                )}
+              </Chip>
+            )}
+
+            <Chip
+              label="Ex-factory"
+              active={!!exFacWindow}
+              valueText={exFacWindow ? EXFAC_WINDOW_LABEL[exFacWindow] : null}
+              onClear={() => setExFacWindow('')}
+            >
+              {(close) => (
+                <>
+                  {(['', 'week', '14', '30', 'overdue', 'unset'] as ExFacWindow[]).map((w) => (
+                    <Opt
+                      key={w || 'any'}
+                      label={EXFAC_WINDOW_LABEL[w]}
+                      on={exFacWindow === w}
+                      onClick={() => { setExFacWindow(w); close(); }}
+                    />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            <span className="w-px h-4 bg-gray-200 mx-1" />
+
+            <TogglePill
+              on={missingDatesOnly}
+              label="Missing dates"
+              title="Styles with no ex-factory date set"
+              tone="warn"
+              onClick={() => setMissingDatesOnly(v => !v)}
+            />
+
+            {anyFilter && (
+              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-gray-800 px-2">
+                Clear all
+              </button>
+            )}
+
+            <div className="flex-1" />
+
+            <TogglePill
+              on={groupByPO}
+              label="Group by PO"
+              title="Group styles under their PO, or show one flat sortable list"
+              onClick={() => setGroupByPO(v => !v)}
+            />
+
+            {groupByPO && poGroups.length > 0 && (
+              <button
+                onClick={() => setExpandedPOs(prev =>
+                  prev.size ? new Set() : new Set(poGroups.map(g => g.po_number))
+                )}
+                className="text-[11px] text-gray-500 hover:text-gray-800 px-1.5"
+              >
+                {expandedPOs.size ? 'Collapse all' : 'Expand all'}
+              </button>
+            )}
+
+            <Segmented
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'all', label: 'All' },
+                { value: 'shipped', label: 'Shipped' },
+              ] as const}
+              value={(statusFilter === 'open' || statusFilter === 'all' || statusFilter === 'shipped') ? statusFilter : 'all'}
+              onChange={(v) => { setStatusFilter(v); setLateOnly(false); }}
+            />
           </div>
 
-          {/* Summary Bar */}
-          <div className="flex items-center gap-6 mb-4 text-xs text-gray-500">
-            <span>{poGroups.length} purchase orders</span>
-            <span className="text-gray-300">·</span>
-            <span>{orders.length} total lines</span>
-            <span className="text-gray-300">·</span>
-            <span>{orders.reduce((sum, o) => sum + (o.total_quantity || 0), 0).toLocaleString()} total units</span>
-            {!isDesigner && <>
-              <span className="text-gray-300">·</span>
-              <span>{formatCurrency(orders.reduce((sum, o) => sum + (o.total_order_value || 0), 0))} total value</span>
-            </>}
-          </div>
-
-          {/* PO List */}
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {/* Order table — contained in a card so the list reads as a
+              deliberate surface rather than bleeding to the page edge,
+              with the mono status bar closing it off underneath. */}
+          <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-200 rounded-t-xl">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
@@ -565,32 +1232,55 @@ function OrdersV2Content() {
                 <div className="text-center">
                   <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm font-medium text-gray-500">No orders found</p>
-                  <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {anyFilter ? 'Try clearing a filter above.' : 'Nothing in this view.'}
+                  </p>
                 </div>
               </div>
             ) : (
-              poGroups.map(group => (
-                <POCard
-                  key={group.po_number}
-                  group={group}
-                  isExpanded={expandedPOs.has(group.po_number)}
-                  onToggle={() => togglePO(group.po_number)}
-                  onStyleClick={handleStyleClick}
-                  onCommentClick={handleCommentClick}
-                  selectedStyleId={selectedStyleId}
-                  isSupplier={isSupplier}
-                  isDesigner={isDesigner}
-                />
-              ))
+              <OrderTableV2
+                groups={sortedGroups}
+                flatRows={flatRows}
+                groupByPO={groupByPO}
+                expandedPOs={expandedPOs}
+                onTogglePO={togglePO}
+                onStyleClick={handleStyleClick}
+                onCommentClick={handleCommentClick}
+                selectedStyleId={selectedStyleId}
+                selectedIds={selectedIds}
+                onToggleRow={toggleRow}
+                onToggleGroup={toggleGroup}
+                onToggleAll={toggleAllVisible}
+                allVisibleSelected={allVisibleSelected}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+                isSupplier={isSupplier}
+                isDesigner={isDesigner}
+              />
             )}
           </div>
+
+          <StatusBar
+            segments={[
+              `${visibleTotals.pos} of ${statusCounts.all || 0} POs`,
+              `${visibleTotals.styles} styles · ${visibleTotals.units.toLocaleString()} units`,
+              isDesigner ? null : formatCurrency(visibleTotals.value),
+            ]}
+            hint={groupByPO
+              ? 'click a PO to expand · click a style to open detail · shift-click to select a range'
+              : 'click a row to open detail · tick to select · shift-click for a range'}
+          />
         </div>
 
         {/* ─── Right: Detail Panel ─── */}
         {selectedStyle && (
           <DetailPanel
             order={selectedStyle}
-            onClose={() => { setSelectedStyleId(null); setOpenOnComments(false); }}
+            onClose={closeDrawer}
+            closing={drawerClosing}
+            onPrev={prevStyle ? () => setSelectedStyleId(prevStyle.id) : null}
+            onNext={nextStyle ? () => setSelectedStyleId(nextStyle.id) : null}
             onCommentClick={() => handleCommentClick(selectedStyle)}
             isSupplier={isSupplier}
             isDesigner={isDesigner}
@@ -609,6 +1299,398 @@ function OrdersV2Content() {
         )}
       </div>
 
+      {/* Floating bulk bar — slides up whenever rows are ticked. Action
+          panels expand ABOVE the bar so the bar itself stays a stable
+          anchor while you fill one in. */}
+      <div
+        className={cn(
+          'fixed left-1/2 -translate-x-1/2 bottom-6 z-40 transition-all duration-200',
+          selectedIds.size > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none',
+        )}
+      >
+        {bulkPanel === 'date' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(92vw,560px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set revised ex-factory date</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {isSupplier
+                    ? `Submits a date-change request on ${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'} for Sourcelab to approve. Nothing changes until they do.`
+                    : `Overwrites Revised Ex-Factory on ${selectedIds.size} selected style${selectedIds.size === 1 ? '' : 's'}. ETA UK / ETA Customer recalculate from it.`}
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs flex-wrap">
+              <input
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1"
+              />
+              {isSupplier && (
+                <input
+                  type="text"
+                  value={bulkReason}
+                  onChange={(e) => setBulkReason(e.target.value)}
+                  placeholder="Reason for the change (required)"
+                  className="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[180px]"
+                />
+              )}
+              <button
+                disabled={!bulkDate || bulkSaving || (isSupplier && !bulkReason.trim())}
+                onClick={() => applyBulk('revised_po_ex_factory', bulkDate)}
+                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                {isSupplier ? 'Submit for approval' : `Apply to ${selectedIds.size}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {bulkPanel === 'sample' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(94vw,680px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set a sample status</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Strike Off and Lab Dip live on each style&apos;s components, so pick which ones below.
+                  Fit Sample and PPS are whole-garment and always sit at style level.
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs flex-wrap">
+              <span className="text-gray-500">Sample</span>
+              <select
+                value={bulkSampleField}
+                onChange={(e) => setBulkSampleField(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 bg-white"
+              >
+                <option value="strike_off_status">Strike Off</option>
+                <option value="lab_dip_status">Lab Dip</option>
+                <option value="fit_sample_status">Fit Sample</option>
+                <option value="pps_status">PPS</option>
+              </select>
+
+              {/* What we're writing — the status column or one of the two
+                  dates. Setting a received date also auto-flips
+                  OUTSTANDING→RECEIVED server-side via reconcile_sample_status,
+                  so the date alone is often the whole job. */}
+              <div className="inline-flex p-0.5 bg-gray-100 rounded-lg font-semibold">
+                {([
+                  { v: 'status', label: 'Status' },
+                  { v: 'received', label: 'Received' },
+                  { v: 'approved', label: 'Approved' },
+                ] as const).map(m => (
+                  <button
+                    key={m.v}
+                    onClick={() => setBulkSampleMode(m.v)}
+                    className={cn(
+                      'px-2 py-1 rounded-md transition-colors',
+                      bulkSampleMode === m.v ? 'bg-white shadow-sm text-primary-700' : 'text-gray-500 hover:text-gray-700',
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+
+              <span className="text-gray-400">→</span>
+
+              {bulkSampleMode === 'status' ? (
+                <select
+                  value={bulkSampleValue}
+                  onChange={(e) => setBulkSampleValue(e.target.value)}
+                  className={cn(
+                    'border rounded px-2 py-1 bg-white',
+                    bulkSampleValue ? 'border-gray-300' : 'border-gray-300 text-gray-400',
+                  )}
+                >
+                  <option value="">— Pick a status —</option>
+                  {SAMPLE_STATUS_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="date"
+                  value={bulkSampleDate}
+                  onChange={(e) => setBulkSampleDate(e.target.value)}
+                  className="border border-gray-300 rounded px-2 py-1"
+                />
+              )}
+            </div>
+
+            {/* Rejection is a lifecycle event, not a field write — it closes
+                the current attempt and opens v+1, so it needs a structured
+                reason the factory can act on. */}
+            {isBulkRejecting && (
+              <div className="mx-3 mb-2 p-2.5 rounded border-2 border-red-300 bg-red-50 space-y-2">
+                <div className="text-[10px] text-red-800 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Closes the current attempt on every ticked sample and opens v+1 at OUTSTANDING
+                    with a fresh clock. Received / approved dates are cleared per sample.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={bulkRejectReason}
+                    onChange={(e) => setBulkRejectReason(e.target.value)}
+                    className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+                  >
+                    <option value="">— Reason (required) —</option>
+                    {rejectReasons.map(r => (
+                      <option key={r.code} value={r.code}>{r.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={bulkRejectNotes}
+                    onChange={(e) => setBulkRejectNotes(e.target.value)}
+                    placeholder="Note to the factory (optional)"
+                    className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[160px] bg-white"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Target picker — every sample record the write will touch,
+                grouped under its PO, showing the style it sits on and the
+                status it's currently at. Merch read PO-first, and seeing
+                the current status inline is what makes a bulk write
+                auditable before you commit it. */}
+            {sampleTargets.length > 0 && (
+              <div className="px-3 pb-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                    Apply to · {bulkSampleTargetCount} of {sampleTargets.length}
+                  </span>
+                  <span className="flex items-center gap-2 text-[10px]">
+                    <button
+                      onClick={() => setBulkSampleTargets(new Set(sampleTargets.map(t => t.key)))}
+                      className="text-gray-500 hover:text-gray-900"
+                    >
+                      All
+                    </button>
+                    <span className="text-gray-300">·</span>
+                    <button
+                      onClick={() => setBulkSampleTargets(new Set())}
+                      className="text-gray-500 hover:text-gray-900"
+                    >
+                      None
+                    </button>
+                  </span>
+                </div>
+                <div className="rounded border border-gray-200 max-h-52 overflow-y-auto divide-y divide-gray-100">
+                  {sampleTargetGroups.map((g) => {
+                    const keys = g.targets.map(t => t.key);
+                    const allOn = keys.every(k => bulkSampleTargets.has(k));
+                    const someOn = !allOn && keys.some(k => bulkSampleTargets.has(k));
+                    return (
+                      <div key={g.poNumber}>
+                        <label className="flex items-center gap-2 px-2 py-1.5 bg-gray-50/80 cursor-pointer sticky top-0">
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            ref={(el) => { if (el) el.indeterminate = someOn; }}
+                            onChange={() => setBulkSampleTargets((prev) => {
+                              const next = new Set(prev);
+                              if (allOn) keys.forEach(k => next.delete(k));
+                              else keys.forEach(k => next.add(k));
+                              return next;
+                            })}
+                            className="w-3.5 h-3.5 accent-primary-600"
+                          />
+                          <span className="font-mono text-[11px] font-bold text-gray-900 tabular-nums">
+                            PO {g.poNumber}
+                          </span>
+                          {g.customer && (
+                            <span className="text-[10px] text-gray-500 truncate">· {g.customer}</span>
+                          )}
+                          <span className="ml-auto text-[10px] text-gray-400 tabular-nums">
+                            {g.targets.length} sample{g.targets.length === 1 ? '' : 's'}
+                          </span>
+                        </label>
+                        {g.targets.map((t) => {
+                          const on = bulkSampleTargets.has(t.key);
+                          return (
+                            <label
+                              key={t.key}
+                              className={cn(
+                                'flex items-center gap-2 pl-6 pr-2 py-1.5 text-[11px] cursor-pointer',
+                                on ? 'bg-primary-50/50' : 'hover:bg-gray-50',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => setBulkSampleTargets((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(t.key)) next.delete(t.key);
+                                  else next.add(t.key);
+                                  return next;
+                                })}
+                                className="w-3.5 h-3.5 accent-primary-600 shrink-0"
+                              />
+                              <span className="font-mono text-gray-700 tabular-nums shrink-0">{t.styleCode}</span>
+                              {t.componentName ? (
+                                <span className="font-semibold text-gray-900 truncate">{t.componentName}</span>
+                              ) : (
+                                <span className="text-gray-400 italic truncate">order level — no components</span>
+                              )}
+                              <span className="ml-auto shrink-0">
+                                <SampleStatusPill status={t.currentStatus} />
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+                {(bulkSampleMode === 'status' ? bulkSampleValue : bulkSampleDate) && bulkSampleTargetCount > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-1.5">
+                    {bulkSampleTargetCount} sample{bulkSampleTargetCount === 1 ? '' : 's'} will have{' '}
+                    {bulkSampleMode === 'status' ? (
+                      <>status set to <span className="font-semibold text-gray-900">{bulkSampleValue}</span></>
+                    ) : (
+                      <>
+                        {bulkSampleMode} date set to{' '}
+                        <span className="font-semibold text-gray-900">{formatDate(bulkSampleDate)}</span>
+                      </>
+                    )}
+                    , overwriting whatever they&apos;re on now.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/60 flex items-center gap-3">
+              <p className="text-[10px] text-gray-500 flex-1">
+                {bulkSampleMode === 'received'
+                  ? 'Setting a received date also flips OUTSTANDING samples to RECEIVED automatically.'
+                  : bulkSampleMode === 'approved'
+                    ? 'Sets the approved date only — set the status separately if it needs to move too.'
+                    : 'Status writes land on the sample column; REJECTED closes the attempt and opens v+1.'}
+              </p>
+              <button
+                disabled={
+                  bulkSaving ||
+                  bulkSampleTargetCount === 0 ||
+                  (bulkSampleMode === 'status' ? !bulkSampleValue : !bulkSampleDate) ||
+                  (isBulkRejecting && !bulkRejectReason)
+                }
+                onClick={applyBulkSample}
+                className={cn(
+                  'px-3 py-1 rounded-md text-white text-xs font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap shrink-0',
+                  isBulkRejecting ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700',
+                )}
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                {isBulkRejecting ? `Reject ${bulkSampleTargetCount}` : `Apply to ${bulkSampleTargetCount}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {bulkPanel === 'fitreq' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(94vw,560px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set Fit Sample Required</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Applies to {selectedIds.size} selected style{selectedIds.size === 1 ? '' : 's'}.
+                  Setting this to N also forces Fit Sample status to NOT REQUIRED, which suppresses
+                  its warnings and counts it as done.
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Required</span>
+              <select
+                value={bulkFitRequired}
+                onChange={(e) => setBulkFitRequired(e.target.value)}
+                className={cn('border rounded px-2 py-1 bg-white', bulkFitRequired ? 'border-gray-300' : 'border-gray-300 text-gray-400')}
+              >
+                <option value="">— Pick —</option>
+                {FIT_REQUIRED_OPTIONS.map(v => (
+                  <option key={v} value={v}>{v === 'Y' ? 'Y — required' : 'N — not required'}</option>
+                ))}
+              </select>
+              <button
+                disabled={!bulkFitRequired || bulkSaving}
+                onClick={() => applyBulk('fit_sample_required', bulkFitRequired)}
+                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                Apply to {selectedIds.size}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <BulkBar
+          count={selectedIds.size}
+          onClear={() => { setSelectedIds(new Set()); lastClickedId.current = null; closeBulkPanel(); }}
+        >
+          <button
+            onClick={() => setBulkPanel(p => (p === 'date' ? null : 'date'))}
+            className={cn(
+              'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+              bulkPanel === 'date'
+                ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+            )}
+          >
+            Ex-factory date
+          </button>
+          {!isSupplier && (
+            <>
+              <button
+                onClick={() => setBulkPanel(p => (p === 'sample' ? null : 'sample'))}
+                className={cn(
+                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+                  bulkPanel === 'sample'
+                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                Samples
+              </button>
+              <button
+                onClick={() => setBulkPanel(p => (p === 'fitreq' ? null : 'fitreq'))}
+                className={cn(
+                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+                  bulkPanel === 'fitreq'
+                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                Fit required
+              </button>
+            </>
+          )}
+          <button
+            onClick={exportSelection}
+            disabled={bulkSaving}
+            className="px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap transition-colors disabled:opacity-40"
+            title="Export exactly these styles to Excel"
+          >
+            Export
+          </button>
+        </BulkBar>
+      </div>
+
       <CommentSidebar />
 
       <ExportOrdersModal
@@ -622,201 +1704,14 @@ function OrdersV2Content() {
 
 // ─── PO Card ───────────────────────────────────────────────
 
-function POCard({
-  group,
-  isExpanded,
-  onToggle,
-  onStyleClick,
-  onCommentClick,
-  selectedStyleId,
-  isSupplier,
-  isDesigner,
-}: {
-  group: POGroup;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onStyleClick: (order: Order) => void;
-  onCommentClick: (order: Order) => void;
-  selectedStyleId: number | null;
-  isSupplier: boolean;
-  isDesigner?: boolean;
-}) {
-  const statusStyle = getStatusStyle(group.statusSummary);
-  const hasMultipleStatuses = new Set(group.styles.map(s => s.status)).size > 1;
+// ─── Order table (Sep 2026 list rework) ───────────────────────────────
+// Replaces the PO card stack. Grouped mode keeps the PO-first reading
+// the cards had — a group header row then its styles — while flat mode
+// sorts across every style regardless of PO. Row click opens the drawer;
+// the checkbox column drives the bulk bar.
 
-  return (
-    <div id={`po-card-${group.po_number}`} className={cn(
-      'bg-white rounded-xl transition-all overflow-hidden',
-      isExpanded ? 'ring-1 ring-primary-200 shadow-md' : 'ring-1 ring-gray-200/80 hover:ring-gray-300 hover:shadow-md'
-    )}>
-      {/* PO Header */}
-      <button
-        onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center gap-5 text-left"
-      >
-        {/* Left accent */}
-        <div className={cn(
-          'w-1.5 h-12 rounded-full flex-shrink-0 transition-colors',
-          isExpanded ? 'bg-primary-500' : 'bg-gray-200'
-        )} />
 
-        {/* PO Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-base font-bold text-gray-900">{group.po_number}</span>
-            {group.styles[0]?.china_orderbook_ref && (
-              <span className="text-xs text-gray-500 font-medium">— {group.styles[0].china_orderbook_ref}</span>
-            )}
-            <span className={cn(
-              'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
-              statusStyle.bg, statusStyle.text
-            )}>
-              <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
-              {group.statusSummary || 'Unknown'}
-            </span>
-            {hasMultipleStatuses && (
-              <span className="text-[10px] text-gray-400 italic">mixed</span>
-            )}
-            {group.unreadComments > 0 && (
-              <span className="inline-flex items-center gap-1 text-primary-500">
-                <MessageSquare className="w-3.5 h-3.5 fill-current" />
-                <span className="text-[10px] font-bold">{group.unreadComments}</span>
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-medium text-gray-600">{group.customer}</span>
-            <span className="text-[10px] text-gray-300">|</span>
-            <span className="text-xs text-gray-400">{group.factory}</span>
-            <span className="text-[10px] text-gray-300">|</span>
-            <span className="text-xs text-gray-400">{group.styles.length} style{group.styles.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
 
-        {/* Stats pills */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[70px]">
-            <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(group.totalQty)}</p>
-            <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
-          </div>
-
-          {!isSupplier && !isDesigner && (
-            <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
-              <p className="text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(group.totalValue)}</p>
-              <p className="text-[9px] text-gray-400 uppercase tracking-wider">value</p>
-            </div>
-          )}
-
-          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
-            <p className="text-xs font-semibold text-gray-700">{formatDate(group.latestDate)}</p>
-            <p className="text-[9px] text-gray-400 uppercase tracking-wider">ex-factory</p>
-          </div>
-        </div>
-
-        <ChevronRight className={cn(
-          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
-          isExpanded && 'rotate-90'
-        )} />
-      </button>
-
-      {/* Expanded: Style Cards */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50/40">
-          {group.styles.map((style) => {
-            const ss = getStatusStyle(style.status);
-            const isSelected = style.id === selectedStyleId;
-            const exFacDate = style.revised_po_ex_factory || style.original_po_ex_factory;
-            return (
-              <div
-                key={style.id}
-                onClick={() => onStyleClick(style)}
-                className={cn(
-                  'flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all',
-                  isSelected
-                    ? 'bg-primary-50 ring-1 ring-primary-200 shadow-sm'
-                    : 'bg-white hover:shadow-md hover:ring-1 hover:ring-gray-200'
-                )}
-              >
-                {/* Colour dot + Style info */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div
-                    className="w-3 h-8 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: style.colour ? `var(--color-gray-300)` : '#e5e7eb' }}
-                    title={style.colour || 'No colour'}
-                  />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900 truncate">{style.style_code || '—'}</p>
-                      {style.colour && <span className="text-[10px] text-gray-400 font-medium">{style.colour}</span>}
-                    </div>
-                    <p className="text-xs text-gray-500 truncate">{style.description || '—'}</p>
-                  </div>
-                </div>
-
-                {/* Qty */}
-                <div className="flex-shrink-0 text-center min-w-[60px]">
-                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(style.total_quantity)}</p>
-                  <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
-                </div>
-
-                {/* Value (admin/internal only) */}
-                {!isSupplier && !isDesigner && (
-                  <div className="flex-shrink-0 text-center min-w-[80px]">
-                    <p className="text-xs font-semibold text-gray-700 tabular-nums">{formatCurrency(style.total_order_value)}</p>
-                  </div>
-                )}
-
-                {/* Ex-Factory */}
-                <div className="flex-shrink-0 text-center min-w-[90px]">
-                  <p className="text-xs font-medium text-gray-700">{formatDate(exFacDate)}</p>
-                  <p className="text-[9px] text-gray-400">ex-factory</p>
-                </div>
-
-                {/* Status */}
-                <div className="flex-shrink-0">
-                  <span className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold',
-                    ss.bg, ss.text
-                  )}>
-                    <span className={cn('w-1.5 h-1.5 rounded-full', ss.dot)} />
-                    {style.status || 'Unknown'}
-                  </span>
-                </div>
-
-                {/* Comment + Arrow */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {(style.comment_count || 0) > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onCommentClick(style); }}
-                      className="relative p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
-                    >
-                      {(style.unread_comment_count || 0) > 0 ? (
-                        <MessageSquare className="w-3.5 h-3.5 text-primary-500 fill-current" />
-                      ) : (
-                        <MessageSquare className="w-3.5 h-3.5 text-gray-300" />
-                      )}
-                      {(style.unread_comment_count || 0) > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 bg-primary-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                          {style.unread_comment_count}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
-                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Detail Panel ──────────────────────────────────────────
 
@@ -830,6 +1725,9 @@ function DetailPanel({
   onSave,
   initialTab = 'details',
   onCommentCountChange,
+  closing = false,
+  onPrev,
+  onNext,
 }: {
   order: Order;
   onClose: () => void;
@@ -840,6 +1738,11 @@ function DetailPanel({
   onSave?: (orderId: number, field: string, value: any) => void;
   initialTab?: 'details' | 'comments';
   onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
+  /** Parent is animating the drawer out — it stays mounted for the slide. */
+  closing?: boolean;
+  /** Page to the previous/next style in the visible list. Null at either end. */
+  onPrev?: (() => void) | null;
+  onNext?: (() => void) | null;
 }) {
   const isProductView = view === 'factory-product';
   const isShippingView = view === 'factory-shipping';
@@ -870,21 +1773,52 @@ function DetailPanel({
   const sizes = getSizeBreakdown(order, sizeGuideRows);
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
 
-  // Close on Escape
+  // Drive the slide-in. Mounting with translate-x-full then flipping on
+  // the next frame is what makes the transition actually play — setting
+  // the final transform in the same paint as the mount would just snap.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const shown = entered && !closing;
+
+  // Close on Escape; arrow keys page between styles. Ignored while the
+  // user is typing in a field so inline edits aren't hijacked.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (
+        el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+      );
+      if (e.key === 'Escape') { onClose(); return; }
+      if (typing) return;
+      if (e.key === 'ArrowUp' && onPrev) { e.preventDefault(); onPrev(); }
+      if (e.key === 'ArrowDown' && onNext) { e.preventDefault(); onNext(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onPrev, onNext]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
-    >
+    <>
+      {/* Scrim — lighter than the old modal overlay since the drawer
+          leaves most of the list visible and usable-looking behind it. */}
       <div
-        className="w-full max-w-[1200px] h-[88vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          'fixed inset-0 z-40 bg-gray-900/30 transition-opacity duration-300 motion-reduce:transition-none',
+          shown ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        )}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'fixed top-0 right-0 bottom-0 w-full max-w-[860px] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col',
+          'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
+          shown ? 'translate-x-0' : 'translate-x-full',
+        )}
+        role="dialog"
+        aria-modal="true"
       >
       {/* Header */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
@@ -951,6 +1885,28 @@ function DetailPanel({
                 )}
               </button>
             </div>
+            {/* Page between styles without closing the drawer — the main
+                win of the drawer over the old centred modal. */}
+            {(onPrev || onNext) && (
+              <div className="inline-flex rounded-md border border-gray-300 bg-white overflow-hidden">
+                <button
+                  onClick={() => onPrev?.()}
+                  disabled={!onPrev}
+                  title="Previous style (↑)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed border-r border-gray-300"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => onNext?.()}
+                  disabled={!onNext}
+                  title="Next style (↓)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
@@ -985,13 +1941,16 @@ function DetailPanel({
       )}
 
       {/* Footer */}
-      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
+      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <p className="text-[11px] text-gray-400">
+          {(onPrev || onNext) ? '↑ ↓ to move between styles · Esc to close' : 'Esc to close'}
+        </p>
         <p className="text-[11px] text-gray-400">
           Updated {timeAgo(order.updated_at)}
         </p>
       </div>
       </div>
-    </div>
+    </>
   );
 }
 

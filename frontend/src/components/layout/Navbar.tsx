@@ -49,7 +49,10 @@ const factorySubItems = [
 ];
 
 const designSubItems = [
-  { href: '/design-overview', label: 'Overview', icon: BarChart3 },
+  // Overview (/design-overview) is hidden from the menu as of Sep 2026 —
+  // it isn't pulling its weight and needs a rework before it earns a slot
+  // back. The route still exists and still resolves, so any bookmark or
+  // deep link keeps working; this only removes the nav entry.
   { href: '/design', label: 'Orders', icon: Palette },
   { href: '/components', label: 'Components', icon: Layers },
   { href: '/resubmissions', label: 'Resubmissions', icon: RefreshCcw },

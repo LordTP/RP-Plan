@@ -709,12 +709,15 @@ export interface ImportPreviewResult {
 }
 
 export const excelApi = {
-  exportExcel: async (filters?: OrderFilters & { po_numbers?: string[] }): Promise<Blob> => {
+  exportExcel: async (filters?: OrderFilters & { po_numbers?: string[]; order_ids?: number[] }): Promise<Blob> => {
     const params = new URLSearchParams();
     if (filters) {
       if (filters.po_number) params.append('po_number', filters.po_number);
       if (filters.po_numbers && filters.po_numbers.length > 0) {
         for (const p of filters.po_numbers) params.append('po_numbers', p);
+      }
+      if (filters.order_ids && filters.order_ids.length > 0) {
+        for (const id of filters.order_ids) params.append('order_ids', String(id));
       }
       if (filters.style_code) params.append('style_code', filters.style_code);
       if (filters.factory) params.append('factory', filters.factory);

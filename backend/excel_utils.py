@@ -1396,6 +1396,11 @@ def export_database_to_excel(
         # Multi-PO selection from the export modal — exact match against the list.
         if filters.get('po_numbers'):
             query = query.filter(PurchaseOrder.po_number.in_(filters['po_numbers']))
+        # Explicit row selection from the V2 list's bulk bar. Narrower than
+        # po_numbers: exports exactly the ticked styles rather than every
+        # style on their POs, so a chase list stays a chase list.
+        if filters.get('order_ids'):
+            query = query.filter(PurchaseOrder.id.in_(filters['order_ids']))
         if filters.get('style_code'):
             query = query.filter(PurchaseOrder.style_code.ilike(f"%{filters['style_code']}%"))
         if filters.get('factory'):
