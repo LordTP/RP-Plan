@@ -188,29 +188,6 @@ def decorate_orders_with_attempts(db: Session, order_dicts: List[dict]) -> List[
     return order_dicts
 
 
-@router.get("/api/components/names")
-async def get_component_names(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """List every distinct component name with a count of how many component
-    rows use it. Powers the autocomplete on the add-component form so users
-    reuse existing names instead of creating variants.
-
-    Scoped for suppliers — the unscoped version leaked every factory's
-    component naming, which is a reasonable proxy for what they're making."""
-    rows = db.query(
-        OrderComponent.name,
-        func.count(OrderComponent.id).label('count')
-    ).join(
-        PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id
-    ).filter(
-        OrderComponent.name.isnot(None),
-        OrderComponent.name != '',
-        *supplier_filter_clause(current_user)
-    ).group_by(OrderComponent.name).order_by(func.count(OrderComponent.id).desc()).all()
-    return {"names": [{"name": name, "count": count} for name, count in rows]}
-
 
 @router.post("/api/components/merge")
 async def merge_component_names(
@@ -372,7 +349,7 @@ async def update_component(
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
     # Imported here to avoid a circular import at module load.
-    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    from routers.submissions import sync_submission_on_status_change, reconcile_and_sync, STATUS_FIELD_TO_SAMPLE_TYPE
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
 
     # Log each field change to DateChangeHistory so the activity feed picks it up
@@ -396,8 +373,18 @@ async def update_component(
             sync_submission_on_status_change(db, order, component, key, value, current_user.id)
 
     component.updated_at = datetime.utcnow()
+    # The sync above only fires for STATUS writes. A date-only approval —
+    # write *_approved and let reconcile flip the status — skipped it
+    # entirely, leaving the attempt open while the column read APPROVED.
+    # reconcile_and_sync closes whatever the reconcile just settled.
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
-    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+    if order is not None and role_str != 'supplier':
+        reconcile_and_sync(
+            db, order, component, SAMPLE_PREFIXES_COMPONENT, current_user.id,
+            skip_prefixes=user_touched_status,
+        )
+    else:
+        reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.commit()
     db.refresh(component)
     summary = _attempt_summary_for_components(db, [component.id])
@@ -436,8 +423,9 @@ async def bulk_update_components(
     field = data.get("field")
     value = data.get("value")
 
+    # Fit is order-level — see SAMPLE_PREFIXES_COMPONENT. Bulk-updating it on
+    # a component wrote to a field nothing reads.
     ALLOWED_FIELDS = {
-        'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
         'strike_off_status', 'strike_off_received', 'strike_off_approved',
         'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
         'label_status', 'label_received', 'label_approved',
@@ -446,6 +434,23 @@ async def bulk_update_components(
         raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable in bulk")
     if not component_ids or not isinstance(component_ids, list):
         raise HTTPException(status_code=400, detail="component_ids must be a non-empty list")
+
+    # REJECTED is a lifecycle event, not a field write. The sync call further
+    # down is gated on APPROVED — originally on the assumption that clients
+    # route rejections to /bulk-reject — but nothing enforced that, so a
+    # REJECTED sent here wrote the status column and created NO submission
+    # row at all: no attempt closed, no v+1 opened, no reason, and the
+    # sample silently frozen at REJECTED with no way back through the
+    # normal flow. Refuse it instead of assuming.
+    if field.endswith('_status') and value == 'REJECTED':
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Rejecting samples in bulk needs a structured reason. Use "
+                "POST /api/submissions/bulk-reject, which closes each current "
+                "attempt and opens the next one."
+            ),
+        )
 
     # Coerce date strings (YYYY-MM-DD) to datetimes for date columns
     date_fields = {
@@ -488,7 +493,7 @@ async def bulk_update_components(
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
-    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    from routers.submissions import sync_submission_on_status_change, reconcile_and_sync, STATUS_FIELD_TO_SAMPLE_TYPE
 
     # Pre-fetch the orders for these components so the submission sync can run
     # without hitting the DB once per row.
@@ -551,101 +556,6 @@ async def delete_component(
     db.commit()
 
 
-@router.post("/api/components/cross-po-add")
-async def cross_po_add_component(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Add a component (by name) to any set of styles, regardless of which PO
-    they belong to. Used by the /design-components page and /factory-components
-    page's bulk "Add component" modal. Suppliers can use this against their own
-    factory's orders only — non-matching target IDs are silently dropped from
-    the set rather than rejecting the whole request, so a stale picker doesn't
-    fail awkwardly. Skips orders that already have a (name, sample_type) match."""
-    body = await request.json()
-    name = (body.get("name") or "").strip()
-    order_ids = body.get("order_ids") or []
-    sample_type = body.get("sample_type", "strike_off")
-    if not name:
-        raise HTTPException(status_code=400, detail="Component name is required")
-    if sample_type not in ('strike_off', 'lab_dip', 'label'):
-        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off', 'lab_dip', or 'label'")
-    if not isinstance(order_ids, list) or not order_ids:
-        raise HTTPException(status_code=400, detail="At least one order id is required")
-
-    # Apply supplier factory filter so they can only ever land components on
-    # their own orders — no leakage even if the picker sends stale IDs.
-    target_orders_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
-    target_orders_q = apply_supplier_filter(target_orders_q, current_user)
-    target_orders = target_orders_q.all()
-    if not target_orders:
-        raise HTTPException(status_code=404, detail="No matching orders found")
-
-    created = 0
-    skipped = 0
-    for o in target_orders:
-        # Same-name dedupe is now PER sample_type — a "Pocket" strike-off and a
-        # "Pocket" lab-dip on the same order are intentional and shouldn't
-        # collide.
-        existing = db.query(OrderComponent).filter(
-            OrderComponent.order_id == o.id,
-            OrderComponent.name == name,
-            OrderComponent.sample_type == sample_type,
-        ).first()
-        if existing:
-            skipped += 1
-            continue
-        db.add(OrderComponent(order_id=o.id, name=name, sample_type=sample_type))
-        created += 1
-    db.commit()
-    return {"success": True, "components_created": created, "skipped_existing": skipped}
-
-
-@router.post("/api/orders/{order_id}/components/bulk-add")
-async def bulk_add_component(
-    order_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Add a component to selected styles or all styles on the same PO.
-    Suppliers can only target their own factory's orders."""
-    body = await request.json()
-    name = body.get("name")
-    sample_type = body.get("sample_type", "strike_off")
-    if not name:
-        raise HTTPException(status_code=400, detail="Component name is required")
-    if sample_type not in ('strike_off', 'lab_dip', 'label'):
-        raise HTTPException(status_code=400, detail="sample_type must be 'strike_off', 'lab_dip', or 'label'")
-    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    assert_supplier_can_access(order, current_user)
-    # If order_ids provided, use those; otherwise all styles on PO. Either
-    # way, supplier_filter trims to their factory so a stale picker can't
-    # leak components onto another factory's orders.
-    order_ids = body.get("order_ids")
-    if order_ids:
-        sibling_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
-    else:
-        sibling_q = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == order.po_number)
-    sibling_orders = apply_supplier_filter(sibling_q, current_user).all()
-    created = 0
-    for sib in sibling_orders:
-        # Dedupe per (name, sample_type) so "Pocket" can exist as both Strike
-        # Off and Lab Dip on the same order without clashing.
-        existing = db.query(OrderComponent).filter(
-            OrderComponent.order_id == sib.id,
-            OrderComponent.name == name,
-            OrderComponent.sample_type == sample_type,
-        ).first()
-        if not existing:
-            component = OrderComponent(order_id=sib.id, name=name, sample_type=sample_type)
-            db.add(component)
-            created += 1
-    db.commit()
-    return {"success": True, "components_created": created, "po_number": order.po_number}
 
 
 @router.post("/api/components/{component_id}/apply-to-po")
@@ -679,25 +589,54 @@ async def apply_component_field_to_po(
     # If order_ids provided, scope to those; otherwise all on PO.
     # Factory-scope the sibling list so suppliers can't reach other
     # factories' orders via a stale id list.
+    # Resolve which instances this update reaches.
+    #
+    # `order_ids` is now an optional NARROWING filter, not the source of the
+    # sibling set. It used to be the other way round: with no order_ids the
+    # endpoint fell back to "every style on this PO", so the caller had to
+    # look up the link and hand over the full list to get cross-PO reach.
+    # One caller did (ComponentEditModal), one didn't (the order drawer) —
+    # so the same "apply to all" button updated 3 styles from /components and
+    # silently only 2 from the drawer, with the toast reporting 2 as if that
+    # were the whole set.
+    #
+    # The link lives in the database, so the database resolves it. A caller
+    # can still pass order_ids to apply to a subset, but it can no longer
+    # accidentally shrink the scope by omitting them.
     selected_ids = body.pop("order_ids", None)
-    if selected_ids:
-        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.id.in_(selected_ids))
-    else:
-        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number)
-    sibling_ids = [r[0] for r in apply_supplier_filter(sibling_ids_q, current_user).all()]
-    # Match sibling instances. When the source has a canonical_id, prefer
-    # that — under the per-add-event model it's the truest "linked" signal
-    # and avoids accidentally hitting a same-named but unrelated canonical.
-    # Fall back to name + sample_type for legacy rows with no canonical link.
-    match_q = db.query(OrderComponent).filter(OrderComponent.order_id.in_(sibling_ids))
+
+    match_q = db.query(OrderComponent).join(
+        PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id
+    )
     if component.canonical_id is not None:
+        # Linked instances — the add-event group, wherever its styles live.
         match_q = match_q.filter(OrderComponent.canonical_id == component.canonical_id)
     else:
+        # Legacy rows with no link: fall back to same-name-same-type, and keep
+        # the PO bound, because a bare name match across the whole book would
+        # hit unrelated components that merely share a name.
         match_q = match_q.filter(
             OrderComponent.name == component.name,
             OrderComponent.sample_type == component.sample_type,
+            PurchaseOrder.po_number == order.po_number,
         )
+    if selected_ids:
+        match_q = match_q.filter(OrderComponent.order_id.in_(selected_ids))
+    # Supplier scoping still applies on top — a supplier's apply never reaches
+    # another factory's styles even if they share a canonical.
+    match_q = apply_supplier_filter(match_q, current_user)
+    # Local import, matching this module's existing pattern for pulling
+    # from routers.submissions (avoids a load-order cycle).
+    from routers.submissions import reconcile_and_sync
     matching = match_q.all()
+    # Each matching sibling lives on its own order; reconcile_and_sync needs
+    # that order to find the right submission rows. One query rather than a
+    # lookup per sibling.
+    sibling_orders_by_id = {
+        o.id: o for o in db.query(PurchaseOrder).filter(
+            PurchaseOrder.id.in_({c.order_id for c in matching} or {-1})
+        ).all()
+    }
     # Remaining keys in body are the fields to update
     allowed_fields = {
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
@@ -746,7 +685,19 @@ async def apply_component_field_to_po(
                 ))
             setattr(comp, key, value)
         comp.updated_at = datetime.utcnow()
-        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+        # Was a bare reconcile, so pushing APPROVED to siblings updated their
+        # columns and left every sibling's open attempt dangling — each read
+        # approved while still counting as in-rework on /resubmissions.
+        # Each sibling belongs to its OWN order, so the submission lookup has
+        # to use that order's id, not the one the request came in on.
+        reconcile_and_sync(
+            db,
+            sibling_orders_by_id.get(comp.order_id, order),
+            comp,
+            SAMPLE_PREFIXES_COMPONENT,
+            current_user.id,
+            skip_prefixes=user_touched_status,
+        )
         updated += 1
     db.commit()
     return {"success": True, "components_updated": updated, "po_number": order.po_number}

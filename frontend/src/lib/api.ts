@@ -338,47 +338,14 @@ export const componentsApi = {
     return response.data;
   },
 
-  createComponent: async (
-    orderId: number,
-    data: { name: string; sample_type: 'strike_off' | 'lab_dip' },
-  ): Promise<OrderComponent> => {
-    const response = await api.post<OrderComponent>(`/api/orders/${orderId}/components`, data);
-    return response.data;
-  },
 
   updateComponent: async (componentId: number, data: Partial<OrderComponent>): Promise<OrderComponent> => {
     const response = await api.put<OrderComponent>(`/api/components/${componentId}`, data);
     return response.data;
   },
 
-  getComponentNames: async (): Promise<{ names: { name: string; count: number }[] }> => {
-    const response = await api.get('/api/components/names');
-    return response.data;
-  },
 
-  mergeComponentNames: async (
-    fromNames: string[],
-    toName: string,
-  ): Promise<{ success: boolean; renamed_count: number; to_name: string }> => {
-    const response = await api.post('/api/components/merge', {
-      from_names: fromNames,
-      to_name: toName,
-    });
-    return response.data;
-  },
 
-  bulkUpdateComponents: async (
-    componentIds: number[],
-    field: string,
-    value: string | null,
-  ): Promise<{ success: boolean; changed_count: number; unchanged_count: number; changed_ids: number[] }> => {
-    const response = await api.post('/api/components/bulk-update', {
-      component_ids: componentIds,
-      field,
-      value,
-    });
-    return response.data;
-  },
 
   deleteComponent: async (componentId: number): Promise<void> => {
     await api.delete(`/api/components/${componentId}`);
@@ -387,26 +354,7 @@ export const componentsApi = {
   /** Add a single component name to many styles across multiple POs at once.
    *  Dedupes per (name, sample_type) so a "Pocket" Strike Off and a "Pocket"
    *  Lab Dip can coexist on the same order. */
-  crossPoAdd: async (
-    name: string,
-    orderIds: number[],
-    sampleType: 'strike_off' | 'lab_dip' | 'label',
-  ): Promise<{ success: boolean; components_created: number; skipped_existing: number }> => {
-    const response = await api.post('/api/components/cross-po-add', {
-      name,
-      order_ids: orderIds,
-      sample_type: sampleType,
-    });
-    return response.data;
-  },
 
-  bulkAddComponent: async (
-    orderId: number,
-    data: { name: string; sample_type: 'strike_off' | 'lab_dip' | 'label'; order_ids?: number[] },
-  ): Promise<{ success: boolean; components_created: number }> => {
-    const response = await api.post(`/api/orders/${orderId}/components/bulk-add`, data);
-    return response.data;
-  },
 
   applyFieldToPO: async (componentId: number, data: Partial<OrderComponent> & { order_ids?: number[] }): Promise<{ success: boolean; components_updated: number }> => {
     const response = await api.post(`/api/components/${componentId}/apply-to-po`, data);
