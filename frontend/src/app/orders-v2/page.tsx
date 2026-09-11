@@ -35,6 +35,7 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar } from '@/components/orders/v2-list-primitives';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, submissionsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
@@ -88,6 +89,70 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
 function getStatusStyle(status: string | undefined) {
   if (!status) return { bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-300' };
   return STATUS_COLORS[status] || { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
+}
+
+/** Raw hex for a status dot — the StatusTile takes a CSS colour rather
+ *  than a Tailwind class because statuses are DB-driven, so the palette
+ *  can't be resolved at build time from a static class map. */
+const STATUS_DOT_HEX: Record<string, string> = {
+  'In Production': '#fbbf24',
+  'Pending Approval': '#fb923c',
+  'Shipped': '#60a5fa',
+  'Delivered': '#4ade80',
+  'Cancelled': '#f87171',
+  'On Hold': '#9ca3af',
+  'In Transit': '#818cf8',
+  'Order Confirmed': '#2dd4bf',
+};
+
+function statusDotHex(status: string | undefined): string {
+  if (!status) return '#d1d5db';
+  return STATUS_DOT_HEX[status] || '#9ca3af';
+}
+
+// ─── Ex-factory window filter ─────────────────────────────────────────
+
+type ExFacWindow = '' | 'week' | '14' | '30' | 'overdue' | 'unset';
+
+const EXFAC_WINDOW_LABEL: Record<ExFacWindow, string> = {
+  '': 'Any time',
+  week: 'Next 7 days',
+  '14': 'Next 14 days',
+  '30': 'Next 30 days',
+  overdue: 'Overdue',
+  unset: 'No date set',
+};
+
+/** The date a style is actually working to — revised wins over original,
+ *  matching the rule used everywhere else in the app. */
+function effectiveExFactory(order: Order): string | null {
+  return order.revised_po_ex_factory || order.original_po_ex_factory || null;
+}
+
+function matchesExFacWindow(order: Order, w: ExFacWindow): boolean {
+  if (!w) return true;
+  const iso = effectiveExFactory(order);
+  if (w === 'unset') return !iso;
+  if (!iso) return false;
+
+  // Compare on date only — a style ex-factory'ing later today shouldn't
+  // read as overdue because the stored timestamp is midnight.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let d: Date;
+  try {
+    d = parseISO(iso);
+  } catch {
+    return false;
+  }
+  d.setHours(0, 0, 0, 0);
+  const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+
+  if (w === 'overdue') return days < 0;
+  if (w === 'week') return days >= 0 && days <= 7;
+  if (w === '14') return days >= 0 && days <= 14;
+  if (w === '30') return days >= 0 && days <= 30;
+  return true;
 }
 
 // ─── Types ─────────────────────────────────────────────────
@@ -159,6 +224,14 @@ function OrdersV2Content() {
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // Chip filters (Sep 2026 list rework). These narrow the same working set
+  // the status tiles filter, so a tile + a chip compose rather than fight.
+  const [customerF, setCustomerF] = useState<string | null>(null);
+  const [factoryF, setFactoryF] = useState<string | null>(null);
+  const [exFacWindow, setExFacWindow] = useState<ExFacWindow>('');
+  const [lateOnly, setLateOnly] = useState(false);
+  const [missingDatesOnly, setMissingDatesOnly] = useState(false);
 
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -265,6 +338,15 @@ function OrdersV2Content() {
       filtered = filtered.filter(o => o.status === statusFilter);
     }
 
+    // Chip filters — applied at the LINE level so a PO only survives if
+    // it still has at least one matching style. Keeps mixed POs visible
+    // when part of the PO matches, same principle as the 'open' filter.
+    if (customerF) filtered = filtered.filter(o => (o.customer || '') === customerF);
+    if (factoryF) filtered = filtered.filter(o => (o.factory || '') === factoryF);
+    if (exFacWindow) filtered = filtered.filter(o => matchesExFacWindow(o, exFacWindow));
+    if (lateOnly) filtered = filtered.filter(o => !!o.is_late);
+    if (missingDatesOnly) filtered = filtered.filter(o => !effectiveExFactory(o));
+
     // Group by PO
     const groups: Record<string, POGroup> = {};
     for (const order of filtered) {
@@ -324,7 +406,7 @@ function OrdersV2Content() {
       if (!a.latestDate && b.latestDate) return 1;
       return b.latestUpdate.localeCompare(a.latestUpdate);
     });
-  }, [orders, searchQuery, statusFilter]);
+  }, [orders, searchQuery, statusFilter, customerF, factoryF, exFacWindow, lateOnly, missingDatesOnly]);
 
   // Status counts for chips
   const statusCounts = useMemo(() => {
@@ -346,6 +428,90 @@ function OrdersV2Content() {
     }
     return counts;
   }, [orders]);
+
+  // ─── Status tiles ───────────────────────────────────────────────────
+  // One tile per status that actually has rows, plus a Late tile. Each
+  // carries a PO count (the headline number) and a units/value secondary
+  // line. Computed off the UNFILTERED working set so the tiles keep
+  // showing the whole picture while you drill into one of them — the
+  // thing that makes them usable as navigation rather than just readouts.
+  const statusTiles = useMemo(() => {
+    const byStatus = new Map<string, { pos: Set<string>; units: number; value: number }>();
+    for (const o of orders) {
+      const s = o.status || 'Unknown';
+      let e = byStatus.get(s);
+      if (!e) { e = { pos: new Set(), units: 0, value: 0 }; byStatus.set(s, e); }
+      e.pos.add(o.po_number);
+      e.units += o.total_quantity || 0;
+      e.value += o.total_order_value || 0;
+    }
+    return Array.from(byStatus.entries())
+      .map(([status, e]) => ({ status, poCount: e.pos.size, units: e.units, value: e.value }))
+      .sort((a, b) => b.poCount - a.poCount);
+  }, [orders]);
+
+  const lateTile = useMemo(() => {
+    const pos = new Set<string>();
+    let units = 0;
+    let value = 0;
+    for (const o of orders) {
+      if (!o.is_late) continue;
+      pos.add(o.po_number);
+      units += o.total_quantity || 0;
+      value += o.total_order_value || 0;
+    }
+    return { poCount: pos.size, units, value };
+  }, [orders]);
+
+  // ─── Chip option lists ──────────────────────────────────────────────
+  // Counts are PO-level so they line up with what the tiles report.
+  const customerOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of orders) {
+      const c = o.customer || '';
+      if (!c) continue;
+      if (!m.has(c)) m.set(c, new Set());
+      m.get(c)!.add(o.po_number);
+    }
+    return Array.from(m.entries())
+      .map(([v, pos]) => [v, pos.size] as [string, number])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [orders]);
+
+  const factoryOpts = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const o of orders) {
+      const f = o.factory || '';
+      if (!f) continue;
+      if (!m.has(f)) m.set(f, new Set());
+      m.get(f)!.add(o.po_number);
+    }
+    return Array.from(m.entries())
+      .map(([v, pos]) => [v, pos.size] as [string, number])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [orders]);
+
+  const anyFilter = !!(customerF || factoryF || exFacWindow || lateOnly || missingDatesOnly || searchQuery.trim());
+
+  const clearFilters = () => {
+    setCustomerF(null);
+    setFactoryF(null);
+    setExFacWindow('');
+    setLateOnly(false);
+    setMissingDatesOnly(false);
+    setSearchQuery('');
+  };
+
+  // Totals across whatever's currently visible — drives the status bar.
+  const visibleTotals = useMemo(() => {
+    let styles = 0, units = 0, value = 0;
+    for (const g of poGroups) {
+      styles += g.styles.length;
+      units += g.totalQty;
+      value += g.totalValue;
+    }
+    return { pos: poGroups.length, styles, units, value };
+  }, [poGroups]);
 
   const togglePO = (po: string) => {
     setExpandedPOs(prev => {
@@ -483,76 +649,145 @@ function OrdersV2Content() {
             </button>
           </div>
 
-          {/* Status Chips */}
-          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-            <button
-              onClick={() => setStatusFilter('open')}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                statusFilter === 'open'
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-              )}
+          {/* Status tiles — KPI cards that double as the status filter.
+              Counts are PO-level and computed off the unfiltered set, so
+              the row keeps showing the whole picture while you're drilled
+              into one of them. */}
+          <div
+            className="grid gap-2 mb-3 shrink-0"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+          >
+            <StatusTile
+              label="Open orders"
+              count={statusCounts.open || 0}
+              secondary={`${poGroups.length} shown`}
+              active={statusFilter === 'open' && !lateOnly}
+              onClick={() => { setStatusFilter('open'); setLateOnly(false); }}
+            />
+            {statusTiles.map(({ status, poCount, units, value }) => (
+              <StatusTile
+                key={status}
+                label={status}
+                dotColor={statusDotHex(status)}
+                count={poCount}
+                secondary={
+                  isDesigner
+                    ? `${units.toLocaleString()} units`
+                    : `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                }
+                active={statusFilter === status && !lateOnly}
+                onClick={() => {
+                  setStatusFilter(statusFilter === status ? 'open' : status);
+                  setLateOnly(false);
+                }}
+              />
+            ))}
+            {lateTile.poCount > 0 && (
+              <StatusTile
+                label="Late"
+                dotColor="#dc2626"
+                tone="danger"
+                count={lateTile.poCount}
+                secondary={
+                  isDesigner
+                    ? `${lateTile.units.toLocaleString()} units`
+                    : `${lateTile.units.toLocaleString()} units · ${formatCurrency(lateTile.value)}`
+                }
+                active={lateOnly}
+                onClick={() => { setLateOnly(v => !v); setStatusFilter('open'); }}
+              />
+            )}
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex items-center gap-1.5 flex-wrap mb-3 shrink-0">
+            <Chip
+              label="Customer"
+              active={!!customerF}
+              valueText={customerF}
+              onClear={() => setCustomerF(null)}
             >
-              Open Orders
-              <span className="ml-1.5 opacity-70">{statusCounts.open || 0}</span>
-            </button>
-            {statuses.filter(s => s !== 'Shipped').map(status => {
-              const style = getStatusStyle(status);
-              const count = statusCounts[status] || 0;
-              if (count === 0) return null;
-              return (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'open' : status)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === status
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  {status}
-                  <span className="ml-1.5 opacity-70">{count}</span>
-                </button>
-              );
-            })}
-            {(statusCounts.shipped || 0) > 0 && (() => {
-              const style = getStatusStyle('Shipped');
-              return (
-                <button
-                  onClick={() => setStatusFilter(statusFilter === 'shipped' ? 'open' : 'shipped')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    statusFilter === 'shipped'
-                      ? `${style.bg} ${style.text} border-current`
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-1.5', style.dot)} />
-                  Shipped
-                  <span className="ml-1.5 opacity-70">{statusCounts.shipped}</span>
-                </button>
-              );
-            })()}
+              {(close) => (
+                <>
+                  <Opt label="All customers" on={!customerF} onClick={() => { setCustomerF(null); close(); }} />
+                  {customerOpts.map(([v, n]) => (
+                    <Opt key={v} label={v} count={n} on={customerF === v} onClick={() => { setCustomerF(v); close(); }} />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            {!isSupplier && (
+              <Chip
+                label="Factory"
+                active={!!factoryF}
+                valueText={factoryF}
+                onClear={() => setFactoryF(null)}
+              >
+                {(close) => (
+                  <>
+                    <Opt label="All factories" on={!factoryF} onClick={() => { setFactoryF(null); close(); }} />
+                    {factoryOpts.map(([v, n]) => (
+                      <Opt key={v} label={v} count={n} on={factoryF === v} onClick={() => { setFactoryF(v); close(); }} />
+                    ))}
+                  </>
+                )}
+              </Chip>
+            )}
+
+            <Chip
+              label="Ex-factory"
+              active={!!exFacWindow}
+              valueText={exFacWindow ? EXFAC_WINDOW_LABEL[exFacWindow] : null}
+              onClear={() => setExFacWindow('')}
+            >
+              {(close) => (
+                <>
+                  {(['', 'week', '14', '30', 'overdue', 'unset'] as ExFacWindow[]).map((w) => (
+                    <Opt
+                      key={w || 'any'}
+                      label={EXFAC_WINDOW_LABEL[w]}
+                      on={exFacWindow === w}
+                      onClick={() => { setExFacWindow(w); close(); }}
+                    />
+                  ))}
+                </>
+              )}
+            </Chip>
+
+            <span className="w-px h-4 bg-gray-200 mx-1" />
+
+            <TogglePill
+              on={missingDatesOnly}
+              label="Missing dates"
+              title="Styles with no ex-factory date set"
+              tone="warn"
+              onClick={() => setMissingDatesOnly(v => !v)}
+            />
+
+            {anyFilter && (
+              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-gray-800 px-2">
+                Clear all
+              </button>
+            )}
+
+            <div className="flex-1" />
+
+            <Segmented
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'all', label: 'All' },
+                { value: 'shipped', label: 'Shipped' },
+              ] as const}
+              value={(statusFilter === 'open' || statusFilter === 'all' || statusFilter === 'shipped') ? statusFilter : 'all'}
+              onChange={(v) => { setStatusFilter(v); setLateOnly(false); }}
+            />
           </div>
 
-          {/* Summary Bar */}
-          <div className="flex items-center gap-6 mb-4 text-xs text-gray-500">
-            <span>{poGroups.length} purchase orders</span>
-            <span className="text-gray-300">·</span>
-            <span>{orders.length} total lines</span>
-            <span className="text-gray-300">·</span>
-            <span>{orders.reduce((sum, o) => sum + (o.total_quantity || 0), 0).toLocaleString()} total units</span>
-            {!isDesigner && <>
-              <span className="text-gray-300">·</span>
-              <span>{formatCurrency(orders.reduce((sum, o) => sum + (o.total_order_value || 0), 0))} total value</span>
-            </>}
-          </div>
-
-          {/* PO List */}
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {/* PO List — contained in a card so the list reads as a
+              deliberate surface rather than bleeding to the page edge,
+              with the mono status bar closing it off underneath. */}
+          <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50/60 border border-gray-200 rounded-t-xl p-2 space-y-2">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
@@ -565,7 +800,9 @@ function OrdersV2Content() {
                 <div className="text-center">
                   <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm font-medium text-gray-500">No orders found</p>
-                  <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filters</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {anyFilter ? 'Try clearing a filter above.' : 'Nothing in this view.'}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -584,6 +821,15 @@ function OrdersV2Content() {
               ))
             )}
           </div>
+
+          <StatusBar
+            segments={[
+              `${visibleTotals.pos} of ${statusCounts.all || 0} POs`,
+              `${visibleTotals.styles} styles · ${visibleTotals.units.toLocaleString()} units`,
+              isDesigner ? null : formatCurrency(visibleTotals.value),
+            ]}
+            hint="click a PO to expand · click a style to open detail"
+          />
         </div>
 
         {/* ─── Right: Detail Panel ─── */}
