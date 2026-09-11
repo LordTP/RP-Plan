@@ -8,7 +8,7 @@ mirroring the column state, close it as REJECTED, and open a fresh v2 row.
 from datetime import datetime
 from typing import Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, Integer, case
 from sqlalchemy.orm import Session
@@ -371,14 +371,45 @@ def sync_submission_on_status_change(
     PUT /api/components/{id}, POST /api/components/bulk-update, Excel import).
 
     On APPROVED: close any open submission row for this (order, component, sample_type).
-    On REJECTED: if no open submission exists, backfill v1 REJECTED + v2 open with
-    reason='OTHER' since the legacy path doesn't capture a structured reason.
+    On REJECTED: raise 400. See the regression-guard note below.
     Other status values are no-ops — they don't open or close attempts.
 
     Call this AFTER the column has been updated. The caller is responsible for
     committing the transaction."""
     if new_value not in ('APPROVED', 'REJECTED'):
         return
+
+    # ── Regression guard (Sep 2026) ───────────────────────────────────
+    # This used to accept a bare REJECTED and silently backfill
+    # reason='OTHER' with the note "Rejected via direct status update — no
+    # reason captured". That wrote rejections nobody had given a reason
+    # for into the same bucket as rejections someone deliberately
+    # categorised as Other, quietly corrupting the Resubmissions
+    # breakdown.
+    #
+    # Every current client already intercepts REJECTED and routes it
+    # through /api/submissions/reject with a structured reason —
+    # OrderTable, both FactoryV2View entry points, ComponentEditModal,
+    # BulkEditModal and both orders-v2 paths. So this raises rather than
+    # guessing: if a bare REJECTED ever reaches here again it means a new
+    # write path skipped the reject flow, and a loud 400 surfaces that
+    # immediately instead of burying it in the data.
+    #
+    # Scale check before changing it: of 16 rejections on the 4 Sep prod
+    # snapshot, only 3 came from this path. The other 13 were real user
+    # choices. So this is a guard against regression, not a fix for the
+    # OTHER-heavy data — that's a question about whether the categories
+    # match how people actually describe a rejection.
+    if new_value == 'REJECTED':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Rejecting a sample needs a structured reason. Use "
+                "POST /api/submissions/reject rather than writing the status "
+                "column directly — that closes the current attempt, opens the "
+                "next one, and records why."
+            ),
+        )
     sample_type = STATUS_FIELD_TO_SAMPLE_TYPE.get(field_name)
     if not sample_type:
         return
@@ -393,35 +424,6 @@ def sync_submission_on_status_change(
             latest.actioned_by_id = actioned_by_id
         return
 
-    # REJECTED via a non-modal path — treat as unstructured rejection.
-    # If we already have an open row at the right attempt, just close it.
-    # Otherwise reuse the full reject helper to backfill v1 + open v2.
-    latest = _latest_submission(db, order.id, component_id, sample_type)
-    if latest is not None and latest.outcome is None:
-        latest.outcome = 'REJECTED'
-        latest.resolved_at = now
-        latest.reason = 'OTHER'
-        latest.actioned_by_id = actioned_by_id
-        next_attempt = latest.attempt_no + 1
-        db.add(SampleSubmission(
-            order_id=order.id,
-            component_id=component_id,
-            sample_type=sample_type,
-            attempt_no=next_attempt,
-            requested_at=now,
-            outcome=None,
-            actioned_by_id=actioned_by_id,
-        ))
-        # Reset the legacy columns to OUTSTANDING for the new attempt.
-        target = component if component is not None else order
-        _set_target_state(target, sample_type, status='OUTSTANDING', received=None, approved=None)
-    else:
-        # No prior submissions — backfill via the proper helper.
-        _reject_one_target(
-            db, order, component, sample_type,
-            reason='OTHER', notes='Rejected via direct status update — no reason captured',
-            photo_url=None, actioned_by_id=actioned_by_id, now=now,
-        )
 
 
 def _approve_one_target(
