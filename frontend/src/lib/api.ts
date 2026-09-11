@@ -465,6 +465,13 @@ export const componentsApi = {
     const response = await api.post('/api/components/library/instances/bulk-edit', data);
     return response.data;
   },
+
+  deleteLibraryEntry: async (
+    canonicalId: number,
+  ): Promise<{ success: boolean; canonical_name: string; instances_deleted: number; styles_affected: number }> => {
+    const response = await api.delete(`/api/components/library/${canonicalId}`);
+    return response.data;
+  },
 };
 
 /** Valid position values for strike-off components. Kept in sync with the

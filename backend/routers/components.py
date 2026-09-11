@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User, PurchaseOrder, OrderComponent, DateChangeHistory, SampleSubmission, Component
 from schemas import ComponentCreate, ComponentUpdate, ComponentResponse
-from auth import get_current_user
+from auth import get_current_user, get_current_full_internal_user
 from sample_helpers import (
     reconcile_sample_status,
     SAMPLE_PREFIXES_COMPONENT,
@@ -1500,4 +1500,52 @@ async def update_component_library_entry(
         "spec_url": canonical.spec_url,
         "supplier_notes": canonical.supplier_notes,
         "changed": changed,
+    }
+
+
+@router.delete("/api/components/library/{canonical_id}")
+async def delete_component_library_entry(
+    canonical_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_full_internal_user),
+):
+    """Wholesale-delete a canonical library entry: removes every OrderComponent
+    instance linked to it (SampleSubmissions cascade off order_components) and
+    then the canonical row itself.
+
+    Internal / admin only. Suppliers can delete individual instances via
+    DELETE /api/components/{component_id} but the wholesale delete is a
+    library-cleanup action that shouldn't be reachable from the supplier
+    scope.
+
+    Note on the FK: OrderComponent.canonical_id is `ondelete=SET NULL`, so
+    dropping the Component row on its own would orphan the instances rather
+    than remove them. We explicitly delete the instances first (which cascades
+    to sample_submissions via ondelete=CASCADE on order_components.id) so the
+    end state is: no canonical, no instances, no submissions."""
+    canonical = db.query(Component).filter(Component.id == canonical_id).first()
+    if not canonical:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    # Snapshot rollup counts before we start deleting for the response toast.
+    instances = (
+        db.query(OrderComponent)
+        .filter(OrderComponent.canonical_id == canonical_id)
+        .all()
+    )
+    instance_count = len(instances)
+    style_count = len({inst.order_id for inst in instances})
+
+    for inst in instances:
+        db.delete(inst)
+
+    canonical_name = canonical.name
+    db.delete(canonical)
+    db.commit()
+
+    return {
+        "success": True,
+        "canonical_name": canonical_name,
+        "instances_deleted": instance_count,
+        "styles_affected": style_count,
     }

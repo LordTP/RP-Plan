@@ -134,8 +134,16 @@ export function InlineBulkScopeEditor({
         value || null,
         orderIds,
       );
-      const count = result?.updated_count ?? totalIfBulk;
-      toast.success(`Updated ${count} style${count === 1 ? '' : 's'}`);
+      // Backend field is `orders_updated` (the count of rows that ACTUALLY
+      // changed — skips ones where the incoming value matched what was
+      // already there). Fall back to selection count if the shape changes.
+      // Older code read `updated_count`, which never existed on this endpoint,
+      // so the toast always showed the total selected — misleading when
+      // some rows were unchanged.
+      const count = result?.orders_updated ?? totalIfBulk;
+      const skipped = totalIfBulk - (result?.orders_updated ?? totalIfBulk);
+      const suffix = skipped > 0 ? ` (${skipped} already matched)` : '';
+      toast.success(`Updated ${count} style${count === 1 ? '' : 's'}${suffix}`);
       ctx.onAfterBulkSave();
       onCancel();  // close the modal — parent refreshes via the context callback
     } catch (err: any) {
