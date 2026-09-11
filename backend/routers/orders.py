@@ -78,7 +78,11 @@ FILTERABLE_COLUMNS = {
     'revised_vessel_eta_to_port', 'estimated_del_to_customer',
     'tracking_reference',
     # Numerics
-    'total_quantity', 'trade_price', 'total_order_value',
+    'total_quantity',
+    # Costing removed Sep 2026 (client request). 'trade_price' and
+    # 'total_order_value' are deliberately NOT editable: the columns and any
+    # historical values stay, but nothing writes new ones. A payload carrying
+    # them is ignored the same way any unknown column is.
 }
 
 # Columns whose values are dates — frontend sends ISO yyyy-mm-dd strings,
@@ -644,7 +648,7 @@ async def update_order(
             'size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
             'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
             'size_11', 'size_12', 'size_13', 'size_14',
-            'total_quantity', 'trade_price', 'total_order_value',
+            'total_quantity',  # trade_price / total_order_value dropped — costing removed Sep 2026
             'order_received_date', 'order_sent_to_factory_date',
             'tech_packs_sent_to_factory', 'specs_sent_to_factory', 'barcodes_sent_to_factory',
             'original_po_ex_factory', 'factory_confirmed_ex_factory',
@@ -830,9 +834,14 @@ async def update_order(
     if total_qty > 0:
         order.total_quantity = total_qty
 
-    # Auto-calculate total_order_value = trade_price × total_quantity
-    if order.trade_price is not None and order.total_quantity is not None:
-        order.total_order_value = round(order.trade_price * order.total_quantity, 2)
+    # total_order_value used to be auto-calculated here as
+    # trade_price × total_quantity. Disabled Sep 2026 with the rest of the
+    # costing removal.
+    #
+    # Leaving it on would have kept WRITING cost: an order imported before the
+    # change still carries a trade_price, so editing its sizes would have
+    # recomputed and re-saved a value nothing can display. Historical values
+    # are preserved exactly as they were; they just stop moving.
 
     # If revised_po_ex_factory is blank AND the incoming payload didn't touch
     # it, default to factory_confirmed_ex_factory. The payload check is the

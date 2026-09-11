@@ -35,7 +35,10 @@ const navItemsBefore = [
 ];
 const navItemsAfter = [
   { href: '/tracking', label: 'Tracking', icon: Ship, roles: ['admin', 'internal'] },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
+  // Analytics hidden Sep 2026. Most of that page is order-value reporting and
+  // costing is out of the app, so it would have read as zeros. The route and
+  // its endpoints still exist — restoring the line below brings it back.
+  // { href: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'internal'] },
 ];
 
 const factorySubItems = [

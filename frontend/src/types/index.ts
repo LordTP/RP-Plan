@@ -317,6 +317,20 @@ export const FCL_LCL_OPTIONS = ['FCL', 'LCL', 'AIR'];
 
 export const FIT_REQUIRED_OPTIONS = ['Y', 'N'];
 
+/**
+ * Master switch for showing costing anywhere in the UI.
+ *
+ * Turned off Sep 2026 — the client asked for costing out of the app after the
+ * demo. This is a DISPLAY switch only: `trade_price` and `total_order_value`
+ * are still columns on PurchaseOrder and the API still returns them. What did
+ * change is that the Excel importer no longer reads cost columns and the
+ * exporter no longer writes them, so nothing new is stored either way.
+ *
+ * To bring costing back: flip this to true and restore the two COLUMNS entries
+ * marked in the Financial block below.
+ */
+export const SHOW_COSTING = false;
+
 export const COLUMNS: ColumnDef[] = [
   // Core PO identifiers - matches new CP HEADERS order
   { key: 'po_number', label: 'PO#', width: 80, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
@@ -354,8 +368,11 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'size_14', label: 'S14', width: 45, editable: true, supplierEditable: false, supplierHidden: false, type: 'number' },
   // Financial
   { key: 'total_quantity', label: 'Total', width: 60, editable: false, supplierEditable: false, supplierHidden: false, type: 'number' },
-  { key: 'trade_price', label: 'Factory Cost Price', width: 120, editable: true, supplierEditable: false, supplierHidden: true, type: 'currency' },
-  { key: 'total_order_value', label: 'Total Order Cost', width: 120, editable: false, supplierEditable: false, supplierHidden: true, type: 'currency' },
+  // Costing removed from the UI Sep 2026 at the client's request after the
+  // demo. `trade_price` (Factory Cost Price) and `total_order_value` (Total
+  // Order Cost) used to sit here; dropping them takes the columns out of the
+  // order table AND out of the settings column picker. See SHOW_COSTING below
+  // for the rest of the display surfaces.
   // Dates - Order & Factory
   { key: 'order_received_date', label: 'Order Received', width: 110, editable: true, supplierEditable: false, supplierHidden: true, type: 'date' },
   { key: 'order_sent_to_factory_date', label: 'Sent to Factory', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },

@@ -5,6 +5,7 @@ import { MessageSquare, Eye, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SortableTh } from '@/components/orders/v2-list-primitives';
 import type { Order } from '@/types';
+import { SHOW_COSTING } from '@/types';
 
 /**
  * Shared model + table for the V2 order lists.
@@ -291,7 +292,7 @@ export function OrderTableV2({
    *  has no equivalent on the internal views. */
   rowExtra?: (order: Order) => React.ReactNode;
 }) {
-  const showValue = !isSupplier && !isDesigner;
+  const showValue = SHOW_COSTING && !isSupplier && !isDesigner;
   const colCount = (showValue ? 9 : 8) + (groupByPO ? 0 : 1);
 
   return (
@@ -393,7 +394,7 @@ function POGroupRows({
 }) {
   const statusStyle = getStatusStyle(group.statusSummary);
   const hasMultipleStatuses = new Set(group.styles.map((s) => s.status)).size > 1;
-  const showValue = !isSupplier && !isDesigner;
+  const showValue = SHOW_COSTING && !isSupplier && !isDesigner;
   const allChecked = group.styles.length > 0 && group.styles.every((s) => selectedIds.has(s.id));
   const someChecked = !allChecked && group.styles.some((s) => selectedIds.has(s.id));
 
@@ -484,7 +485,7 @@ function StyleRow({
   rowExtra?: (order: Order) => React.ReactNode;
 }) {
   const ss = getStatusStyle(style.status);
-  const showValue = !isSupplier && !isDesigner;
+  const showValue = SHOW_COSTING && !isSupplier && !isDesigner;
   const exFac = effectiveExFactory(style);
   const exFacNote = style.date_notes?.revised_po_ex_factory || style.date_notes?.original_po_ex_factory;
 

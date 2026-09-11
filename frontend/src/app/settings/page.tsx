@@ -1450,8 +1450,8 @@ const FIELD_SECTIONS: FieldSection[] = [
     title: 'Financial',
     fields: [
       { label: 'Total Qty', key: 'total_quantity', type: 'number', description: 'Total units across all sizes.', autoCalc: 'Sum of all size columns' },
-      { label: 'Factory Cost Price', key: 'trade_price', type: 'currency', description: 'Unit cost from the factory. Hidden from suppliers and designers.' },
-      { label: 'Total Order Cost', key: 'total_order_value', type: 'currency', description: 'Total order value. Hidden from suppliers and designers.', autoCalc: 'Trade Price × Total Qty' },
+      // Factory Cost Price and Total Order Cost removed Sep 2026 — costing is
+      // out of the app at the client's request. See SHOW_COSTING in types.
     ],
   },
   {

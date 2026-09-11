@@ -35,7 +35,7 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
 import type { Order, OrderComponent } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE, SHOW_COSTING } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
@@ -1757,15 +1757,15 @@ function DetailPanel({
       ) : (
         <>
           {/* Hero stat strip */}
-          <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, hasCol('trade_price') || hasCol('total_order_value'), !!exFacDate, hasCol('eta_to_customer'), sampleTotal > 0].filter(Boolean).length}, minmax(0, 1fr))` }}>
+          <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, SHOW_COSTING && (hasCol('trade_price') || hasCol('total_order_value')), !!exFacDate, hasCol('eta_to_customer'), sampleTotal > 0].filter(Boolean).length}, minmax(0, 1fr))` }}>
             <HeroTile label="Total Qty" value={formatQty(order.total_quantity)} />
-            {hasCol('total_order_value') ? (
+            {SHOW_COSTING && hasCol('total_order_value') ? (
               <HeroTile
                 label="Order Value"
                 value={formatCurrency(order.total_order_value)}
                 sub={hasCol('trade_price') ? `${formatCurrency(order.trade_price)} cost` : undefined}
               />
-            ) : hasCol('trade_price') ? (
+            ) : SHOW_COSTING && hasCol('trade_price') ? (
               <HeroTile label="Cost Price" value={formatCurrency(order.trade_price)} />
             ) : null}
             {exFacDate && (

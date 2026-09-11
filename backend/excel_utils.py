@@ -971,7 +971,19 @@ def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str,
             data[field] = parse_int(_get_cell_value(sheet, row_idx, col_map[field]))
 
     # Float fields
-    float_fields = ["trade_price", "total_order_value"]
+    #
+    # Costing is out of the app (Sep 2026, client request). The header
+    # detection above still RECOGNISES "FACTORY COST PRICE" / "TOTAL ORDER
+    # COST", so a spreadsheet carrying those columns still imports cleanly —
+    # the values are simply never read. That is what "ignore on import" means
+    # here: no error, no partial import, just no cost stored.
+    #
+    # Nothing downstream fills the gap either: _auto_calc derives
+    # total_order_value from trade_price, so with trade_price never set the
+    # derived value stays null too.
+    #
+    # To bring costing back, restore: ["trade_price", "total_order_value"]
+    float_fields: list = []
     for field in float_fields:
         if field in col_map:
             data[field] = parse_float(_get_cell_value(sheet, row_idx, col_map[field]))
@@ -1031,17 +1043,19 @@ def _get_cell_str(sheet, row: int, col: int) -> Optional[str]:
 
 
 def _calculate_order_totals(order) -> None:
-    """Auto-calculate total_quantity and total_order_value for an order"""
+    """Auto-calculate total_quantity for an order.
+
+    Used to derive total_order_value too. Disabled Sep 2026 with the rest of
+    the costing removal — see COSTING_FIELDS. Kept in sync with the same
+    change in routers/orders.py; if one is ever switched back on, so must the
+    other, or the two import paths disagree.
+    """
     size_fields = ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
                    'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
                    'size_11', 'size_12', 'size_13', 'size_14']
     total_qty = sum(getattr(order, f) or 0 for f in size_fields)
     if total_qty > 0:
         order.total_quantity = total_qty
-
-    # Calculate total_order_value = trade_price × total_quantity
-    if order.trade_price is not None and order.total_quantity is not None:
-        order.total_order_value = round(order.trade_price * order.total_quantity, 2)
 
     # Fit Sample Required = N → force fit_sample_status to NOT REQUIRED.
     if (order.fit_sample_required or '').strip().upper() == 'N':
@@ -1108,6 +1122,14 @@ def _values_different(old_value: Any, new_value: Any) -> bool:
 
 # Template column mapping - maps database fields to template column indices
 # Based on Copy of CP HEADERS.xlsx structure (70 columns)
+"""Cost fields, kept in one place so import, export and the API agree.
+
+Costing was removed from the app in Sep 2026 at the client's request. The
+COLUMNS still exist on PurchaseOrder and historical values are untouched —
+this is about not showing, not importing and not writing any more of it.
+"""
+COSTING_FIELDS = {"trade_price", "total_order_value"}
+
 TEMPLATE_COLUMN_MAP = {
     # MERCH columns (1-16)
     "po_number": 1,
@@ -1511,6 +1533,12 @@ def export_database_to_excel(
         style_cell.border = thin_border
 
         for field_name, col_idx in TEMPLATE_COLUMN_MAP.items():
+            # Costing is out of the app (Sep 2026). Skip rather than remove
+            # the map entries: every other column's position is defined
+            # relative to this map, so the cost columns stay in the template
+            # and simply come out empty.
+            if field_name in COSTING_FIELDS:
+                continue
             field_type = FIELD_TYPES.get(field_name, "text")
 
             # Strike Off / Lab Dip cells: if this order has components of

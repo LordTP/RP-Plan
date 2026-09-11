@@ -63,7 +63,7 @@ import { useSizeGuide } from '@/lib/useSizeGuide';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
-import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE } from '@/types';
+import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE, SHOW_COSTING } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -2141,8 +2141,8 @@ function DetailBody({
 
   const showSamplingTile = sampleTotal > 0;
   const showExFacTile = !!exFacDate;
-  const showCostTile = hasCol('trade_price') && !isDesigner && !isSupplier;
-  const showValueTile = hasCol('total_order_value') && !isDesigner && !isSupplier;
+  const showCostTile = SHOW_COSTING && hasCol('trade_price') && !isDesigner && !isSupplier;
+  const showValueTile = SHOW_COSTING && hasCol('total_order_value') && !isDesigner && !isSupplier;
 
   return (
     <>

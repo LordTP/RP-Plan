@@ -141,12 +141,19 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
   }, [orders, selectedOrderIds]);
 
   function applyTemplate(entry: CanonicalComponent) {
+    // Copy every identity field the button's label promises — an earlier
+    // version took only name/type/colour/positions and silently left
+    // description, spec and supplier notes behind.
     setSampleType(entry.sample_type);
     setName(entry.name);
     setColour(entry.colour || '');
-    setPositions((entry.position || []) as CanonicalPosition[]);
+    setPositions(entry.sample_type === 'strike_off' ? ((entry.position || []) as CanonicalPosition[]) : []);
+    setDescription(entry.description || '');
+    setSpecUrl(entry.spec_url || '');
+    setSupplierNotes(entry.supplier_notes || '');
     setCopiedFrom(entry.name);
     setTemplateOpen(false);
+    requestAnimationFrame(() => nameRef.current?.focus());
   }
 
   async function submit() {
@@ -228,7 +235,26 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
               {/* Step 1 — sample type */}
               <section>
-                <StepHeading n={1} title="Sample type" done={Boolean(sampleType)} />
+                {/* The copy affordance lives HERE, not on Identity, because
+                    copying an existing entry is what CHOOSES the type — and
+                    the Identity section is inert until a type is picked, so a
+                    button parked there couldn't be clicked when it was
+                    actually wanted. */}
+                <StepHeading
+                  n={1}
+                  title="Sample type"
+                  done={Boolean(sampleType)}
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => setTemplateOpen(true)}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-700 normal-case tracking-normal"
+                    >
+                      <Copy className="w-3 h-3" />
+                      Copy an existing component
+                    </button>
+                  }
+                />
                 <div className="grid grid-cols-3 gap-2">
                   {SAMPLE_TYPE_CARDS.map((c) => {
                     const on = sampleType === c.value;
@@ -276,21 +302,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
 
               {/* Step 2 — identity */}
               <section className={cn('transition-opacity', !sampleType && 'opacity-40 pointer-events-none select-none')}>
-                <StepHeading
-                  n={2}
-                  title="Identity"
-                  done={identityDone}
-                  action={
-                    <button
-                      type="button"
-                      onClick={() => setTemplateOpen(true)}
-                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-700 normal-case tracking-normal"
-                    >
-                      <Copy className="w-3 h-3" />
-                      Copy from existing
-                    </button>
-                  }
-                />
+                <StepHeading n={2} title="Identity" done={identityDone} />
 
                 {copiedFrom && (
                   <p className="text-[10px] text-primary-700 bg-primary-50 border border-primary-100 rounded px-2 py-1 mb-2">
