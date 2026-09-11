@@ -3,7 +3,18 @@ from datetime import timedelta
 
 
 SAMPLE_PREFIXES_ORDER = ('fit_sample', 'strike_off', 'lab_dip', 'pps')
-SAMPLE_PREFIXES_COMPONENT = ('fit_sample', 'strike_off', 'lab_dip', 'label')
+
+# Fit deliberately absent. A fit sample is a whole-garment concern and lives
+# against the order, never against a component — same as PPS. OrderComponent
+# still carries fit_sample_status/received/approved columns from an earlier
+# model, but nothing in the UI has ever rendered them and they are 100% null
+# on prod (0 of 97 rows, 4 Sep snapshot).
+#
+# Columns left in place on purpose: dropping them needs a Postgres migration
+# and they cost nothing sitting there nullable. Removing them from this tuple
+# is what actually matters — it stops reconcile_sample_status writing to a
+# field no surface reads.
+SAMPLE_PREFIXES_COMPONENT = ('strike_off', 'lab_dip', 'label')
 
 
 def reconcile_sample_status(obj, prefixes, skip_prefixes=None):
