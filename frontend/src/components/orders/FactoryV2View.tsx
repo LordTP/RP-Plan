@@ -2144,6 +2144,13 @@ export function ComponentsSection({
     return Math.max(...matching.map(s => s.attempt_no));
   };
 
+  // Two-step confirm. This deletes the instance AND cascades its sample
+  // submissions — the whole attempt history for that sample goes with it —
+  // and the button previously fired on a single click with no prompt at
+  // all. Holds the pending id rather than using window.confirm so the
+  // affordance matches the rest of the app.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
   const handleDelete = async (id: number) => {
     try {
       await componentsApi.deleteComponent(id);
@@ -2152,6 +2159,8 @@ export function ComponentsSection({
       if (expandedId === id) setExpandedId(null);
     } catch (err) {
       toast.error('Failed to delete component');
+    } finally {
+      setConfirmDeleteId(null);
     }
   };
 
@@ -2212,24 +2221,34 @@ export function ComponentsSection({
             <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{components.length}</span>
           )}
         </span>
-        <button
-          onClick={openAddModal}
-          className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-          title="Add component"
-        >
-          <Plus className="w-3.5 h-3.5 text-gray-400" />
-        </button>
+        {/* Adding mints a canonical and can apply it to any style on any PO
+            — cross-factory reach a supplier shouldn't have from here. */}
+        {!isSupplierUser && (
+          <button
+            onClick={openAddModal}
+            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Add component"
+          >
+            <Plus className="w-3.5 h-3.5 text-gray-400" />
+          </button>
+        )}
       </h4>
 
       {/* Component List */}
       {components.length === 0 ? (
-        <button
-          onClick={openAddModal}
-          className="w-full text-xs text-gray-500 text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 hover:bg-gray-100 hover:border-gray-400 transition-colors flex items-center justify-center gap-2"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Component (e.g. Main Fabric, Lining, Trim)
-        </button>
+        isSupplierUser ? (
+          <div className="w-full text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            No components on this style yet.
+          </div>
+        ) : (
+          <button
+            onClick={openAddModal}
+            className="w-full text-xs text-gray-500 text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 hover:bg-gray-100 hover:border-gray-400 transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Component (e.g. Main Fabric, Lining, Trim)
+          </button>
+        )
       ) : (
         <div className="space-y-2">
           {components.map(comp => (
@@ -2317,15 +2336,37 @@ export function ComponentsSection({
                       </div>
                     )}
                   </div>
-                  <div className="pt-2 border-t border-gray-100 flex justify-end">
-                    <button
-                      onClick={() => handleDelete(comp.id)}
-                      className="text-[10px] text-red-500 hover:text-red-700 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Remove
-                    </button>
-                  </div>
+                  {!isSupplierUser && (
+                    <div className="pt-2 border-t border-gray-100 flex justify-end items-center gap-2">
+                      {confirmDeleteId === comp.id ? (
+                        <>
+                          <span className="text-[10px] text-red-700">
+                            Remove <b>{comp.name}</b> and its sample history from this style?
+                          </span>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-[10px] text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleDelete(comp.id)}
+                            className="text-[10px] font-semibold text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(comp.id)}
+                          className="text-[10px] text-red-500 hover:text-red-700 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

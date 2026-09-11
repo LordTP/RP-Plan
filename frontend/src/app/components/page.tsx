@@ -531,7 +531,14 @@ function CanonicalDetailPanel({
               ))}
             </div>
           )}
-          {!editing && (
+          {/* Identity edits propagate to every instance in the add-event
+              group — which can span POs and customers. That's Source Lab's
+              call, not a supplier's, so the whole affordance is hidden
+              rather than just the destructive half. The backend's PATCH
+              still permits a supplier who holds an instance, so this is
+              UI-level only; tightening that endpoint is a separate call
+              because legitimate supplier identity edits may be wanted. */}
+          {!editing && !isSupplier && (
             <button
               onClick={() => setEditing(true)}
               className="text-xs font-semibold text-primary-600 hover:text-primary-700"
