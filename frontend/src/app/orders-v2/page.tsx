@@ -111,6 +111,34 @@ function statusDotHex(status: string | undefined): string {
   return STATUS_DOT_HEX[status] || '#9ca3af';
 }
 
+/** Sample-lifecycle status styling. Separate from getStatusStyle, which
+ *  colours ORDER status (In Production / Shipped / …) — these are the
+ *  APPROVED / OUTSTANDING / LATE family and need their own semantics. */
+const SAMPLE_STATUS_STYLE: Record<string, string> = {
+  'APPROVED': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'RECEIVED': 'bg-blue-50 text-blue-700 border-blue-200',
+  'OUTSTANDING': 'bg-amber-50 text-amber-700 border-amber-200',
+  'LATE': 'bg-red-50 text-red-700 border-red-200',
+  'REJECTED': 'bg-red-50 text-red-700 border-red-200',
+  'NOT REQUIRED': 'bg-gray-100 text-gray-500 border-gray-200',
+  'P23 ADVISE UPDATE': 'bg-orange-50 text-orange-700 border-orange-200',
+};
+
+function SampleStatusPill({ status }: { status: string | null | undefined }) {
+  const s = (status || '').toUpperCase();
+  if (!s) {
+    return <span className="text-[10px] text-gray-300 italic">not set</span>;
+  }
+  return (
+    <span className={cn(
+      'px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wide whitespace-nowrap',
+      SAMPLE_STATUS_STYLE[s] || 'bg-gray-100 text-gray-600 border-gray-200',
+    )}>
+      {s}
+    </span>
+  );
+}
+
 // ─── Ex-factory window filter ─────────────────────────────────────────
 
 type ExFacWindow = '' | 'week' | '14' | '30' | 'overdue' | 'unset';
@@ -128,6 +156,21 @@ const EXFAC_WINDOW_LABEL: Record<ExFacWindow, string> = {
  *  matching the rule used everywhere else in the app. */
 function effectiveExFactory(order: Order): string | null {
   return order.revised_po_ex_factory || order.original_po_ex_factory || null;
+}
+
+/** One writable sample record inside a bulk selection. `kind` decides
+ *  which endpoint the write goes to: component instances resolve their
+ *  own column server-side, order-level styles go through the PO-scoped
+ *  order endpoint. */
+interface SampleTarget {
+  key: string;            // 'c:<instanceId>' | 'o:<orderId>' — stable selection key
+  kind: 'component' | 'order';
+  id: number;             // instance id, or order id for order-level
+  poNumber: string;
+  customer: string;
+  styleCode: string;
+  componentName: string | null;
+  currentStatus: string | null;
 }
 
 // ─── Table sorting ────────────────────────────────────────────────────
@@ -733,60 +776,75 @@ function OrdersV2Content() {
     lab_dip_status: 'lab_dip',
   };
 
-  // Split the selection into "these component instances" vs "these styles
-  // track it at order level". Without this the bulk write would land on
-  // the order-level column for component styles — a field that's blank by
-  // design and read by nothing, so the change would silently do nothing.
-  const sampleBreakdown = useMemo(() => {
+  // Expand the selection into the ACTUAL sample records that will be
+  // written — one target per component instance for component-backed
+  // sample types, one per style otherwise. Without this the bulk write
+  // would land on the order-level column for component styles, a field
+  // that's blank by design and read by nothing.
+  const sampleTargets = useMemo((): SampleTarget[] => {
     const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
-    if (!compType) {
-      return {
-        componentBacked: false,
-        componentGroups: [] as { name: string; instanceIds: number[] }[],
-        orderLevel: selectedOrders,
-      };
-    }
-    const byName = new Map<string, number[]>();
-    const orderLevel: Order[] = [];
+    const out: SampleTarget[] = [];
     for (const o of selectedOrders) {
-      const comps = (o.components || []).filter(c => c.sample_type === compType);
-      if (comps.length === 0) {
-        orderLevel.push(o);
-      } else {
+      const comps = compType ? (o.components || []).filter(c => c.sample_type === compType) : [];
+      if (comps.length > 0) {
         for (const c of comps) {
-          const arr = byName.get(c.name) || [];
-          arr.push(c.id);
-          byName.set(c.name, arr);
+          out.push({
+            key: `c:${c.id}`,
+            kind: 'component',
+            id: c.id,
+            poNumber: o.po_number,
+            customer: o.customer || '',
+            styleCode: o.style_code || `#${o.id}`,
+            componentName: c.name,
+            currentStatus: (c as any)[bulkSampleField] ?? null,
+          });
         }
+      } else {
+        out.push({
+          key: `o:${o.id}`,
+          kind: 'order',
+          id: o.id,
+          poNumber: o.po_number,
+          customer: o.customer || '',
+          styleCode: o.style_code || `#${o.id}`,
+          componentName: null,
+          currentStatus: (o as any)[bulkSampleField] ?? null,
+        });
       }
     }
-    return {
-      componentBacked: true,
-      componentGroups: Array.from(byName.entries())
-        .map(([name, instanceIds]) => ({ name, instanceIds }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      orderLevel,
-    };
+    return out;
   }, [selectedOrders, bulkSampleField]);
 
-  const ORDER_LEVEL_TARGET = '__order_level__';
-
-  // Default every available target on whenever the breakdown changes —
-  // picking a sample type shouldn't leave the user with nothing ticked.
-  useEffect(() => {
-    const next = new Set(sampleBreakdown.componentGroups.map(g => g.name));
-    if (sampleBreakdown.orderLevel.length > 0) next.add(ORDER_LEVEL_TARGET);
-    setBulkSampleTargets(next);
-  }, [sampleBreakdown]);
-
-  const bulkSampleTargetCount = useMemo(() => {
-    let n = 0;
-    for (const g of sampleBreakdown.componentGroups) {
-      if (bulkSampleTargets.has(g.name)) n += g.instanceIds.length;
+  // Grouped by PO for display — merch read the world PO-first, so a flat
+  // list of 40 instances across 6 POs is much harder to audit than the
+  // same 40 nested under their PO headers.
+  const sampleTargetGroups = useMemo(() => {
+    const m = new Map<string, { poNumber: string; customer: string; targets: SampleTarget[] }>();
+    for (const t of sampleTargets) {
+      let g = m.get(t.poNumber);
+      if (!g) { g = { poNumber: t.poNumber, customer: t.customer, targets: [] }; m.set(t.poNumber, g); }
+      g.targets.push(t);
     }
-    if (bulkSampleTargets.has(ORDER_LEVEL_TARGET)) n += sampleBreakdown.orderLevel.length;
-    return n;
-  }, [sampleBreakdown, bulkSampleTargets]);
+    return Array.from(m.values())
+      .map(g => ({
+        ...g,
+        targets: g.targets.sort((a, b) =>
+          a.styleCode.localeCompare(b.styleCode) || (a.componentName || '').localeCompare(b.componentName || ''),
+        ),
+      }))
+      .sort((a, b) => a.poNumber.localeCompare(b.poNumber));
+  }, [sampleTargets]);
+
+  // Default every target on whenever the set changes — picking a sample
+  // type shouldn't leave the user with nothing ticked.
+  useEffect(() => {
+    setBulkSampleTargets(new Set(sampleTargets.map(t => t.key)));
+  }, [sampleTargets]);
+
+  const bulkSampleTargetCount = useMemo(
+    () => sampleTargets.filter(t => bulkSampleTargets.has(t.key)).length,
+    [sampleTargets, bulkSampleTargets],
+  );
 
   const closeBulkPanel = () => {
     setBulkPanel(null);
@@ -806,9 +864,9 @@ function OrdersV2Content() {
     try {
       let changed = 0;
 
-      const instanceIds = sampleBreakdown.componentGroups
-        .filter(g => bulkSampleTargets.has(g.name))
-        .flatMap(g => g.instanceIds);
+      const chosen = sampleTargets.filter(t => bulkSampleTargets.has(t.key));
+      const instanceIds = chosen.filter(t => t.kind === 'component').map(t => t.id);
+      const orderTargets = chosen.filter(t => t.kind === 'order');
 
       if (instanceIds.length > 0) {
         const res = await componentsApi.bulkEditInstances({
@@ -818,13 +876,12 @@ function OrdersV2Content() {
         changed += res.changed_count;
       }
 
-      const orderTargets = bulkSampleTargets.has(ORDER_LEVEL_TARGET) ? sampleBreakdown.orderLevel : [];
       if (orderTargets.length > 0) {
         const byPo = new Map<string, number[]>();
-        for (const o of orderTargets) {
-          const arr = byPo.get(o.po_number) || [];
-          arr.push(o.id);
-          byPo.set(o.po_number, arr);
+        for (const t of orderTargets) {
+          const arr = byPo.get(t.poNumber) || [];
+          arr.push(t.id);
+          byPo.set(t.poNumber, arr);
         }
         for (const [po, ids] of Array.from(byPo.entries())) {
           const res: any = await ordersApi.bulkUpdateDate(po, bulkSampleField, bulkSampleValue, ids);
@@ -836,7 +893,7 @@ function OrdersV2Content() {
       // component styles get the matching nested instances updated so the
       // drawer and any component summary reflect it without a refetch.
       const touchedInstances = new Set(instanceIds);
-      const touchedOrderIds = new Set(orderTargets.map(o => o.id));
+      const touchedOrderIds = new Set(orderTargets.map(t => t.id));
       const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
       const patch = (o: Order): Order => {
         let next = o;
@@ -1376,13 +1433,13 @@ function OrdersV2Content() {
         )}
 
         {bulkPanel === 'sample' && (
-          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(92vw,560px)] overflow-hidden">
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(94vw,680px)] overflow-hidden">
             <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-bold text-gray-900">Set a sample status</p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  Sets one sample type&apos;s status on {selectedIds.size} selected style{selectedIds.size === 1 ? '' : 's'} —
-                  the same field as the Strike Off / Lab Dip / Fit / PPS column in the table view.
+                  Strike Off and Lab Dip live on each style&apos;s components, so pick which ones below.
+                  Fit Sample and PPS are whole-garment and always sit at style level.
                 </p>
               </div>
               <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
@@ -1417,72 +1474,107 @@ function OrdersV2Content() {
               </select>
             </div>
 
-            {/* Target picker — Strike Off / Lab Dip live on components when
-                a style has them, so the user picks WHICH component rather
-                than blind-writing an order-level column that component
-                styles leave blank. */}
-            {sampleBreakdown.componentBacked && (sampleBreakdown.componentGroups.length > 0 || sampleBreakdown.orderLevel.length > 0) && (
+            {/* Target picker — every sample record the write will touch,
+                grouped under its PO, showing the style it sits on and the
+                status it's currently at. Merch read PO-first, and seeing
+                the current status inline is what makes a bulk write
+                auditable before you commit it. */}
+            {sampleTargets.length > 0 && (
               <div className="px-3 pb-2">
-                <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1.5">
-                  Apply to
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                    Apply to · {bulkSampleTargetCount} of {sampleTargets.length}
+                  </span>
+                  <span className="flex items-center gap-2 text-[10px]">
+                    <button
+                      onClick={() => setBulkSampleTargets(new Set(sampleTargets.map(t => t.key)))}
+                      className="text-gray-500 hover:text-gray-900"
+                    >
+                      All
+                    </button>
+                    <span className="text-gray-300">·</span>
+                    <button
+                      onClick={() => setBulkSampleTargets(new Set())}
+                      className="text-gray-500 hover:text-gray-900"
+                    >
+                      None
+                    </button>
+                  </span>
                 </div>
-                <div className="rounded border border-gray-200 divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                  {sampleBreakdown.componentGroups.map((g) => {
-                    const on = bulkSampleTargets.has(g.name);
+                <div className="rounded border border-gray-200 max-h-52 overflow-y-auto divide-y divide-gray-100">
+                  {sampleTargetGroups.map((g) => {
+                    const keys = g.targets.map(t => t.key);
+                    const allOn = keys.every(k => bulkSampleTargets.has(k));
+                    const someOn = !allOn && keys.some(k => bulkSampleTargets.has(k));
                     return (
-                      <label
-                        key={g.name}
-                        className={cn(
-                          'flex items-center gap-2 px-2 py-1.5 text-[11px] cursor-pointer',
-                          on ? 'bg-primary-50/60' : 'hover:bg-gray-50',
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => setBulkSampleTargets((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(g.name)) next.delete(g.name);
-                            else next.add(g.name);
-                            return next;
-                          })}
-                          className="w-3.5 h-3.5 accent-primary-600"
-                        />
-                        <span className="font-semibold text-gray-900 truncate flex-1">{g.name}</span>
-                        <span className="text-gray-400 tabular-nums">
-                          {g.instanceIds.length} instance{g.instanceIds.length === 1 ? '' : 's'}
-                        </span>
-                      </label>
+                      <div key={g.poNumber}>
+                        <label className="flex items-center gap-2 px-2 py-1.5 bg-gray-50/80 cursor-pointer sticky top-0">
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            ref={(el) => { if (el) el.indeterminate = someOn; }}
+                            onChange={() => setBulkSampleTargets((prev) => {
+                              const next = new Set(prev);
+                              if (allOn) keys.forEach(k => next.delete(k));
+                              else keys.forEach(k => next.add(k));
+                              return next;
+                            })}
+                            className="w-3.5 h-3.5 accent-primary-600"
+                          />
+                          <span className="font-mono text-[11px] font-bold text-gray-900 tabular-nums">
+                            PO {g.poNumber}
+                          </span>
+                          {g.customer && (
+                            <span className="text-[10px] text-gray-500 truncate">· {g.customer}</span>
+                          )}
+                          <span className="ml-auto text-[10px] text-gray-400 tabular-nums">
+                            {g.targets.length} sample{g.targets.length === 1 ? '' : 's'}
+                          </span>
+                        </label>
+                        {g.targets.map((t) => {
+                          const on = bulkSampleTargets.has(t.key);
+                          return (
+                            <label
+                              key={t.key}
+                              className={cn(
+                                'flex items-center gap-2 pl-6 pr-2 py-1.5 text-[11px] cursor-pointer',
+                                on ? 'bg-primary-50/50' : 'hover:bg-gray-50',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => setBulkSampleTargets((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(t.key)) next.delete(t.key);
+                                  else next.add(t.key);
+                                  return next;
+                                })}
+                                className="w-3.5 h-3.5 accent-primary-600 shrink-0"
+                              />
+                              <span className="font-mono text-gray-700 tabular-nums shrink-0">{t.styleCode}</span>
+                              {t.componentName ? (
+                                <span className="font-semibold text-gray-900 truncate">{t.componentName}</span>
+                              ) : (
+                                <span className="text-gray-400 italic truncate">order level — no components</span>
+                              )}
+                              <span className="ml-auto shrink-0">
+                                <SampleStatusPill status={t.currentStatus} />
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     );
                   })}
-                  {sampleBreakdown.orderLevel.length > 0 && (
-                    <label
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 text-[11px] cursor-pointer',
-                        bulkSampleTargets.has(ORDER_LEVEL_TARGET) ? 'bg-primary-50/60' : 'hover:bg-gray-50',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={bulkSampleTargets.has(ORDER_LEVEL_TARGET)}
-                        onChange={() => setBulkSampleTargets((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(ORDER_LEVEL_TARGET)) next.delete(ORDER_LEVEL_TARGET);
-                          else next.add(ORDER_LEVEL_TARGET);
-                          return next;
-                        })}
-                        className="w-3.5 h-3.5 accent-primary-600"
-                      />
-                      <span className="text-gray-700 truncate flex-1">
-                        Styles with no components
-                        <span className="text-gray-400"> — tracked at order level</span>
-                      </span>
-                      <span className="text-gray-400 tabular-nums">
-                        {sampleBreakdown.orderLevel.length} style{sampleBreakdown.orderLevel.length === 1 ? '' : 's'}
-                      </span>
-                    </label>
-                  )}
                 </div>
+                {bulkSampleValue && bulkSampleTargetCount > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-1.5">
+                    {bulkSampleTargetCount} sample{bulkSampleTargetCount === 1 ? '' : 's'} will be set to{' '}
+                    <span className="font-semibold text-gray-900">{bulkSampleValue}</span>, overwriting
+                    whatever status they&apos;re on now.
+                  </p>
+                )}
               </div>
             )}
 
