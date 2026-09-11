@@ -706,6 +706,73 @@ function OrdersV2Content() {
     [orders, selectedIds],
   );
 
+  // ─── Bulk actions ───────────────────────────────────────────────────
+  // Both supported actions route through /api/orders/bulk-update-date,
+  // which is PO-scoped — so a selection spanning multiple POs fans out
+  // into one call per PO. Suppliers hitting a DATE field go down the
+  // backend's pending-approval path and must supply a reason; sample
+  // statuses are Sourcelab's call, so that action is internal-only.
+  const [bulkPanel, setBulkPanel] = useState<'date' | 'sample' | null>(null);
+  const [bulkDate, setBulkDate] = useState('');
+  const [bulkSampleField, setBulkSampleField] = useState('strike_off_status');
+  const [bulkSampleValue, setBulkSampleValue] = useState('');
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+
+  const closeBulkPanel = () => {
+    setBulkPanel(null);
+    setBulkDate('');
+    setBulkSampleValue('');
+    setBulkReason('');
+  };
+
+  const applyBulk = async (field: string, value: string | null) => {
+    if (selectedOrders.length === 0) return;
+    setBulkSaving(true);
+    try {
+      const byPo = new Map<string, number[]>();
+      for (const o of selectedOrders) {
+        const arr = byPo.get(o.po_number) || [];
+        arr.push(o.id);
+        byPo.set(o.po_number, arr);
+      }
+
+      let updated = 0;
+      let pending = 0;
+      for (const [po, ids] of Array.from(byPo.entries())) {
+        const res: any = await ordersApi.bulkUpdateDate(
+          po,
+          field,
+          value,
+          ids,
+          isSupplier ? bulkReason.trim() : undefined,
+        );
+        if (res?.pending_approval) pending += res.pending_count ?? ids.length;
+        else updated += res?.orders_updated ?? 0;
+      }
+
+      if (pending > 0) {
+        toast.success(`${pending} date change${pending === 1 ? '' : 's'} submitted for approval`);
+      } else {
+        // Optimistic patch so the table reflects the change straight away
+        // — same no-refetch principle as the /orders bulk save.
+        const touched = new Set(selectedIds);
+        const patch = (o: Order) => (touched.has(o.id) ? { ...o, [field]: value } as Order : o);
+        if (isFactoryView) setLocalOrders(prev => prev.map(patch));
+        else setStoreOrders(orders.map(patch), totalOrders);
+        toast.success(`Updated ${updated} style${updated === 1 ? '' : 's'}`);
+      }
+
+      setSelectedIds(new Set());
+      lastClickedId.current = null;
+      closeBulkPanel();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const togglePO = (po: string) => {
     setExpandedPOs(prev => {
       const next = new Set(prev);
@@ -1113,6 +1180,111 @@ function OrdersV2Content() {
             }}
           />
         )}
+      </div>
+
+      {/* Floating bulk bar — slides up whenever rows are ticked. Action
+          panels expand ABOVE the bar so the bar itself stays a stable
+          anchor while you fill one in. */}
+      <div
+        className={cn(
+          'fixed left-1/2 -translate-x-1/2 bottom-6 z-40 transition-all duration-200',
+          selectedIds.size > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none',
+        )}
+      >
+        {bulkPanel === 'date' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl p-3 flex items-center gap-2 text-xs">
+            <span className="text-gray-600 whitespace-nowrap">Set revised ex-factory to</span>
+            <input
+              type="date"
+              value={bulkDate}
+              onChange={(e) => setBulkDate(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1"
+            />
+            {isSupplier && (
+              <input
+                type="text"
+                value={bulkReason}
+                onChange={(e) => setBulkReason(e.target.value)}
+                placeholder="Reason (required)"
+                className="border border-gray-300 rounded px-2 py-1 w-52"
+              />
+            )}
+            <button
+              disabled={!bulkDate || bulkSaving || (isSupplier && !bulkReason.trim())}
+              onClick={() => applyBulk('revised_po_ex_factory', bulkDate)}
+              className="px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+              {isSupplier ? 'Submit for approval' : `Apply to ${selectedIds.size}`}
+            </button>
+            <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 px-1">✕</button>
+          </div>
+        )}
+
+        {bulkPanel === 'sample' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl p-3 flex items-center gap-2 text-xs">
+            <select
+              value={bulkSampleField}
+              onChange={(e) => setBulkSampleField(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 bg-white"
+            >
+              <option value="strike_off_status">Strike Off</option>
+              <option value="lab_dip_status">Lab Dip</option>
+              <option value="fit_sample_status">Fit Sample</option>
+              <option value="pps_status">PPS</option>
+            </select>
+            <span className="text-gray-600">→</span>
+            <select
+              value={bulkSampleValue}
+              onChange={(e) => setBulkSampleValue(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 bg-white"
+            >
+              <option value="">— Pick a status —</option>
+              {SAMPLE_STATUS_OPTIONS.filter(s => s !== 'REJECTED').map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <button
+              disabled={!bulkSampleValue || bulkSaving}
+              onClick={() => applyBulk(bulkSampleField, bulkSampleValue)}
+              className="px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+              Apply to {selectedIds.size}
+            </button>
+            <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 px-1">✕</button>
+          </div>
+        )}
+
+        <BulkBar
+          count={selectedIds.size}
+          onClear={() => { setSelectedIds(new Set()); lastClickedId.current = null; closeBulkPanel(); }}
+        >
+          <button
+            onClick={() => setBulkPanel(p => (p === 'date' ? null : 'date'))}
+            className={cn(
+              'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+              bulkPanel === 'date'
+                ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+            )}
+          >
+            Ex-factory date
+          </button>
+          {!isSupplier && (
+            <button
+              onClick={() => setBulkPanel(p => (p === 'sample' ? null : 'sample'))}
+              className={cn(
+                'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+                bulkPanel === 'sample'
+                  ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              Sample status
+            </button>
+          )}
+        </BulkBar>
       </div>
 
       <CommentSidebar />
