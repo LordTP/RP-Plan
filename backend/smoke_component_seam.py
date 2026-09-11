@@ -10,6 +10,7 @@ you what's wrong rather than just that something is.
 import sys
 sys.path.insert(0, '/Users/thomaspaul/Desktop/Source Lab/RP App/backend')
 
+import json
 import requests
 from database import SessionLocal
 from models import PurchaseOrder, OrderComponent, SampleSubmission, Component
@@ -315,6 +316,48 @@ r = requests.get(f'{B}/api/submissions/siblings',
                  params={'order_id': comp2.order_id, 'component_id': comp2.id,
                          'sample_type': 'strike'}, headers=HA)
 check('siblings lookup', r.status_code == 200, f'HTTP {r.status_code}')
+
+# ── J. Component-aware order filters ──────────────────────────────────
+# The /orders table renders a component rollup for strike-off / lab-dip, but
+# the FILTER used to run against the order-level column alone — so a style
+# whose only strike off was approved answered "(Blanks)" and was invisible
+# under "APPROVED". Section I leaves FIXTURE_STRIKE approved on a fixture
+# order whose own strike_off_status is null, which is exactly that shape.
+print("\nJ. COMPONENT-AWARE FILTERS")
+db.expire_all()
+_fix_order_id = FIXTURE_STRIKE.order_id
+_fix_status = db.query(OrderComponent).filter(
+    OrderComponent.id == FIXTURE_STRIKE.id).first().strike_off_status
+_order_level = db.query(PurchaseOrder).filter(
+    PurchaseOrder.id == _fix_order_id).first().strike_off_status
+check('fixture is the right shape (component set, order null)',
+      _fix_status == 'APPROVED' and _order_level in (None, ''),
+      f'component={_fix_status!r}, order={_order_level!r}')
+
+
+def _filter_ids(cf):
+    r = requests.get(f'{B}/api/orders', headers=HA,
+                     params={'column_filter': json.dumps(cf), 'page': 1, 'page_size': 5000})
+    return {o['id'] for o in r.json().get('orders', [])}
+
+
+hit = _filter_ids({'strike_off_status': ['APPROVED']})
+check('component status is findable by filter', _fix_order_id in hit,
+      f'order {_fix_order_id} {"in" if _fix_order_id in hit else "MISSING from"} {len(hit)} results')
+
+blank = _filter_ids({'strike_off_status': ['__BLANK__']})
+check('component status is NOT counted as blank', _fix_order_id not in blank,
+      f'order {_fix_order_id} {"wrongly in" if _fix_order_id in blank else "correctly absent from"} blanks')
+
+r = requests.get(f'{B}/api/orders/list/distinct-values', headers=HA,
+                 params={'column': 'strike_off_status'})
+vals = r.json().get('values', [])
+check('dropdown offers the component value', 'APPROVED' in vals, f'values={vals}')
+
+# Fit is order-level only and must NOT gain component behaviour.
+r = requests.get(f'{B}/api/orders/list/distinct-values', headers=HA,
+                 params={'column': 'fit_sample_status'})
+check('fit sample stays order-level', r.status_code == 200, f'HTTP {r.status_code}')
 
 _clear_fixtures()
 

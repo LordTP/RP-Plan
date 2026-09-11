@@ -10,13 +10,13 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, distinct, func
+from sqlalchemy import or_, and_, not_, exists, distinct, func
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import (
     User, UserRole, PurchaseOrder, Comment, CommentRead, DateChangeHistory,
-    PendingDateChange, ORDER_STATUSES, RoleColumnSettings,
+    PendingDateChange, ORDER_STATUSES, RoleColumnSettings, OrderComponent,
 )
 from schemas import (
     PurchaseOrderCreate, PurchaseOrderResponse,
@@ -102,6 +102,55 @@ DATE_COLUMNS = {
 }
 
 
+# Sample columns that can live on a COMPONENT rather than the order row.
+#
+# A style with components tracks its strike-off / lab-dip state per component,
+# leaving the order-level column null. The table already renders the component
+# rollup, but the filter ran against the order column alone — so filtering
+# "STRIKE OFF = APPROVED" returned nothing for a style whose only strike off
+# was approved, and "(Blanks)" returned it instead. What you saw and what you
+# could filter disagreed.
+#
+# Fit and PPS are deliberately absent: they're whole-garment concerns that
+# only ever live on the order (see SAMPLE_PREFIXES_COMPONENT).
+COMPONENT_SAMPLE_COLUMNS = {
+    'strike_off_status': 'strike_off',
+    'strike_off_received': 'strike_off',
+    'strike_off_approved': 'strike_off',
+    'lab_dip_status': 'lab_dip',
+    'lab_dip_received': 'lab_dip',
+    'lab_dip_approved': 'lab_dip',
+}
+
+
+def _component_has(field: str, sample_type: str, predicate):
+    """EXISTS(a component of `sample_type` on this order whose `field` matches).
+
+    Correlated against PurchaseOrder so it composes with the outer query.
+    """
+    comp_col = getattr(OrderComponent, field)
+    return exists().where(and_(
+        OrderComponent.order_id == PurchaseOrder.id,
+        OrderComponent.sample_type == sample_type,
+        predicate(comp_col),
+    ))
+
+
+def _component_is_blank(field: str, sample_type: str, is_date: bool):
+    """No component of this type supplies a value for `field`.
+
+    "Blank" has to mean blank EVERYWHERE, or a style whose component is
+    approved would still show up under "(Blanks)".
+    """
+    comp_col = getattr(OrderComponent, field)
+    has_value = comp_col.isnot(None) if is_date else and_(comp_col.isnot(None), comp_col != '')
+    return not_(exists().where(and_(
+        OrderComponent.order_id == PurchaseOrder.id,
+        OrderComponent.sample_type == sample_type,
+        has_value,
+    )))
+
+
 def _apply_column_filters(query, column_filter_json: str):
     """Apply per-column multi-value filters parsed from a JSON-encoded
     string. Each {field: [values]} entry becomes an IN clause; the
@@ -147,6 +196,9 @@ def _apply_column_filters(query, column_filter_json: str):
         wants_blank = BLANK_SENTINEL in values
         real_values = [v for v in values if v != BLANK_SENTINEL]
 
+        sample_type = COMPONENT_SAMPLE_COLUMNS.get(field)
+        is_date = field in DATE_COLUMNS
+
         clauses = []
         if real_values:
             if field in DATE_COLUMNS:
@@ -159,15 +211,30 @@ def _apply_column_filters(query, column_filter_json: str):
                     except (ValueError, TypeError):
                         continue
                 if parsed_dates:
-                    from sqlalchemy import func
                     clauses.append(func.date(col).in_(parsed_dates))
+                    if sample_type:
+                        clauses.append(_component_has(
+                            field, sample_type,
+                            lambda c, d=parsed_dates: func.date(c).in_(d)))
             else:
                 clauses.append(col.in_(real_values))
+                if sample_type:
+                    clauses.append(_component_has(
+                        field, sample_type,
+                        lambda c, v=real_values: c.in_(v)))
         if wants_blank:
-            clauses.append(col.is_(None))
-            if not field in DATE_COLUMNS:
+            # Blank on a component-bearing column means blank on BOTH the order
+            # row and every component of that type — otherwise an approved
+            # component still answers "(Blanks)".
+            order_blank = [col.is_(None)]
+            if not is_date:
                 # Treat empty strings as blank too for text columns
-                clauses.append(col == '')
+                order_blank.append(col == '')
+            if sample_type:
+                clauses.append(and_(or_(*order_blank),
+                                    _component_is_blank(field, sample_type, is_date)))
+            else:
+                clauses.extend(order_blank)
 
         if clauses:
             query = query.filter(or_(*clauses))
@@ -1375,8 +1442,25 @@ async def get_distinct_values(
 
     is_date = column in DATE_COLUMNS
 
+    # Values carried by components count too, or the dropdown offers no way to
+    # pick a status that the filter can now match. The listing filter became
+    # component-aware (see COMPONENT_SAMPLE_COLUMNS); this is its other half —
+    # without it "APPROVED" simply wouldn't appear in the tick list for a PO
+    # whose strike offs all live on components.
+    sample_type = COMPONENT_SAMPLE_COLUMNS.get(column)
+    comp_col = getattr(OrderComponent, column) if sample_type else None
+
+    def _component_value_query():
+        """Distinct values for this column across components on the orders
+        still visible after the other filters. Joined back to the outer query
+        so supplier scoping and the tab filter both still apply."""
+        visible_ids = query.with_entities(PurchaseOrder.id).subquery()
+        return db.query(comp_col).filter(
+            OrderComponent.order_id.in_(db.query(visible_ids.c.id)),
+            OrderComponent.sample_type == sample_type,
+        )
+
     if is_date:
-        from sqlalchemy import func
         date_col = func.date(col)
         rows = query.with_entities(date_col).filter(col.isnot(None)).distinct().all()
         # SQLite's func.date returns a yyyy-mm-dd string; PostgreSQL returns
@@ -1391,26 +1475,36 @@ async def get_distinct_values(
                 date_strs.add(v.isoformat())
             else:
                 date_strs.add(str(v))
+        if sample_type is not None:
+            for (v,) in _component_value_query().filter(comp_col.isnot(None)).distinct().all():
+                if v is None:
+                    continue
+                date_strs.add(v.date().isoformat() if hasattr(v, 'date') else str(v)[:10])
         values = sorted(date_strs)
     else:
         rows = query.with_entities(col).distinct().all()
         raw = {r[0] for r in rows}
-        has_explicit_blank = '' in raw
+        if sample_type is not None:
+            raw |= {r[0] for r in _component_value_query().distinct().all()}
         values = sorted(
             (str(v) for v in raw if v is not None and v != ''),
             key=lambda s: s.lower(),
         )
-        # Surface empty strings as blanks too, alongside NULLs.
-        if has_explicit_blank:
-            # has_blanks will be set below from a separate query
-            pass
 
     # Single quick count for the (Blanks) bucket. Cheap because it short-
     # circuits on the first NULL hit.
+    # For component-bearing columns "blank" has to mean blank on the order row
+    # AND on every component of that type — matching the listing filter, so
+    # ticking (Blanks) returns exactly what the dropdown promised.
     if is_date:
-        has_blanks = query.filter(col.is_(None)).limit(1).first() is not None
+        order_blank = col.is_(None)
     else:
-        has_blanks = query.filter(or_(col.is_(None), col == '')).limit(1).first() is not None
+        order_blank = or_(col.is_(None), col == '')
+    if sample_type is not None:
+        blank_clause = and_(order_blank, _component_is_blank(column, sample_type, is_date))
+    else:
+        blank_clause = order_blank
+    has_blanks = query.filter(blank_clause).limit(1).first() is not None
 
     return {
         "column": column,
