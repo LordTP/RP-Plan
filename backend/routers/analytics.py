@@ -11,7 +11,7 @@ from database import get_db
 from models import (
     User, PurchaseOrder, OrderComponent, DateChangeHistory,
 )
-from auth import get_current_user, get_current_full_internal_user
+from auth import get_current_user, get_current_internal_user, get_current_full_internal_user
 from sample_helpers import (
     is_sample_done, sample_needs_work, business_days_between,
 )
@@ -387,10 +387,17 @@ async def get_analytics_alerts(
 
 @router.get("/api/analytics/design")
 async def get_design_analytics(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_internal_user),
     db: Session = Depends(get_db)
 ):
-    """Design team analytics: sample pipeline, component coverage, factory performance, awaiting action"""
+    """Design team analytics: sample pipeline, component coverage, factory
+    performance, awaiting action.
+
+    Internal/admin/designer only. This deliberately reports ACROSS factories
+    — the factory-performance block ranks them against each other on
+    first-time-right — so there is no supplier-scoped version of it that
+    still means anything. Previously open to any authenticated user, which
+    let a supplier see how they compared to their competitors."""
 
     all_orders = db.query(PurchaseOrder).filter(
         ~PurchaseOrder.status.in_(["Cancelled", "Delivered", "Complete", "Completed"])
