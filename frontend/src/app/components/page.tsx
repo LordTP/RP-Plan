@@ -12,11 +12,14 @@ import { BulkEditModal } from '@/components/orders/BulkEditModal';
 import { componentsApi, ordersApi, CANONICAL_POSITIONS, type CanonicalComponent, type CanonicalDetail, type CanonicalInstance, type CanonicalPosition } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
-import { InProgressTab } from '@/features/InProgressTab';
+import { ComponentWorklist } from '@/features/ComponentWorklist';
+import { ComponentLibraryTable } from '@/features/ComponentLibraryTable';
+import { SideDrawer, DrawerHeader } from '@/features/component-shared';
+import { Segmented } from '@/components/orders/v2-list-primitives';
 import type { Order, OrderComponent } from '@/types';
 
 type SampleType = 'strike_off' | 'lab_dip' | 'label';
-type TabKey = 'library' | 'in-progress';
+type ComponentView = 'work' | 'library';
 
 const SAMPLE_TAGS: Record<SampleType, { label: string; className: string }> = {
   strike_off: { label: 'SO', className: 'bg-amber-100 text-amber-800' },
@@ -37,16 +40,26 @@ export default function ComponentsPage() {
 function ComponentsContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const tabParam = params.get('tab');
   const openParam = params.get('open');
   const openCanonicalId = openParam ? Number(openParam) : null;
-  const activeTab: TabKey = tabParam === 'in-progress' ? 'in-progress' : 'library';
+
+  // The worklist is the landing view: the daily job on this page is chasing
+  // samples, not browsing the catalogue. `?open=` comes from the post-add
+  // redirect and always means "show me the entry I just made", so it wins.
+  const viewParam = params.get('view');
+  const legacyTab = params.get('tab');
+  const view: ComponentView =
+    openParam || viewParam === 'library' || legacyTab === 'library' ? 'library' : 'work';
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<{ order: Order; component: OrderComponent } | null>(null);
   const [libraryReloadKey, setLibraryReloadKey] = useState(0);
+  const [selectedCanonicalId, setSelectedCanonicalId] = useState<number | null>(null);
+  const [libraryRowIds, setLibraryRowIds] = useState<number[]>([]);
+
+  const isSupplier = String(useStore((s) => s.user)?.role || '').toLowerCase() === 'supplier';
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -64,84 +77,117 @@ function ComponentsContent() {
     loadOrders();
   }, [loadOrders]);
 
-  function setTab(t: TabKey) {
-    router.replace(t === 'library' ? '/components' : `/components?tab=${t}`);
-  }
+  const setView = useCallback((v: ComponentView) => {
+    setSelectedCanonicalId(null);
+    router.replace(v === 'work' ? '/components' : '/components?view=library');
+  }, [router]);
 
-  function openStyle(orderId: number) {
+  const openStyle = useCallback((orderId: number) => {
     router.push(`/design?openStyle=${orderId}`);
-  }
+  }, [router]);
 
-  function openInstance(order: Order, component: OrderComponent) {
-    setEditing({ order, component });
-  }
+  const closeDrawer = useCallback(() => {
+    setSelectedCanonicalId(null);
+    // Drop ?open= so a refresh doesn't reopen what was just closed.
+    if (openParam) router.replace('/components?view=library');
+  }, [openParam, router]);
+
+  // Prev/next paging through the library table's current row order.
+  const drawerIdx = selectedCanonicalId != null ? libraryRowIds.indexOf(selectedCanonicalId) : -1;
+  const goPrev = drawerIdx > 0 ? () => setSelectedCanonicalId(libraryRowIds[drawerIdx - 1]) : undefined;
+  const goNext = drawerIdx >= 0 && drawerIdx < libraryRowIds.length - 1
+    ? () => setSelectedCanonicalId(libraryRowIds[drawerIdx + 1])
+    : undefined;
 
   return (
     <AppShell title="Components">
-      <div className="w-full px-6 py-6 flex flex-col gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex items-baseline gap-4 min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-slate-900">Components</h1>
-            <span className="text-sm text-slate-500 truncate">
-              Canonical library + samples in flight
+      <div className="w-full px-6 py-5 flex flex-col gap-4 h-[calc(100vh-3.5rem)]">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900">Components</h1>
+            <span className="text-sm text-gray-500 truncate hidden md:block">
+              {view === 'work'
+                ? 'Every sample still in flight'
+                : 'Identity for every component — the only place a rename happens'}
             </span>
           </div>
-          <button
-            onClick={() => setAddOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-md shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add component
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <Segmented<ComponentView>
+              options={[
+                { value: 'work', label: 'Worklist' },
+                { value: 'library', label: 'Library' },
+              ]}
+              value={view}
+              onChange={setView}
+            />
+            <button
+              onClick={() => setAddOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-md shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add component
+            </button>
+          </div>
         </div>
 
-        <div className="border-b border-slate-200 flex gap-6">
-          <button
-            onClick={() => setTab('library')}
-            className={cn(
-              'pb-2 text-sm font-semibold border-b-2 -mb-px transition-colors',
-              activeTab === 'library'
-                ? 'border-primary-500 text-primary-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700',
-            )}
-          >
-            Library
-          </button>
-          <button
-            onClick={() => setTab('in-progress')}
-            className={cn(
-              'pb-2 text-sm font-semibold border-b-2 -mb-px transition-colors',
-              activeTab === 'in-progress'
-                ? 'border-primary-500 text-primary-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700',
-            )}
-          >
-            In Progress
-          </button>
-        </div>
-
-        {activeTab === 'library' ? (
-          <LibraryTab reloadKey={libraryReloadKey} openCanonicalId={openCanonicalId} />
-        ) : (
-          <InProgressTab
+        {view === 'work' ? (
+          <ComponentWorklist
             orders={orders}
             loading={ordersLoading}
-            isSupplier={String(useStore.getState().user?.role || '').toLowerCase() === 'supplier'}
-            onEditInstance={openInstance}
+            isSupplier={isSupplier}
+            onEditInstance={(order, component) => setEditing({ order, component })}
+            onOpenStyle={openStyle}
             onBulkEditDone={() => { loadOrders(); setLibraryReloadKey((k) => k + 1); }}
           />
+        ) : (
+          <ComponentLibraryTable
+            reloadKey={libraryReloadKey}
+            openCanonicalId={openCanonicalId}
+            selectedId={selectedCanonicalId}
+            onSelect={setSelectedCanonicalId}
+            onRowsChange={setLibraryRowIds}
+          />
         )}
+
+        {/* Library identity drawer */}
+        <SideDrawer open={selectedCanonicalId != null} onClose={closeDrawer} width="max-w-4xl">
+          {selectedCanonicalId != null && (
+            <>
+              <DrawerHeader
+                title="Library entry"
+                subtitle="Renaming here updates every style this is on"
+                onClose={closeDrawer}
+                onPrev={goPrev}
+                onNext={goNext}
+                position={drawerIdx >= 0 ? `${drawerIdx + 1} / ${libraryRowIds.length}` : undefined}
+              />
+              <div className="flex-1 overflow-y-auto p-5">
+                <CanonicalDetailPanel
+                  key={selectedCanonicalId}
+                  canonicalId={selectedCanonicalId}
+                  isSupplier={isSupplier}
+                  onSaved={() => setLibraryReloadKey((k) => k + 1)}
+                  onDeleted={() => {
+                    setSelectedCanonicalId(null);
+                    setLibraryReloadKey((k) => k + 1);
+                  }}
+                />
+              </div>
+            </>
+          )}
+        </SideDrawer>
 
         <LibraryFirstAddModal
           open={addOpen}
           onClose={() => setAddOpen(false)}
           orders={orders}
-          isSupplier={String(useStore.getState().user?.role || '').toLowerCase() === 'supplier'}
+          isSupplier={isSupplier}
           onDone={(_name, _count, canonicalId) => {
             setAddOpen(false);
             loadOrders();
             setLibraryReloadKey((k) => k + 1);
-            // Land on the fresh entry in the Library tab so the user sees what they created.
+            // Land on the fresh entry in the library so the user sees what
+            // they created, and can fix a typo before anyone chases it.
             router.replace(`/components?open=${canonicalId}`);
           }}
         />
@@ -167,177 +213,6 @@ function ComponentsContent() {
   );
 }
 
-function LibraryTab({ reloadKey, openCanonicalId }: { reloadKey: number; openCanonicalId: number | null }) {
-  const { user } = useStore();
-  const isSupplier = String(user?.role || '').toLowerCase() === 'supplier';
-  const [components, setComponents] = useState<CanonicalComponent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState('');
-  const [sampleType, setSampleType] = useState<SampleType | null>(null);
-  const [includeBlank, setIncludeBlank] = useState(true);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await componentsApi.listLibrary({
-        q: q.trim() || undefined,
-        sample_type: sampleType || undefined,
-        include_blank: includeBlank,
-      });
-      setComponents(data.components);
-      // Priority: URL ?open=<id> (from post-add redirect) > current selection > first row.
-      // A stale openCanonicalId that isn't in the list falls back to the current or first.
-      if (openCanonicalId && data.components.some((c) => c.id === openCanonicalId)) {
-        setSelectedId(openCanonicalId);
-      } else if (!selectedId && data.components.length > 0) {
-        setSelectedId(data.components[0].id);
-      }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to load components');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, sampleType, includeBlank, reloadKey, openCanonicalId]);
-
-  const filtered = components;
-
-  return (
-    <div className="grid grid-cols-[300px_1fr] gap-6 mt-2">
-      {/* Left rail: search + list */}
-      <div className="flex flex-col gap-3">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search name, colour, PO, style code…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-200"
-          />
-        </div>
-        <div className="flex items-center gap-1 text-[11px]">
-          <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mr-1">Type</span>
-          {(['strike_off', 'lab_dip', 'label'] as SampleType[]).map((st) => {
-            const on = sampleType === st;
-            const tag = SAMPLE_TAGS[st];
-            return (
-              <button
-                key={st}
-                onClick={() => setSampleType(on ? null : st)}
-                className={cn(
-                  'px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition',
-                  tag.className,
-                  on ? 'ring-2 ring-offset-1 ring-primary-500' : 'opacity-70 hover:opacity-100',
-                )}
-              >
-                {tag.label}
-              </button>
-            );
-          })}
-          <span className="text-slate-300 mx-1">·</span>
-          <button
-            onClick={() => setIncludeBlank((v) => !v)}
-            className={cn(
-              'px-2 py-0.5 rounded border text-[10px] font-semibold',
-              includeBlank
-                ? 'border-slate-300 text-slate-700 bg-white'
-                : 'border-slate-200 text-slate-400 bg-slate-50',
-            )}
-          >
-            Blank {includeBlank ? '✓' : ''}
-          </button>
-        </div>
-
-        <div className="flex-1 rounded-md border border-slate-200 bg-white overflow-y-auto max-h-[calc(100vh-260px)]">
-          {loading && filtered.length === 0 && (
-            <div className="flex items-center justify-center py-10 text-slate-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-            </div>
-          )}
-          {!loading && filtered.length === 0 && (
-            <div className="text-center text-xs text-slate-400 py-10">No components match.</div>
-          )}
-          {filtered.map((c) => {
-            const on = c.id === selectedId;
-            const tag = SAMPLE_TAGS[c.sample_type];
-            return (
-              <button
-                key={c.id}
-                onClick={() => setSelectedId(c.id)}
-                className={cn(
-                  'w-full text-left p-2.5 border-b border-slate-100 transition',
-                  on ? 'bg-primary-50 border-l-4 border-l-primary-500' : 'hover:bg-slate-50',
-                )}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', tag.className)}>
-                    {tag.label}
-                  </span>
-                  <span className="text-[13px] font-semibold text-slate-900 truncate">{c.name}</span>
-                  {c.colour && (
-                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 truncate max-w-[100px]">
-                      {c.colour}
-                    </span>
-                  )}
-                  {c.position && c.position.length > 0 && c.position.map((p) => (
-                    <span
-                      key={p}
-                      title={p}
-                      className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 truncate max-w-[140px]"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-1 tabular-nums flex items-center gap-1.5">
-                  <span>{c.styles_count} styles</span>
-                  <span className="text-slate-300">·</span>
-                  <span>{c.customers_count} customer{c.customers_count === 1 ? '' : 's'}</span>
-                  {c.has_spec && <span className="text-slate-300">·</span>}
-                  {c.has_spec && <span>📎 spec</span>}
-                  {c.is_blank && (
-                    <>
-                      <span className="text-slate-300">·</span>
-                      <span className="text-primary-600 font-semibold">seeded</span>
-                    </>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Right: detail */}
-      <div>
-        {selectedId ? (
-          <CanonicalDetailPanel
-            canonicalId={selectedId}
-            isSupplier={isSupplier}
-            onSaved={() => load()}
-            onDeleted={() => {
-              // Clear the selection first so the right panel unmounts and
-              // stops re-fetching a now-404 canonical id. load() then picks
-              // the next available entry as first-selected.
-              setSelectedId(null);
-              load();
-            }}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
-            Pick a component to see its details.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function CanonicalDetailPanel({
   canonicalId,
