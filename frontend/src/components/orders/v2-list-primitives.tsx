@@ -330,10 +330,12 @@ export function StatusBar({
   );
 }
 
-// ─── Floating bulk action bar ─────────────────────────────────────────
-// Sits bottom-centre, slides up when a selection exists. Stays mounted
-// so the transition plays both directions; pointer-events are killed
-// while hidden so it never eats clicks on the table underneath.
+// ─── Bulk action bar ──────────────────────────────────────────────────
+// Deliberately NOT positioned — the caller owns placement and the
+// show/hide transition, because action panels need to stack above the
+// bar inside the same positioned container. An earlier version pinned
+// itself with `fixed bottom-6`, which pulled it out of the caller's
+// flow and made it render ON TOP of those panels instead of below them.
 
 export function BulkBar({
   count,
@@ -347,25 +349,19 @@ export function BulkBar({
   children?: React.ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        'fixed left-1/2 -translate-x-1/2 bottom-6 z-40 transition-all duration-200',
-        count > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none',
-      )}
-    >
-      <div className="bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 flex items-center gap-3 text-xs">
-        <span className="font-semibold text-gray-900 tabular-nums whitespace-nowrap">
-          {count} {noun}{count === 1 ? '' : 's'} selected
-        </span>
-        <span className="w-px h-5 bg-gray-200" />
-        {children}
-        <button
-          onClick={onClear}
-          className="text-gray-500 hover:text-gray-900 px-1 whitespace-nowrap"
-        >
-          Clear
-        </button>
-      </div>
+    <div className="bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 flex items-center gap-2 text-xs">
+      <span className="font-semibold text-gray-900 tabular-nums whitespace-nowrap">
+        {count} {noun}{count === 1 ? '' : 's'} selected
+      </span>
+      <span className="w-px h-5 bg-gray-200" />
+      {children}
+      <span className="w-px h-5 bg-gray-200" />
+      <button
+        onClick={onClear}
+        className="text-gray-500 hover:text-gray-900 px-1 whitespace-nowrap"
+      >
+        Clear
+      </button>
     </div>
   );
 }

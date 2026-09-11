@@ -1192,67 +1192,100 @@ function OrdersV2Content() {
         )}
       >
         {bulkPanel === 'date' && (
-          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl p-3 flex items-center gap-2 text-xs">
-            <span className="text-gray-600 whitespace-nowrap">Set revised ex-factory to</span>
-            <input
-              type="date"
-              value={bulkDate}
-              onChange={(e) => setBulkDate(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-1"
-            />
-            {isSupplier && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(92vw,560px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set revised ex-factory date</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {isSupplier
+                    ? `Submits a date-change request on ${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'} for Sourcelab to approve. Nothing changes until they do.`
+                    : `Overwrites Revised Ex-Factory on ${selectedIds.size} selected style${selectedIds.size === 1 ? '' : 's'}. ETA UK / ETA Customer recalculate from it.`}
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs flex-wrap">
               <input
-                type="text"
-                value={bulkReason}
-                onChange={(e) => setBulkReason(e.target.value)}
-                placeholder="Reason (required)"
-                className="border border-gray-300 rounded px-2 py-1 w-52"
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1"
               />
-            )}
-            <button
-              disabled={!bulkDate || bulkSaving || (isSupplier && !bulkReason.trim())}
-              onClick={() => applyBulk('revised_po_ex_factory', bulkDate)}
-              className="px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5"
-            >
-              {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-              {isSupplier ? 'Submit for approval' : `Apply to ${selectedIds.size}`}
-            </button>
-            <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 px-1">✕</button>
+              {isSupplier && (
+                <input
+                  type="text"
+                  value={bulkReason}
+                  onChange={(e) => setBulkReason(e.target.value)}
+                  placeholder="Reason for the change (required)"
+                  className="border border-gray-300 rounded px-2 py-1 flex-1 min-w-[180px]"
+                />
+              )}
+              <button
+                disabled={!bulkDate || bulkSaving || (isSupplier && !bulkReason.trim())}
+                onClick={() => applyBulk('revised_po_ex_factory', bulkDate)}
+                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                {isSupplier ? 'Submit for approval' : `Apply to ${selectedIds.size}`}
+              </button>
+            </div>
           </div>
         )}
 
         {bulkPanel === 'sample' && (
-          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl p-3 flex items-center gap-2 text-xs">
-            <select
-              value={bulkSampleField}
-              onChange={(e) => setBulkSampleField(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-1 bg-white"
-            >
-              <option value="strike_off_status">Strike Off</option>
-              <option value="lab_dip_status">Lab Dip</option>
-              <option value="fit_sample_status">Fit Sample</option>
-              <option value="pps_status">PPS</option>
-            </select>
-            <span className="text-gray-600">→</span>
-            <select
-              value={bulkSampleValue}
-              onChange={(e) => setBulkSampleValue(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-1 bg-white"
-            >
-              <option value="">— Pick a status —</option>
-              {SAMPLE_STATUS_OPTIONS.filter(s => s !== 'REJECTED').map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <button
-              disabled={!bulkSampleValue || bulkSaving}
-              onClick={() => applyBulk(bulkSampleField, bulkSampleValue)}
-              className="px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5"
-            >
-              {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-              Apply to {selectedIds.size}
-            </button>
-            <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 px-1">✕</button>
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(92vw,560px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set a sample status</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Sets one sample type&apos;s status on {selectedIds.size} selected style{selectedIds.size === 1 ? '' : 's'} —
+                  the same field as the Strike Off / Lab Dip / Fit / PPS column in the table view.
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs flex-wrap">
+              <select
+                value={bulkSampleField}
+                onChange={(e) => setBulkSampleField(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 bg-white"
+              >
+                <option value="strike_off_status">Strike Off</option>
+                <option value="lab_dip_status">Lab Dip</option>
+                <option value="fit_sample_status">Fit Sample</option>
+                <option value="pps_status">PPS</option>
+              </select>
+              <span className="text-gray-400">→</span>
+              <select
+                value={bulkSampleValue}
+                onChange={(e) => setBulkSampleValue(e.target.value)}
+                className={cn(
+                  'border rounded px-2 py-1 bg-white',
+                  bulkSampleValue ? 'border-gray-300' : 'border-gray-300 text-gray-400',
+                )}
+              >
+                <option value="">— Pick a status —</option>
+                {SAMPLE_STATUS_OPTIONS.filter(s => s !== 'REJECTED').map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <button
+                disabled={!bulkSampleValue || bulkSaving}
+                onClick={() => applyBulk(bulkSampleField, bulkSampleValue)}
+                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                Apply to {selectedIds.size}
+              </button>
+            </div>
+            <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/60 text-[10px] text-gray-500">
+              REJECTED isn&apos;t here on purpose — rejecting needs a reason and opens a new attempt,
+              so it stays on the per-style reject flow in the detail drawer.
+            </div>
           </div>
         )}
 
