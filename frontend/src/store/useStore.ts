@@ -51,7 +51,12 @@ export const useStore = create<AppState>((set) => ({
   orders: [],
   totalOrders: 0,
   currentPage: 1,
-  pageSize: 50,
+  // Rows per infinite-scroll page on /orders. Raised 50 -> 200 (Sep 2026)
+  // because scrolling in 50s was tedious on a 700-row book. Safe to raise
+  // only after the comment-count N+1 was collapsed to two aggregate
+  // queries — at 50 the old code cost 100 round trips per page, so this
+  // would have made the table four times slower rather than faster.
+  pageSize: 200,
   setOrders: (orders, total) => set({ orders, totalOrders: total }),
   appendOrders: (newOrders, total) =>
     set((state) => ({

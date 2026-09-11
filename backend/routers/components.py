@@ -764,24 +764,37 @@ async def get_styles_with_component(
     Supplier-scoped — its sibling styles-with-canonical already filtered,
     this one didn't, so a supplier could read style codes, descriptions and
     colours for any PO by guessing a PO number."""
-    orders = db.query(PurchaseOrder).filter(
-        PurchaseOrder.po_number == po_number,
-        *supplier_filter_clause(current_user),
-    ).all()
+    # One join rather than a per-style component lookup. A PO is usually
+    # only a handful of styles so this was never the bottleneck the orders
+    # list was, but it's the same shape and costs nothing to collapse.
+    rows = (
+        db.query(PurchaseOrder, OrderComponent)
+        .join(OrderComponent, OrderComponent.order_id == PurchaseOrder.id)
+        .filter(
+            PurchaseOrder.po_number == po_number,
+            OrderComponent.name == component_name,
+            *supplier_filter_clause(current_user),
+        )
+        .order_by(PurchaseOrder.style_code)
+        .all()
+    )
+    # A style could carry two components with the same name but different
+    # sample types (e.g. POCKET as both a strike-off and a lab dip). The
+    # previous .first() silently kept one; keep that behaviour so callers
+    # still get one row per style.
+    seen: set[int] = set()
     results = []
-    for o in orders:
-        comp = db.query(OrderComponent).filter(
-            OrderComponent.order_id == o.id,
-            OrderComponent.name == component_name
-        ).first()
-        if comp:
-            results.append({
-                "id": o.id,
-                "style_code": o.style_code or "",
-                "description": o.description or "",
-                "colour": o.colour or "",
-                "component_id": comp.id,
-            })
+    for o, comp in rows:
+        if o.id in seen:
+            continue
+        seen.add(o.id)
+        results.append({
+            "id": o.id,
+            "style_code": o.style_code or "",
+            "description": o.description or "",
+            "colour": o.colour or "",
+            "component_id": comp.id,
+        })
     return {"styles": results}
 
 

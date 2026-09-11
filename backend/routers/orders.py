@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, distinct
+from sqlalchemy import or_, distinct, func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -263,17 +263,41 @@ async def get_orders(
         PurchaseOrder.id.asc(),
     ).offset(offset).limit(page_size).all()
     
-    # Add comment count and unread count per user
-    for order in orders:
-        order.comment_count = db.query(Comment).filter(Comment.po_id == order.id).count()
-        # Count comments this specific user hasn't read
+    # Comment counts, two aggregate queries rather than two per order.
+    #
+    # This loop used to issue `SELECT count(*)` twice per row AND rebuild the
+    # read-ids subquery on every iteration. Invisible on a 50-row page against
+    # local SQLite, but the V2 views request page_size=5000 because they group
+    # client-side — so on prod that was ~1,400 round trips to Postgres before
+    # the page could render, which is what made /design feel slow to load.
+    order_ids = [o.id for o in orders]
+    comment_totals: dict[int, int] = {}
+    unread_totals: dict[int, int] = {}
+    if order_ids:
+        comment_totals = dict(
+            db.query(Comment.po_id, func.count(Comment.id))
+            .filter(Comment.po_id.in_(order_ids))
+            .group_by(Comment.po_id)
+            .all()
+        )
         read_comment_ids = db.query(CommentRead.comment_id).filter(
             CommentRead.user_id == current_user.id
         ).subquery()
-        order.unread_comment_count = db.query(Comment).filter(
-            Comment.po_id == order.id,
-            ~Comment.id.in_(read_comment_ids)
-        ).count()
+        unread_totals = dict(
+            db.query(Comment.po_id, func.count(Comment.id))
+            .filter(
+                Comment.po_id.in_(order_ids),
+                ~Comment.id.in_(read_comment_ids),
+            )
+            .group_by(Comment.po_id)
+            .all()
+        )
+
+    for order in orders:
+        # Orders with no comments are absent from the GROUP BY result, so
+        # default to 0 rather than assuming a row exists.
+        order.comment_count = comment_totals.get(order.id, 0)
+        order.unread_comment_count = unread_totals.get(order.id, 0)
     
     # Return different response based on user role
     if current_user.role == UserRole.SUPPLIER:
