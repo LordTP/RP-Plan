@@ -23,7 +23,7 @@ from schemas import (
     PurchaseOrderSupplierResponse,
 )
 from routers.components import decorate_orders_with_attempts
-from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+from routers.submissions import sync_submission_on_status_change, reconcile_and_sync, STATUS_FIELD_TO_SAMPLE_TYPE
 from auth import (
     get_current_user, get_current_internal_user, get_current_full_internal_user,
     get_current_admin_user,
@@ -879,10 +879,18 @@ async def update_order(
     if order.pps_approved:
         order.ex_factory_from_pp_approval = order.pps_approved + timedelta(days=35)
 
+    # reconcile_and_sync, not a bare reconcile. Writing only *_approved and
+    # letting reconcile flip the status to APPROVED used to leave the open
+    # submission untouched — the sample read approved on screen while still
+    # counting toward "in rework" and the stuck list. Now the same call that
+    # settles the column closes the attempt.
     user_touched_order_status = [p for p in SAMPLE_PREFIXES_ORDER if f'{p}_status' in order_data]
-    reconcile_sample_status(order, SAMPLE_PREFIXES_ORDER, skip_prefixes=user_touched_order_status)
+    reconcile_and_sync(
+        db, order, None, SAMPLE_PREFIXES_ORDER, current_user.id,
+        skip_prefixes=user_touched_order_status,
+    )
     for comp in order.components:
-        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT)
+        reconcile_and_sync(db, order, comp, SAMPLE_PREFIXES_COMPONENT, current_user.id)
 
     db.commit()
     db.refresh(order)
@@ -1186,6 +1194,18 @@ async def bulk_update_date(
             setattr(order, field_name, new_value)
             order.updated_at = datetime.utcnow()
             updated_count += 1
+
+            # This endpoint writes sample statuses too (fit/strike/lab/pps are
+            # in dropdown_text_fields), and it never synced submissions — so a
+            # bulk APPROVED left every affected order's attempt open. Reconcile
+            # here rather than only on the single-order PUT path.
+            if field_name in STATUS_FIELD_TO_SAMPLE_TYPE or field_name.endswith(('_received', '_approved')):
+                prefix = field_name.rsplit('_', 1)[0] if field_name.endswith(('_received', '_approved')) else field_name.replace('_status', '')
+                if prefix in SAMPLE_PREFIXES_ORDER:
+                    reconcile_and_sync(
+                        db, order, None, (prefix,), current_user.id,
+                        skip_prefixes=(prefix,) if field_name.endswith('_status') else None,
+                    )
 
             # Apply the "Required = N → Status = NOT REQUIRED" rule for fit
             # samples whenever this bulk hits fit_sample_required.

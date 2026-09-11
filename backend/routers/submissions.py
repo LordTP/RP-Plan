@@ -19,6 +19,7 @@ from models import (
     SAMPLE_REJECT_REASONS, SAMPLE_TYPES, DateChangeHistory,
 )
 from auth import get_current_internal_user
+from sample_helpers import reconcile_sample_status
 
 
 router = APIRouter()
@@ -356,6 +357,80 @@ async def reject_sample(
 # so any update path that writes a sample status column auto-closes the matching
 # open submission instead of leaving a dangling v+1 forever.
 STATUS_FIELD_TO_SAMPLE_TYPE = {fm['status']: st for st, fm in SAMPLE_FIELD_MAP.items()}
+
+# Column-name prefix ('strike_off') → submissions sample_type key ('strike').
+PREFIX_TO_SAMPLE_TYPE = {
+    fm['status'].replace('_status', ''): st for st, fm in SAMPLE_FIELD_MAP.items()
+}
+
+
+def reconcile_and_sync(
+    db: Session,
+    order: PurchaseOrder,
+    component: Optional[OrderComponent],
+    prefixes,
+    actioned_by_id: int,
+    skip_prefixes=None,
+) -> None:
+    """Reconcile a target's sample columns AND close any submission the
+    reconcile just settled. Use this instead of calling
+    reconcile_sample_status directly on anything that can end up APPROVED.
+
+    Why this exists
+    ---------------
+    Sample state lives in two stores: the legacy status/received/approved
+    columns, and sample_submissions (the attempt trail). They were kept in
+    step by sync_submission_on_status_change, which only three of eight
+    write paths called — so three ways of approving a sample left its
+    submission open forever:
+
+      * a date-only approval (write *_approved, let reconcile flip the
+        status) never touched submissions, because sync was only wired to
+        status-column writes
+      * apply-to-po pushed a status to siblings and never synced at all
+      * bulk-update-date wrote sample statuses through the dropdown path
+
+    A sample left in that state reads APPROVED on screen while still
+    counting toward "in rework" and the stuck list on /resubmissions.
+
+    Folding the two together is the actual fix: you can no longer reconcile
+    without syncing, so a fourth path can't reintroduce the same drift.
+
+    REJECTED is not handled here on purpose — it's a lifecycle event that
+    needs a structured reason and has its own endpoint. The guard in
+    sync_submission_on_status_change raises if one arrives via a column
+    write.
+    """
+    target = component if component is not None else order
+    component_id = component.id if component else None
+
+    before = {}
+    for prefix in prefixes:
+        sample_type = PREFIX_TO_SAMPLE_TYPE.get(prefix)
+        if sample_type:
+            before[prefix] = getattr(target, f'{prefix}_status', None)
+
+    reconcile_sample_status(target, prefixes, skip_prefixes=skip_prefixes)
+
+    now = datetime.utcnow()
+    for prefix in prefixes:
+        sample_type = PREFIX_TO_SAMPLE_TYPE.get(prefix)
+        if not sample_type:
+            continue
+        after = getattr(target, f'{prefix}_status', None)
+        if after != 'APPROVED':
+            continue
+        # Close the open attempt whether reconcile flipped it or the caller
+        # set APPROVED directly — either way an open row is now wrong.
+        latest = _latest_submission(db, order.id, component_id, sample_type)
+        if latest is not None and latest.outcome is None:
+            latest.outcome = 'APPROVED'
+            latest.resolved_at = now
+            latest.actioned_by_id = actioned_by_id
+            if latest.submitted_at is None:
+                received = getattr(target, f'{prefix}_received', None)
+                if received is not None:
+                    latest.submitted_at = received
 
 
 def sync_submission_on_status_change(

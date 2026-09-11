@@ -349,7 +349,7 @@ async def update_component(
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
     # Imported here to avoid a circular import at module load.
-    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    from routers.submissions import sync_submission_on_status_change, reconcile_and_sync, STATUS_FIELD_TO_SAMPLE_TYPE
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == component.order_id).first()
 
     # Log each field change to DateChangeHistory so the activity feed picks it up
@@ -373,8 +373,18 @@ async def update_component(
             sync_submission_on_status_change(db, order, component, key, value, current_user.id)
 
     component.updated_at = datetime.utcnow()
+    # The sync above only fires for STATUS writes. A date-only approval —
+    # write *_approved and let reconcile flip the status — skipped it
+    # entirely, leaving the attempt open while the column read APPROVED.
+    # reconcile_and_sync closes whatever the reconcile just settled.
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in update_data]
-    reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+    if order is not None and role_str != 'supplier':
+        reconcile_and_sync(
+            db, order, component, SAMPLE_PREFIXES_COMPONENT, current_user.id,
+            skip_prefixes=user_touched_status,
+        )
+    else:
+        reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.commit()
     db.refresh(component)
     summary = _attempt_summary_for_components(db, [component.id])
@@ -483,7 +493,7 @@ async def bulk_update_components(
     role_str = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
     source_tag = "Supplier" if role_str == 'supplier' else "Sourcelab"
 
-    from routers.submissions import sync_submission_on_status_change, STATUS_FIELD_TO_SAMPLE_TYPE
+    from routers.submissions import sync_submission_on_status_change, reconcile_and_sync, STATUS_FIELD_TO_SAMPLE_TYPE
 
     # Pre-fetch the orders for these components so the submission sync can run
     # without hitting the DB once per row.
@@ -597,7 +607,18 @@ async def apply_component_field_to_po(
             OrderComponent.name == component.name,
             OrderComponent.sample_type == component.sample_type,
         )
+    # Local import, matching this module's existing pattern for pulling
+    # from routers.submissions (avoids a load-order cycle).
+    from routers.submissions import reconcile_and_sync
     matching = match_q.all()
+    # Each matching sibling lives on its own order; reconcile_and_sync needs
+    # that order to find the right submission rows. One query rather than a
+    # lookup per sibling.
+    sibling_orders_by_id = {
+        o.id: o for o in db.query(PurchaseOrder).filter(
+            PurchaseOrder.id.in_({c.order_id for c in matching} or {-1})
+        ).all()
+    }
     # Remaining keys in body are the fields to update
     allowed_fields = {
         'fit_sample_status', 'fit_sample_received', 'fit_sample_approved',
@@ -646,7 +667,19 @@ async def apply_component_field_to_po(
                 ))
             setattr(comp, key, value)
         comp.updated_at = datetime.utcnow()
-        reconcile_sample_status(comp, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
+        # Was a bare reconcile, so pushing APPROVED to siblings updated their
+        # columns and left every sibling's open attempt dangling — each read
+        # approved while still counting as in-rework on /resubmissions.
+        # Each sibling belongs to its OWN order, so the submission lookup has
+        # to use that order's id, not the one the request came in on.
+        reconcile_and_sync(
+            db,
+            sibling_orders_by_id.get(comp.order_id, order),
+            comp,
+            SAMPLE_PREFIXES_COMPONENT,
+            current_user.id,
+            skip_prefixes=user_touched_status,
+        )
         updated += 1
     db.commit()
     return {"success": True, "components_updated": updated, "po_number": order.po_number}
