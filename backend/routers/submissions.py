@@ -53,6 +53,17 @@ class ApproveRequest(BaseModel):
     order_id: int
     component_id: Optional[int] = None
     sample_type: Literal['fit', 'strike', 'lab', 'pps', 'label']
+    # ISO date string; defaults to today if omitted. Mirrors received_at on
+    # MarkReceivedRequest.
+    #
+    # Without this the endpoint always stamped utcnow(), so an approval that
+    # happened weeks ago could only be recorded as happening today — and
+    # because pydantic drops unknown keys by default, a client sending a date
+    # got no error, just the wrong date. That poisons every downstream
+    # calculation keyed off the approval: idle days, chase thresholds, and
+    # ex-factory-from-PP-approval. It surfaced onboarding a real PD sheet,
+    # which is all historical dates.
+    approved_at: Optional[str] = None
     apply_scope: Literal['single', 'all_on_po', 'selected'] = 'single'
     apply_to_order_ids: Optional[list[int]] = None
 
@@ -508,7 +519,17 @@ def _approve_one_target(
     sample_type: str,
     actioned_by_id: int,
     now: datetime,
+    approved_on: Optional[datetime] = None,
 ) -> int:
+    """Approve the open attempt on one target.
+
+    `now` and `approved_on` are deliberately separate. `now` is the AUDIT
+    timestamp — when this action was actually recorded — and must stay real
+    or the trail lies. `approved_on` is the BUSINESS date the sample was
+    approved, which can legitimately be in the past when back-filling an
+    existing PD sheet. Defaults to `now` when the caller doesn't care.
+    """
+    approved_on = approved_on or now
     target = component if component is not None else order
     component_id = component.id if component else None
     state_before = _read_target_state(target, sample_type)
@@ -520,7 +541,7 @@ def _approve_one_target(
         if latest.submitted_at is None:
             if state_before['received'] is not None:
                 latest.submitted_at = state_before['received']
-    _set_target_state(target, sample_type, status='APPROVED', approved=now)
+    _set_target_state(target, sample_type, status='APPROVED', approved=approved_on)
     attempt_no = latest.attempt_no if latest else 1
     # Log to change history so dashboard-driven approvals also appear in the
     # activity feed, not just legacy column edits.
@@ -550,11 +571,18 @@ async def approve_sample(
         body.apply_scope, body.apply_to_order_ids,
     )
     now = datetime.utcnow()
+    if body.approved_at:
+        try:
+            approved_on = datetime.fromisoformat(body.approved_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(400, f"Invalid approved_at '{body.approved_at}'")
+    else:
+        approved_on = now
 
     primary_attempt_no = None
     applied_to_count = 0
     for order, component in targets:
-        attempt = _approve_one_target(db, order, component, body.sample_type, current_user.id, now)
+        attempt = _approve_one_target(db, order, component, body.sample_type, current_user.id, now, approved_on)
         if order.id == body.order_id and (component.id if component else None) == body.component_id:
             primary_attempt_no = attempt
         applied_to_count += 1

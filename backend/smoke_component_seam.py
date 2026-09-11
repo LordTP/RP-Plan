@@ -32,6 +32,52 @@ db = SessionLocal()
 HA = login('admin', 'admin123')
 HF = login('factory', 'factory123')
 
+# ── Fixtures ──────────────────────────────────────────────────────────
+# The suite used to read whatever happened to be in the DB, which meant it
+# crashed outright on a freshly-wiped one: no second PO to prove cross-PO
+# reach, no other factory to prove supplier scoping, no component-free order
+# to exercise the order-level path. Seed exactly what's needed and remove it
+# at the end, so a pass means the same thing on any database.
+SMOKE_PO = 'SMOKE-PO-FIXTURE'
+
+
+def _clear_fixtures():
+    ids = [o.id for o in db.query(PurchaseOrder).filter(PurchaseOrder.po_number == SMOKE_PO).all()]
+    if ids:
+        db.query(SampleSubmission).filter(SampleSubmission.order_id.in_(ids)).delete(synchronize_session=False)
+        db.query(OrderComponent).filter(OrderComponent.order_id.in_(ids)).delete(synchronize_session=False)
+        db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(ids)).delete(synchronize_session=False)
+        db.commit()
+
+
+_clear_fixtures()
+# Two styles on a second PO, under a factory that is NOT PRIME-23, carrying no
+# components. One fixture covers all three gaps.
+for i in (1, 2, 3):
+    db.add(PurchaseOrder(
+        po_number=SMOKE_PO, style_code=f'SMOKE-STYLE-{i}',
+        customer='SMOKE CUSTOMER', factory='SMOKE-FACTORY',
+        description=f'smoke fixture {i}', colour='SMOKE', total_quantity=10,
+    ))
+db.commit()
+
+# Order 3 carries the component that sections C and D beat up. Without it the
+# suite grabbed the first lab-dip component in the DB — i.e. real data — and
+# left it rejected, re-approved and date-stamped by the test run.
+_fix_orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == SMOKE_PO).order_by(PurchaseOrder.id).all()
+_fix_target = _fix_orders[2]
+FIXTURE_COMPONENT = OrderComponent(
+    order_id=_fix_target.id, name='SMOKE LAB DIP', sample_type='lab_dip',
+)
+FIXTURE_STRIKE = OrderComponent(
+    order_id=_fix_target.id, name='SMOKE STRIKE OFF', sample_type='strike_off',
+)
+db.add(FIXTURE_COMPONENT)
+db.add(FIXTURE_STRIKE)
+db.commit()
+db.refresh(FIXTURE_COMPONENT)
+db.refresh(FIXTURE_STRIKE)
+
 # ── A. Core reads still work ──────────────────────────────────────────
 print("\nA. CORE READS")
 for label, url in [
@@ -51,8 +97,15 @@ r = requests.get(f'{B}/api/orders?page=1&page_size=5000', headers=HA).json()
 orders = r['orders']
 nulls = [o['id'] for o in orders if o.get('comment_count') is None]
 withc = sum(1 for o in orders if (o.get('comment_count') or 0) > 0)
-check('comment counts populated', not nulls and withc > 0,
-      f'{withc} orders with comments, {len(nulls)} nulls')
+# What this guards is the N+1 collapse: every row must carry a non-null
+# comment_count. Requiring one to be NON-ZERO needs a seeded comment, which a
+# clean DB won't have — so that half only asserts when there's data for it.
+if withc == 0:
+    check('comment counts present (no comments in this DB)', not nulls,
+          f'{len(nulls)} nulls across {len(orders)} orders')
+else:
+    check('comment counts populated', not nulls and withc > 0,
+          f'{withc} orders with comments, {len(nulls)} nulls')
 
 # ── B. Security fixes still hold ──────────────────────────────────────
 print("\nB. SUPPLIER SCOPING")
@@ -76,7 +129,7 @@ check('cross-factory pending changes scoped',
 
 # ── C. Rejection guards ───────────────────────────────────────────────
 print("\nC. REJECTION GUARDS")
-comp = db.query(OrderComponent).filter(OrderComponent.sample_type == 'lab_dip').first()
+comp = FIXTURE_COMPONENT  # never real data — see the fixture block above
 r = requests.put(f'{B}/api/components/{comp.id}', headers=HA,
                  json={'lab_dip_status': 'REJECTED'})
 check('bare REJECTED via PUT rejected', r.status_code == 400, f'HTTP {r.status_code}')
@@ -138,11 +191,9 @@ requests.post(f'{B}/api/components/library/instances/bulk-edit', headers=HA,
 check('bulk-edit-instances closes it', opens(cid) == 0, f'{opens(cid)} open')
 
 # Order-level path via bulk-update-date
-o2 = (db.query(PurchaseOrder)
-        .outerjoin(OrderComponent, OrderComponent.order_id == PurchaseOrder.id)
-        .filter(OrderComponent.id.is_(None)).first())
+o2 = _fix_orders[0]  # fixture order, deliberately component-free
 requests.post(f'{B}/api/submissions/reject', headers=HA,
-              json={'order_id': o2.id, 'sample_type': 'pps', 'reason': 'SPEC', 'notes': 's'})
+                  json={'order_id': o2.id, 'sample_type': 'pps', 'reason': 'SPEC', 'notes': 's'})
 before = opens(order_id=o2.id, st='pps')
 requests.post(f'{B}/api/orders/bulk-update-date', headers=HA,
               json={'po_number': o2.po_number, 'field_name': 'pps_status',
@@ -240,7 +291,7 @@ check('export selection', r.status_code == 200, f'HTTP {r.status_code}')
 
 # ── I. Resubmissions page actions ─────────────────────────────────────
 print("\nI. RESUBMISSIONS ACTIONS")
-comp2 = db.query(OrderComponent).filter(OrderComponent.sample_type == 'strike_off').first()
+comp2 = FIXTURE_STRIKE  # never real data — see the fixture block above
 requests.post(f'{B}/api/submissions/reject', headers=HA,
               json={'order_id': comp2.order_id, 'component_id': comp2.id,
                     'sample_type': 'strike', 'reason': 'PRINT', 'notes': 'smoke'})
@@ -264,6 +315,8 @@ r = requests.get(f'{B}/api/submissions/siblings',
                  params={'order_id': comp2.order_id, 'component_id': comp2.id,
                          'sample_type': 'strike'}, headers=HA)
 check('siblings lookup', r.status_code == 200, f'HTTP {r.status_code}')
+
+_clear_fixtures()
 
 # ── Summary ───────────────────────────────────────────────────────────
 db.close()
