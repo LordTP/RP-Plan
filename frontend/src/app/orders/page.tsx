@@ -161,31 +161,34 @@ function OrdersContent() {
     }
   }, [pageSize, setOrders, setPage, buildCleanFilters, columnFilters, filters]);
 
-  // Post-bulk-save refresh — pulls back EVERYTHING currently loaded in
-  // one shot (pageSize * currentPage) and swaps it into the store
-  // atomically. This exists (instead of just calling loadOrders(1, silent))
-  // because loadOrders resets currentPage to 1 and drops all
-  // infinite-scroll-loaded pages — so a user on page 3 would see the
-  // store shrink to 50 rows, scrollTop snap to the end of that short
-  // list, then the intersection observer would re-load pages 2 and 3
-  // sequentially. Visible symptom: "table moved about a bit up and down
-  // then came back" (reported Sep 11 2026). Fetching the full loaded
-  // range and NOT touching currentPage keeps the sentinel and store in
-  // sync, so nothing shifts.
-  const refreshAfterBulkSave = useCallback(async () => {
-    try {
-      const cleanFilters = buildCleanFilters(filters, columnFilters);
-      const loadedRows = pageSize * Math.max(currentPage, 1);
-      const response = await ordersApi.getOrders(1, loadedRows, cleanFilters);
-      setOrders(response.orders, response.total);
-      // Deliberately no setPage call — currentPage stays where the user
-      // scrolled to. hasMore recomputes naturally against the new total.
-    } catch (error) {
-      console.error('Silent refresh after bulk save failed:', error);
-      // Silent by design: bulk save's own toast already covered the success
-      // message; a background-refresh failure shouldn't disrupt the user.
-    }
-  }, [buildCleanFilters, filters, columnFilters, pageSize, currentPage, setOrders]);
+  // Post-bulk-save refresh — deliberately a no-op.
+  //
+  // Thomas asked (Sep 11 2026) for ZERO visible movement after a bulk
+  // save: "i dont want anythign but the table to update the data after
+  // it, no movements. can we do it without refresh at all yeah".
+  //
+  // The optimistic patch in the EditableCell + StatusDropdown bulk
+  // handlers already updates every affected row in the store with the
+  // new field value the instant the modal closes — the visible table
+  // reflects the change immediately, no round-trip.
+  //
+  // Trade-off: any server-side auto-calc side effects (e.g.
+  // revised_po_ex_factory bulk save recomputes eta_to_uk/eta_to_customer
+  // on the backend) will be stale in the UI until the next natural
+  // fetch — page reload, Refresh button, WebSocket-driven per-order
+  // update, or the user navigates and comes back. For a demo scenario
+  // where "table jumping around during a save" is the bigger problem
+  // than "eta column 5 seconds stale", this is the right call.
+  //
+  // If we later want the auto-calcs to reflect immediately without a
+  // full-page refresh, the cleanest fix is a targeted per-order fetch
+  // for each affected id (needs a new /api/orders/by-ids endpoint) —
+  // then updateOrderInList each response. That preserves the "no
+  // movement" property because it only touches the exact rows that
+  // changed.
+  const refreshAfterBulkSave = useCallback(() => {
+    // no-op — see comment above
+  }, []);
 
   const loadMoreOrders = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
