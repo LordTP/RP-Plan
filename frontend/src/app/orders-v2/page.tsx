@@ -36,7 +36,7 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
-import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar } from '@/components/orders/v2-list-primitives';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
 import { useStore } from '@/store/useStore';
 import { ordersApi, excelApi, statusesApi, submissionsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
@@ -128,6 +128,43 @@ const EXFAC_WINDOW_LABEL: Record<ExFacWindow, string> = {
  *  matching the rule used everywhere else in the app. */
 function effectiveExFactory(order: Order): string | null {
   return order.revised_po_ex_factory || order.original_po_ex_factory || null;
+}
+
+// ─── Table sorting ────────────────────────────────────────────────────
+
+type SortKey = 'po' | 'style' | 'description' | 'colour' | 'status' | 'exfac' | 'qty' | 'value';
+
+/** Comparable value for a style row under a given sort key. Strings come
+ *  back lowercased so sorting is case-insensitive; nulls are normalised
+ *  so blanks always sink to the bottom regardless of direction. */
+function sortValue(o: Order, key: SortKey): string | number | null {
+  switch (key) {
+    case 'po': return (o.po_number || '').toLowerCase();
+    case 'style': return (o.style_code || '').toLowerCase();
+    case 'description': return (o.description || '').toLowerCase();
+    case 'colour': return (o.colour || '').toLowerCase();
+    case 'status': return (o.status || '').toLowerCase();
+    case 'exfac': return effectiveExFactory(o);
+    case 'qty': return o.total_quantity ?? null;
+    case 'value': return o.total_order_value ?? null;
+    default: return null;
+  }
+}
+
+function compareStyles(a: Order, b: Order, key: SortKey, dir: 'asc' | 'desc'): number {
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
+  // Blanks sink regardless of direction — a column of empty dates at the
+  // top of an ascending sort is never what someone asked for.
+  const aEmpty = av === null || av === '';
+  const bEmpty = bv === null || bv === '';
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;
+  if (bEmpty) return -1;
+  let cmp: number;
+  if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+  else cmp = String(av).localeCompare(String(bv));
+  return dir === 'asc' ? cmp : -cmp;
 }
 
 function matchesExFacWindow(order: Order, w: ExFacWindow): boolean {
@@ -233,6 +270,31 @@ function OrdersV2Content() {
   const [exFacWindow, setExFacWindow] = useState<ExFacWindow>('');
   const [lateOnly, setLateOnly] = useState(false);
   const [missingDatesOnly, setMissingDatesOnly] = useState(false);
+
+  // Table state. Grouping defaults ON so the view still reads PO-first
+  // the way the card stack did; flipping it off gives a flat list that
+  // sorts across every style regardless of PO.
+  const [groupByPO, setGroupByPO] = useState(true);
+  const [sortKey, setSortKey] = useState<SortKey>('exfac');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Anchor for shift-click range selection — the last row clicked without
+  // shift held. Null until the user ticks something.
+  const lastClickedId = useRef<number | null>(null);
+
+  const toggleSort = useCallback((key: string) => {
+    const k = key as SortKey;
+    setSortKey((prev) => {
+      if (prev === k) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      // New column starts ascending, except the numeric/value columns
+      // where "biggest first" is almost always what you want.
+      setSortDir(k === 'qty' || k === 'value' ? 'desc' : 'asc');
+      return k;
+    });
+  }, []);
 
   const isSupplier = user?.role === 'supplier';
   const isDesigner = user?.role === 'sourcelab_designer';
@@ -513,6 +575,136 @@ function OrdersV2Content() {
     }
     return { pos: poGroups.length, styles, units, value };
   }, [poGroups]);
+
+  // ─── Sorting ────────────────────────────────────────────────────────
+  // Grouped mode sorts the GROUPS by their aggregate for the active key
+  // and the styles within each group by the same key, so clicking a
+  // column reorders both levels coherently. Flat mode just sorts every
+  // style across every PO.
+  const sortedGroups = useMemo(() => {
+    const groupAggregate = (g: POGroup): string | number | null => {
+      switch (sortKey) {
+        case 'po': return g.po_number.toLowerCase();
+        case 'status': return (g.statusSummary || '').toLowerCase();
+        case 'exfac': return g.latestDate;
+        case 'qty': return g.totalQty;
+        case 'value': return g.totalValue;
+        // style / description / colour have no meaningful group-level
+        // aggregate — fall back to the earliest ex-factory so groups keep
+        // a stable, sensible order while the styles inside them re-sort.
+        default: return g.latestDate;
+      }
+    };
+
+    const withSortedStyles = poGroups.map((g) => ({
+      ...g,
+      styles: [...g.styles].sort((a, b) => compareStyles(a, b, sortKey, sortDir)),
+    }));
+
+    return withSortedStyles.sort((a, b) => {
+      const av = groupAggregate(a);
+      const bv = groupAggregate(b);
+      const aEmpty = av === null || av === '';
+      const bEmpty = bv === null || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [poGroups, sortKey, sortDir]);
+
+  const flatRows = useMemo(
+    () => poGroups.flatMap(g => g.styles).sort((a, b) => compareStyles(a, b, sortKey, sortDir)),
+    [poGroups, sortKey, sortDir],
+  );
+
+  // ─── Row selection ──────────────────────────────────────────────────
+  // Rows visible for selection purposes: in grouped mode only styles
+  // inside an EXPANDED group can be range-selected, because shift-click
+  // ranges have to follow what's actually on screen.
+  const selectableRows = useMemo(() => {
+    if (!groupByPO) return flatRows;
+    return sortedGroups.flatMap(g => expandedPOs.has(g.po_number) ? g.styles : []);
+  }, [groupByPO, flatRows, sortedGroups, expandedPOs]);
+
+  const toggleRow = useCallback((order: Order, shiftKey: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const anchor = lastClickedId.current;
+
+      // Shift-click extends from the last plain click to here, matching
+      // the rendered row order rather than id order.
+      if (shiftKey && anchor != null && anchor !== order.id) {
+        const ids = selectableRows.map(r => r.id);
+        const from = ids.indexOf(anchor);
+        const to = ids.indexOf(order.id);
+        if (from !== -1 && to !== -1) {
+          const [lo, hi] = from < to ? [from, to] : [to, from];
+          // Range takes the state we're moving the clicked row INTO, so a
+          // shift-click on a ticked row clears the range instead of
+          // stubbornly re-ticking it.
+          const turningOn = !next.has(order.id);
+          for (let i = lo; i <= hi; i++) {
+            if (turningOn) next.add(ids[i]);
+            else next.delete(ids[i]);
+          }
+          return next;
+        }
+      }
+
+      if (next.has(order.id)) next.delete(order.id);
+      else next.add(order.id);
+      lastClickedId.current = order.id;
+      return next;
+    });
+  }, [selectableRows]);
+
+  const toggleGroup = useCallback((group: POGroup) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allOn = group.styles.every(s => next.has(s.id));
+      for (const s of group.styles) {
+        if (allOn) next.delete(s.id);
+        else next.add(s.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const allVisibleIds = useMemo(() => poGroups.flatMap(g => g.styles.map(s => s.id)), [poGroups]);
+
+  const toggleAllVisible = useCallback((checked: boolean) => {
+    setSelectedIds(checked ? new Set(allVisibleIds) : new Set());
+    lastClickedId.current = null;
+  }, [allVisibleIds]);
+
+  const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.has(id));
+
+  // Drop any selection that's been filtered out from under the user —
+  // otherwise a bulk action could hit rows they can no longer see.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(allVisibleIds);
+      let changed = false;
+      const next = new Set<number>();
+      // Array.from rather than for-of: tsconfig targets ES5 here, so
+      // iterating a Set directly needs downlevelIteration.
+      Array.from(prev).forEach((id) => {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [allVisibleIds]);
+
+  const selectedOrders = useMemo(
+    () => orders.filter(o => selectedIds.has(o.id)),
+    [orders, selectedIds],
+  );
 
   const togglePO = (po: string) => {
     setExpandedPOs(prev => {
@@ -811,6 +1003,24 @@ function OrdersV2Content() {
 
             <div className="flex-1" />
 
+            <TogglePill
+              on={groupByPO}
+              label="Group by PO"
+              title="Group styles under their PO, or show one flat sortable list"
+              onClick={() => setGroupByPO(v => !v)}
+            />
+
+            {groupByPO && poGroups.length > 0 && (
+              <button
+                onClick={() => setExpandedPOs(prev =>
+                  prev.size ? new Set() : new Set(poGroups.map(g => g.po_number))
+                )}
+                className="text-[11px] text-gray-500 hover:text-gray-800 px-1.5"
+              >
+                {expandedPOs.size ? 'Collapse all' : 'Expand all'}
+              </button>
+            )}
+
             <Segmented
               options={[
                 { value: 'open', label: 'Open' },
@@ -822,10 +1032,10 @@ function OrdersV2Content() {
             />
           </div>
 
-          {/* PO List — contained in a card so the list reads as a
+          {/* Order table — contained in a card so the list reads as a
               deliberate surface rather than bleeding to the page edge,
               with the mono status bar closing it off underneath. */}
-          <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50/60 border border-gray-200 rounded-t-xl p-2 space-y-2">
+          <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-200 rounded-t-xl">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
@@ -844,19 +1054,26 @@ function OrdersV2Content() {
                 </div>
               </div>
             ) : (
-              poGroups.map(group => (
-                <POCard
-                  key={group.po_number}
-                  group={group}
-                  isExpanded={expandedPOs.has(group.po_number)}
-                  onToggle={() => togglePO(group.po_number)}
-                  onStyleClick={handleStyleClick}
-                  onCommentClick={handleCommentClick}
-                  selectedStyleId={selectedStyleId}
-                  isSupplier={isSupplier}
-                  isDesigner={isDesigner}
-                />
-              ))
+              <OrderTableV2
+                groups={sortedGroups}
+                flatRows={flatRows}
+                groupByPO={groupByPO}
+                expandedPOs={expandedPOs}
+                onTogglePO={togglePO}
+                onStyleClick={handleStyleClick}
+                onCommentClick={handleCommentClick}
+                selectedStyleId={selectedStyleId}
+                selectedIds={selectedIds}
+                onToggleRow={toggleRow}
+                onToggleGroup={toggleGroup}
+                onToggleAll={toggleAllVisible}
+                allVisibleSelected={allVisibleSelected}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+                isSupplier={isSupplier}
+                isDesigner={isDesigner}
+              />
             )}
           </div>
 
@@ -866,7 +1083,9 @@ function OrdersV2Content() {
               `${visibleTotals.styles} styles · ${visibleTotals.units.toLocaleString()} units`,
               isDesigner ? null : formatCurrency(visibleTotals.value),
             ]}
-            hint="click a PO to expand · click a style to open detail"
+            hint={groupByPO
+              ? 'click a PO to expand · click a style to open detail · shift-click to select a range'
+              : 'click a row to open detail · tick to select · shift-click for a range'}
           />
         </div>
 
@@ -909,199 +1128,309 @@ function OrdersV2Content() {
 
 // ─── PO Card ───────────────────────────────────────────────
 
-function POCard({
+// ─── Order table (Sep 2026 list rework) ───────────────────────────────
+// Replaces the PO card stack. Grouped mode keeps the PO-first reading
+// the cards had — a group header row then its styles — while flat mode
+// sorts across every style regardless of PO. Row click opens the drawer;
+// the checkbox column drives the bulk bar.
+
+function OrderTableV2({
+  groups,
+  flatRows,
+  groupByPO,
+  expandedPOs,
+  onTogglePO,
+  onStyleClick,
+  onCommentClick,
+  selectedStyleId,
+  selectedIds,
+  onToggleRow,
+  onToggleGroup,
+  onToggleAll,
+  allVisibleSelected,
+  sortKey,
+  sortDir,
+  onSort,
+  isSupplier,
+  isDesigner,
+}: {
+  groups: POGroup[];
+  flatRows: Order[];
+  groupByPO: boolean;
+  expandedPOs: Set<string>;
+  onTogglePO: (po: string) => void;
+  onStyleClick: (order: Order) => void;
+  onCommentClick: (order: Order) => void;
+  selectedStyleId: number | null;
+  selectedIds: Set<number>;
+  onToggleRow: (order: Order, shiftKey: boolean) => void;
+  onToggleGroup: (group: POGroup) => void;
+  onToggleAll: (checked: boolean) => void;
+  allVisibleSelected: boolean;
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  onSort: (key: string) => void;
+  isSupplier: boolean;
+  isDesigner?: boolean;
+}) {
+  const showValue = !isSupplier && !isDesigner;
+  // checkbox + style + desc + colour + status + exfac + qty + [value] + actions
+  const colCount = showValue ? 9 : 8;
+
+  return (
+    <table className="w-full text-sm border-collapse min-w-[1040px]">
+      <thead className="sticky top-0 bg-gray-50 z-10">
+        <tr className="text-left text-[10.5px] uppercase tracking-wider text-gray-500">
+          <th className="px-3 py-2.5 border-b border-gray-200 w-9">
+            <input
+              type="checkbox"
+              title="Select all visible styles"
+              className="accent-primary-600 cursor-pointer"
+              checked={allVisibleSelected}
+              onChange={(e) => onToggleAll(e.target.checked)}
+            />
+          </th>
+          {!groupByPO && (
+            <SortableTh label="PO" sortKey="po" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[110px]" />
+          )}
+          <SortableTh label="Style" sortKey="style" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[150px]" />
+          <SortableTh label="Description" sortKey="description" currentSort={sortKey} currentDir={sortDir} onSort={onSort} />
+          <SortableTh label="Colour" sortKey="colour" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[110px]" />
+          <SortableTh label="Status" sortKey="status" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[150px]" />
+          <SortableTh label="Ex-factory" sortKey="exfac" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[120px]" />
+          <SortableTh label="Qty" sortKey="qty" currentSort={sortKey} currentDir={sortDir} onSort={onSort} align="right" className="w-[85px]" />
+          {showValue && (
+            <SortableTh label="Value" sortKey="value" currentSort={sortKey} currentDir={sortDir} onSort={onSort} align="right" className="w-[105px]" />
+          )}
+          <th className="px-3 py-2.5 border-b border-gray-200 w-[68px]" />
+        </tr>
+      </thead>
+      <tbody>
+        {groupByPO
+          ? groups.map((g) => (
+              <POGroupRows
+                key={g.po_number}
+                group={g}
+                expanded={expandedPOs.has(g.po_number)}
+                onToggle={() => onTogglePO(g.po_number)}
+                onStyleClick={onStyleClick}
+                onCommentClick={onCommentClick}
+                selectedStyleId={selectedStyleId}
+                selectedIds={selectedIds}
+                onToggleRow={onToggleRow}
+                onToggleGroup={onToggleGroup}
+                isSupplier={isSupplier}
+                isDesigner={isDesigner}
+                colCount={colCount}
+              />
+            ))
+          : flatRows.map((style) => (
+              <StyleRow
+                key={style.id}
+                style={style}
+                showPO
+                selected={style.id === selectedStyleId}
+                checked={selectedIds.has(style.id)}
+                onToggleRow={onToggleRow}
+                onStyleClick={onStyleClick}
+                onCommentClick={onCommentClick}
+                isSupplier={isSupplier}
+                isDesigner={isDesigner}
+              />
+            ))}
+      </tbody>
+    </table>
+  );
+}
+
+function POGroupRows({
   group,
-  isExpanded,
+  expanded,
   onToggle,
   onStyleClick,
   onCommentClick,
   selectedStyleId,
+  selectedIds,
+  onToggleRow,
+  onToggleGroup,
   isSupplier,
   isDesigner,
+  colCount,
 }: {
   group: POGroup;
-  isExpanded: boolean;
+  expanded: boolean;
   onToggle: () => void;
   onStyleClick: (order: Order) => void;
   onCommentClick: (order: Order) => void;
   selectedStyleId: number | null;
+  selectedIds: Set<number>;
+  onToggleRow: (order: Order, shiftKey: boolean) => void;
+  onToggleGroup: (group: POGroup) => void;
   isSupplier: boolean;
   isDesigner?: boolean;
+  colCount: number;
 }) {
   const statusStyle = getStatusStyle(group.statusSummary);
-  const hasMultipleStatuses = new Set(group.styles.map(s => s.status)).size > 1;
+  const hasMultipleStatuses = new Set(group.styles.map((s) => s.status)).size > 1;
+  const showValue = !isSupplier && !isDesigner;
+  const allChecked = group.styles.length > 0 && group.styles.every((s) => selectedIds.has(s.id));
+  const someChecked = !allChecked && group.styles.some((s) => selectedIds.has(s.id));
 
   return (
-    <div id={`po-card-${group.po_number}`} className={cn(
-      'bg-white rounded-xl transition-all overflow-hidden',
-      isExpanded ? 'ring-1 ring-primary-200 shadow-md' : 'ring-1 ring-gray-200/80 hover:ring-gray-300 hover:shadow-md'
-    )}>
-      {/* PO Header */}
-      <button
-        onClick={onToggle}
-        className="w-full px-5 py-4 flex items-center gap-5 text-left"
-      >
-        {/* Left accent */}
-        <div className={cn(
-          'w-1.5 h-12 rounded-full flex-shrink-0 transition-colors',
-          isExpanded ? 'bg-primary-500' : 'bg-gray-200'
-        )} />
-
-        {/* PO Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-base font-bold text-gray-900">{group.po_number}</span>
+    <>
+      <tr id={`po-card-${group.po_number}`} className="bg-gray-50/80 border-b border-gray-200">
+        <td className="px-3 py-2">
+          <input
+            type="checkbox"
+            className="accent-primary-600 cursor-pointer"
+            checked={allChecked}
+            ref={(el) => { if (el) el.indeterminate = someChecked; }}
+            onChange={() => onToggleGroup(group)}
+            onClick={(e) => e.stopPropagation()}
+            title={`Select all ${group.styles.length} styles on PO ${group.po_number}`}
+          />
+        </td>
+        <td colSpan={colCount - 1} className="px-3 py-2">
+          <button onClick={onToggle} className="w-full flex items-center gap-3 text-left">
+            <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0', expanded && 'rotate-90')} />
+            <span className="font-mono font-bold text-gray-900 tabular-nums">{group.po_number}</span>
             {group.styles[0]?.china_orderbook_ref && (
-              <span className="text-xs text-gray-500 font-medium">— {group.styles[0].china_orderbook_ref}</span>
+              <span className="text-[11px] text-gray-400">— {group.styles[0].china_orderbook_ref}</span>
             )}
-            <span className={cn(
-              'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
-              statusStyle.bg, statusStyle.text
-            )}>
+            <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold', statusStyle.bg, statusStyle.text)}>
               <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
               {group.statusSummary || 'Unknown'}
             </span>
-            {hasMultipleStatuses && (
-              <span className="text-[10px] text-gray-400 italic">mixed</span>
-            )}
+            {hasMultipleStatuses && <span className="text-[10px] text-gray-400 italic">mixed</span>}
             {group.unreadComments > 0 && (
               <span className="inline-flex items-center gap-1 text-primary-500">
-                <MessageSquare className="w-3.5 h-3.5 fill-current" />
+                <MessageSquare className="w-3 h-3 fill-current" />
                 <span className="text-[10px] font-bold">{group.unreadComments}</span>
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-medium text-gray-600">{group.customer}</span>
-            <span className="text-[10px] text-gray-300">|</span>
-            <span className="text-xs text-gray-400">{group.factory}</span>
-            <span className="text-[10px] text-gray-300">|</span>
-            <span className="text-xs text-gray-400">{group.styles.length} style{group.styles.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
+            <span className="text-[11px] text-gray-500 truncate">{group.customer}</span>
+            {!isSupplier && group.factory && (
+              <span className="text-[11px] text-gray-400 truncate">· {group.factory}</span>
+            )}
+            <span className="ml-auto flex items-center gap-4 text-[11px] text-gray-500 tabular-nums flex-shrink-0">
+              <span>{group.styles.length} style{group.styles.length === 1 ? '' : 's'}</span>
+              <span>{formatQty(group.totalQty)} units</span>
+              {showValue && <span>{formatCurrency(group.totalValue)}</span>}
+              <span className="text-gray-400">{formatDate(group.latestDate)}</span>
+            </span>
+          </button>
+        </td>
+      </tr>
+      {expanded && group.styles.map((style) => (
+        <StyleRow
+          key={style.id}
+          style={style}
+          selected={style.id === selectedStyleId}
+          checked={selectedIds.has(style.id)}
+          onToggleRow={onToggleRow}
+          onStyleClick={onStyleClick}
+          onCommentClick={onCommentClick}
+          isSupplier={isSupplier}
+          isDesigner={isDesigner}
+        />
+      ))}
+    </>
+  );
+}
 
-        {/* Stats pills */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[70px]">
-            <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(group.totalQty)}</p>
-            <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
-          </div>
+function StyleRow({
+  style,
+  showPO = false,
+  selected,
+  checked,
+  onToggleRow,
+  onStyleClick,
+  onCommentClick,
+  isSupplier,
+  isDesigner,
+}: {
+  style: Order;
+  showPO?: boolean;
+  selected: boolean;
+  checked: boolean;
+  onToggleRow: (order: Order, shiftKey: boolean) => void;
+  onStyleClick: (order: Order) => void;
+  onCommentClick: (order: Order) => void;
+  isSupplier: boolean;
+  isDesigner?: boolean;
+}) {
+  const ss = getStatusStyle(style.status);
+  const showValue = !isSupplier && !isDesigner;
+  const exFac = effectiveExFactory(style);
+  const exFacNote = style.date_notes?.revised_po_ex_factory || style.date_notes?.original_po_ex_factory;
 
-          {!isSupplier && !isDesigner && (
-            <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
-              <p className="text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(group.totalValue)}</p>
-              <p className="text-[9px] text-gray-400 uppercase tracking-wider">value</p>
-            </div>
-          )}
-
-          <div className="bg-gray-50 rounded-lg px-3 py-1.5 text-center min-w-[85px]">
-            <p className="text-xs font-semibold text-gray-700">{formatDate(group.latestDate)}</p>
-            <p className="text-[9px] text-gray-400 uppercase tracking-wider">ex-factory</p>
-          </div>
-        </div>
-
-        <ChevronRight className={cn(
-          'w-4 h-4 text-gray-400 transition-transform flex-shrink-0',
-          isExpanded && 'rotate-90'
-        )} />
-      </button>
-
-      {/* Expanded: Style Cards */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50/40">
-          {group.styles.map((style) => {
-            const ss = getStatusStyle(style.status);
-            const isSelected = style.id === selectedStyleId;
-            const exFacDate = style.revised_po_ex_factory || style.original_po_ex_factory;
-            return (
-              <div
-                key={style.id}
-                onClick={() => onStyleClick(style)}
-                className={cn(
-                  'flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-all',
-                  isSelected
-                    ? 'bg-primary-50 ring-1 ring-primary-200 shadow-sm'
-                    : 'bg-white hover:shadow-md hover:ring-1 hover:ring-gray-200'
-                )}
-              >
-                {/* Colour dot + Style info */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div
-                    className="w-3 h-8 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: style.colour ? `var(--color-gray-300)` : '#e5e7eb' }}
-                    title={style.colour || 'No colour'}
-                  />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900 truncate">{style.style_code || '—'}</p>
-                      {style.colour && <span className="text-[10px] text-gray-400 font-medium">{style.colour}</span>}
-                    </div>
-                    <p className="text-xs text-gray-500 truncate">{style.description || '—'}</p>
-                  </div>
-                </div>
-
-                {/* Qty */}
-                <div className="flex-shrink-0 text-center min-w-[60px]">
-                  <p className="text-sm font-bold text-gray-900 tabular-nums">{formatQty(style.total_quantity)}</p>
-                  <p className="text-[9px] text-gray-400 uppercase tracking-wider">units</p>
-                </div>
-
-                {/* Value (admin/internal only) */}
-                {!isSupplier && !isDesigner && (
-                  <div className="flex-shrink-0 text-center min-w-[80px]">
-                    <p className="text-xs font-semibold text-gray-700 tabular-nums">{formatCurrency(style.total_order_value)}</p>
-                  </div>
-                )}
-
-                {/* Ex-Factory */}
-                <div className="flex-shrink-0 text-center min-w-[90px]">
-                  <p className="text-xs font-medium text-gray-700">{formatDate(exFacDate)}</p>
-                  <p className="text-[9px] text-gray-400">ex-factory</p>
-                </div>
-
-                {/* Status */}
-                <div className="flex-shrink-0">
-                  <span className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold',
-                    ss.bg, ss.text
-                  )}>
-                    <span className={cn('w-1.5 h-1.5 rounded-full', ss.dot)} />
-                    {style.status || 'Unknown'}
-                  </span>
-                </div>
-
-                {/* Comment + Arrow */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {(style.comment_count || 0) > 0 && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onCommentClick(style); }}
-                      className="relative p-1.5 hover:bg-primary-50 rounded-lg transition-colors"
-                    >
-                      {(style.unread_comment_count || 0) > 0 ? (
-                        <MessageSquare className="w-3.5 h-3.5 text-primary-500 fill-current" />
-                      ) : (
-                        <MessageSquare className="w-3.5 h-3.5 text-gray-300" />
-                      )}
-                      {(style.unread_comment_count || 0) > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 bg-primary-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                          {style.unread_comment_count}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
-                    className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+  return (
+    <tr
+      onClick={() => onStyleClick(style)}
+      className={cn(
+        'border-b border-gray-100 cursor-pointer transition-colors',
+        selected ? 'bg-primary-50' : checked ? 'bg-primary-50/40' : 'bg-white hover:bg-gray-50',
       )}
-    </div>
+    >
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          className="accent-primary-600 cursor-pointer"
+          checked={checked}
+          onChange={() => { /* handled on click so we can read shiftKey */ }}
+          onClick={(e) => { e.stopPropagation(); onToggleRow(style, e.shiftKey); }}
+        />
+      </td>
+      {showPO && (
+        <td className="px-3 py-2 font-mono text-[12px] text-gray-500 tabular-nums truncate">{style.po_number}</td>
+      )}
+      <td className="px-3 py-2 font-mono text-[12px] font-semibold text-gray-900 tabular-nums truncate">
+        {style.style_code || '—'}
+      </td>
+      <td className="px-3 py-2 text-gray-700 truncate max-w-0">{style.description || '—'}</td>
+      <td className="px-3 py-2 text-[12px] text-gray-500 truncate">{style.colour || '—'}</td>
+      <td className="px-3 py-2">
+        <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap', ss.bg, ss.text)}>
+          <span className={cn('w-1.5 h-1.5 rounded-full', ss.dot)} />
+          {style.status || 'Unknown'}
+        </span>
+        {style.is_late && (
+          <span className="ml-1 px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[9px] font-bold">LATE</span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-[12px] text-gray-700 tabular-nums whitespace-nowrap">
+        {exFacNote || formatDate(exFac)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-gray-900">{formatQty(style.total_quantity)}</td>
+      {showValue && (
+        <td className="px-3 py-2 text-right tabular-nums text-gray-700 text-[12px]">{formatCurrency(style.total_order_value)}</td>
+      )}
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-0.5 justify-end">
+          {(style.comment_count || 0) > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCommentClick(style); }}
+              className="relative p-1 hover:bg-primary-50 rounded transition-colors"
+              title={`${style.comment_count} comment${style.comment_count === 1 ? '' : 's'}`}
+            >
+              <MessageSquare className={cn('w-3.5 h-3.5', (style.unread_comment_count || 0) > 0 ? 'text-primary-500 fill-current' : 'text-gray-300')} />
+              {(style.unread_comment_count || 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[13px] h-3 px-0.5 bg-primary-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                  {style.unread_comment_count}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onStyleClick(style); }}
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+            title="Open detail"
+          >
+            <Eye className="w-3.5 h-3.5 text-gray-400" />
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
