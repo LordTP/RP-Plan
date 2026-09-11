@@ -589,24 +589,42 @@ async def apply_component_field_to_po(
     # If order_ids provided, scope to those; otherwise all on PO.
     # Factory-scope the sibling list so suppliers can't reach other
     # factories' orders via a stale id list.
+    # Resolve which instances this update reaches.
+    #
+    # `order_ids` is now an optional NARROWING filter, not the source of the
+    # sibling set. It used to be the other way round: with no order_ids the
+    # endpoint fell back to "every style on this PO", so the caller had to
+    # look up the link and hand over the full list to get cross-PO reach.
+    # One caller did (ComponentEditModal), one didn't (the order drawer) —
+    # so the same "apply to all" button updated 3 styles from /components and
+    # silently only 2 from the drawer, with the toast reporting 2 as if that
+    # were the whole set.
+    #
+    # The link lives in the database, so the database resolves it. A caller
+    # can still pass order_ids to apply to a subset, but it can no longer
+    # accidentally shrink the scope by omitting them.
     selected_ids = body.pop("order_ids", None)
-    if selected_ids:
-        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.id.in_(selected_ids))
-    else:
-        sibling_ids_q = db.query(PurchaseOrder.id).filter(PurchaseOrder.po_number == order.po_number)
-    sibling_ids = [r[0] for r in apply_supplier_filter(sibling_ids_q, current_user).all()]
-    # Match sibling instances. When the source has a canonical_id, prefer
-    # that — under the per-add-event model it's the truest "linked" signal
-    # and avoids accidentally hitting a same-named but unrelated canonical.
-    # Fall back to name + sample_type for legacy rows with no canonical link.
-    match_q = db.query(OrderComponent).filter(OrderComponent.order_id.in_(sibling_ids))
+
+    match_q = db.query(OrderComponent).join(
+        PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id
+    )
     if component.canonical_id is not None:
+        # Linked instances — the add-event group, wherever its styles live.
         match_q = match_q.filter(OrderComponent.canonical_id == component.canonical_id)
     else:
+        # Legacy rows with no link: fall back to same-name-same-type, and keep
+        # the PO bound, because a bare name match across the whole book would
+        # hit unrelated components that merely share a name.
         match_q = match_q.filter(
             OrderComponent.name == component.name,
             OrderComponent.sample_type == component.sample_type,
+            PurchaseOrder.po_number == order.po_number,
         )
+    if selected_ids:
+        match_q = match_q.filter(OrderComponent.order_id.in_(selected_ids))
+    # Supplier scoping still applies on top — a supplier's apply never reaches
+    # another factory's styles even if they share a canonical.
+    match_q = apply_supplier_filter(match_q, current_user)
     # Local import, matching this module's existing pattern for pulling
     # from routers.submissions (avoids a load-order cycle).
     from routers.submissions import reconcile_and_sync
