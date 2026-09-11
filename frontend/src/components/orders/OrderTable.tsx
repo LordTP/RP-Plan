@@ -457,8 +457,21 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
         // Update all orders with same PO number
         const result = await ordersApi.bulkUpdateStatus(order.po_number, newStatus);
         toast.success(`Updated status for ${result.orders_updated} orders`);
-        // Refresh would be needed here
-        window.location.reload();
+        // Optimistically patch every order sharing this PO so the visible
+        // rows flip immediately; parent's silent refresh confirms with
+        // server truth. Same pattern as the EditableCell bulk save —
+        // avoids the pre-Sep-2026 window.location.reload() jump-to-top.
+        const storeOrders = useStore.getState().orders;
+        for (const o of storeOrders) {
+          if (o.po_number === order.po_number) {
+            updateOrderInList({ ...o, status: newStatus });
+          }
+        }
+        if (onBulkSaveRefresh) {
+          onBulkSaveRefresh();
+        } else {
+          window.location.reload();
+        }
       } else {
         await handleSave(order.id, 'status', newStatus);
       }
