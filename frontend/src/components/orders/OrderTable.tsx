@@ -74,9 +74,14 @@ interface OrderTableProps {
   /** Active tab on /orders — passed to filter dropdowns so their distinct
    *  values only include rows on the current tab. Internal-only concept. */
   activeTab?: 'orders' | 'shipped';
+  /** Refresh the current view in-place after a bulk save. Replaces the
+   *  previous `window.location.reload()` — parent should re-fetch the
+   *  current page WITHOUT flipping the loading spinner so this component
+   *  stays mounted and scroll position is preserved. */
+  onBulkSaveRefresh?: () => void;
 }
 
-export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange, activeTab }: OrderTableProps) {
+export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlightMode = false, changedFields, showTrackingRef = false, onShippedStatusRequest, onReachEnd, hasMore = false, isLoadingMore = false, columnKeys, columnFilters, onColumnFilterChange, activeTab, onBulkSaveRefresh }: OrderTableProps) {
   const { user, setSelectedOrder, updateOrderInList, orders: storeOrders, totalOrders: storeTotal, setOrders: setStoreOrders } = useStore();
   const tableRef = useRef<HTMLDivElement>(null);
   const [statuses, setStatuses] = useState<string[]>([]);
@@ -856,7 +861,19 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                               onSave={handleSave}
                               onBulkSave={() => {
                                 toast.success('Bulk update successful');
-                                window.location.reload();
+                                // Prior code called window.location.reload() here — a
+                                // full browser refresh scrolled the table back to the
+                                // top and reset the infinite-scroll page state. Now
+                                // we ask the parent to re-fetch the current page in
+                                // place; OrderTable stays mounted, tableRef's
+                                // scrollTop is preserved, the user stays where they
+                                // were. Falls back to reload only if the parent
+                                // didn't provide the callback.
+                                if (onBulkSaveRefresh) {
+                                  onBulkSaveRefresh();
+                                } else {
+                                  window.location.reload();
+                                }
                               }}
                               isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
                               pendingChange={pendingChanges[order.id]?.[column.key]}

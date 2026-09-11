@@ -139,8 +139,15 @@ function OrdersContent() {
     currentFilters: OrderFilters = filters,
     currentColumnFilters: Record<string, string[]> = columnFilters,
     tab?: 'orders' | 'shipped',
+    options: { silent?: boolean } = {},
   ) => {
-    setIsLoading(true);
+    // `silent` skips the isLoading flip so the table (which is conditionally
+    // rendered on !isLoading) doesn't unmount and remount — preserving scroll
+    // position, expanded rows, and any transient in-component state. Use it
+    // for post-action refreshes (bulk save, WS-driven updates). Don't use it
+    // for initial loads or filter changes where the "loading…" affordance
+    // helps the user understand something's happening.
+    if (!options.silent) setIsLoading(true);
     try {
       const cleanFilters = buildCleanFilters(currentFilters, currentColumnFilters, tab);
       const response = await ordersApi.getOrders(page, pageSize, cleanFilters);
@@ -150,9 +157,16 @@ function OrdersContent() {
       console.error('Failed to load orders:', error);
       toast.error('Failed to load orders. Please check your connection and try refreshing the page.');
     } finally {
-      setIsLoading(false);
+      if (!options.silent) setIsLoading(false);
     }
   }, [pageSize, setOrders, setPage, buildCleanFilters, columnFilters, filters]);
+
+  // Post-bulk-save refresh — pulls the current page silently so OrderTable
+  // stays mounted and scroll position sticks. Wired into OrderTable via
+  // the onBulkSaveRefresh prop; replaces the old window.location.reload().
+  const refreshAfterBulkSave = useCallback(() => {
+    loadOrders(1, filters, columnFilters, undefined, { silent: true });
+  }, [loadOrders, filters, columnFilters]);
 
   const loadMoreOrders = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
@@ -698,6 +712,7 @@ function OrdersContent() {
               columnFilters={columnFilters}
               onColumnFilterChange={handleColumnFilterChange}
               activeTab={isInternal ? activeTab : undefined}
+              onBulkSaveRefresh={refreshAfterBulkSave}
             />
           )}
         </div>
