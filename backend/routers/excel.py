@@ -113,6 +113,7 @@ async def import_excel(
 async def export_excel(
     po_number: str = None,
     po_numbers: Optional[List[str]] = Query(None),  # multi-select from export modal
+    order_ids: Optional[List[int]] = Query(None),   # explicit row selection from the V2 bulk bar
     style_code: str = None,
     factory: str = None,
     customer: str = None,
@@ -130,6 +131,8 @@ async def export_excel(
             filters['po_number'] = po_number
         if po_numbers:
             filters['po_numbers'] = po_numbers
+        if order_ids:
+            filters['order_ids'] = order_ids
         if style_code:
             filters['style_code'] = style_code
         if factory:

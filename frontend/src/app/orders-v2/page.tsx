@@ -10,6 +10,7 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
   ChevronRight,
   Loader2,
   Package,
@@ -38,7 +39,7 @@ import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, statusesApi, submissionsApi, componentsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
+import { ordersApi, excelApi, statusesApi, submissionsApi, componentsApi, OrderFilters, type SampleSubmission, type SampleType, type RejectReason } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { useSizeGuide } from '@/lib/useSizeGuide';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
@@ -755,12 +756,32 @@ function OrdersV2Content() {
   // into one call per PO. Suppliers hitting a DATE field go down the
   // backend's pending-approval path and must supply a reason; sample
   // statuses are Sourcelab's call, so that action is internal-only.
-  const [bulkPanel, setBulkPanel] = useState<'date' | 'sample' | null>(null);
+  const [bulkPanel, setBulkPanel] = useState<'date' | 'sample' | 'fitreq' | null>(null);
   const [bulkDate, setBulkDate] = useState('');
   const [bulkSampleField, setBulkSampleField] = useState('strike_off_status');
   const [bulkSampleValue, setBulkSampleValue] = useState('');
   const [bulkReason, setBulkReason] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+  /** Which lifecycle field the sample panel writes — the status column,
+   *  or one of the two dates. Dates matter because a batch physically
+   *  lands on one day; typing that date per style is the tedium this is
+   *  meant to kill. */
+  const [bulkSampleMode, setBulkSampleMode] = useState<'status' | 'received' | 'approved'>('status');
+  const [bulkSampleDate, setBulkSampleDate] = useState('');
+  const [bulkRejectReason, setBulkRejectReason] = useState('');
+  const [bulkRejectNotes, setBulkRejectNotes] = useState('');
+  const [rejectReasons, setRejectReasons] = useState<RejectReason[]>([]);
+  const [bulkFitRequired, setBulkFitRequired] = useState('');
+
+  const isBulkRejecting = bulkSampleMode === 'status' && bulkSampleValue === 'REJECTED';
+
+  // Reason taxonomy loads lazily the first time REJECTED is picked.
+  useEffect(() => {
+    if (!isBulkRejecting || rejectReasons.length > 0) return;
+    submissionsApi.getRejectReasons()
+      .then(r => setRejectReasons(r.reasons))
+      .catch(() => { /* submit stays blocked by the empty-reason guard */ });
+  }, [isBulkRejecting, rejectReasons.length]);
   /** Which targets the sample-status write lands on — component names,
    *  plus the ORDER_LEVEL sentinel for styles that track this sample at
    *  order level. */
@@ -850,6 +871,11 @@ function OrdersV2Content() {
     setBulkPanel(null);
     setBulkDate('');
     setBulkSampleValue('');
+    setBulkSampleDate('');
+    setBulkSampleMode('status');
+    setBulkRejectReason('');
+    setBulkRejectNotes('');
+    setBulkFitRequired('');
     setBulkReason('');
   };
 
@@ -859,7 +885,11 @@ function OrdersV2Content() {
    *  from each instance's own sample_type), order-level styles go through
    *  the PO-scoped order bulk endpoint. */
   const applyBulkSample = async () => {
-    if (!bulkSampleValue || bulkSampleTargetCount === 0) return;
+    const writingDate = bulkSampleMode !== 'status';
+    const value = writingDate ? bulkSampleDate : bulkSampleValue;
+    if (!value || bulkSampleTargetCount === 0) return;
+    if (isBulkRejecting && !bulkRejectReason) return;
+
     setBulkSaving(true);
     try {
       let changed = 0;
@@ -868,11 +898,26 @@ function OrdersV2Content() {
       const instanceIds = chosen.filter(t => t.kind === 'component').map(t => t.id);
       const orderTargets = chosen.filter(t => t.kind === 'order');
 
+      // The order-level column this write lands on. Component instances
+      // don't need it — the components endpoint resolves the column from
+      // each instance's own sample_type.
+      const samplePrefix = bulkSampleField.replace('_status', '');
+      const orderField = writingDate ? `${samplePrefix}_${bulkSampleMode}` : bulkSampleField;
+
       if (instanceIds.length > 0) {
-        const res = await componentsApi.bulkEditInstances({
-          instance_ids: instanceIds,
-          status: bulkSampleValue,
-        });
+        const payload: any = { instance_ids: instanceIds };
+        if (writingDate) payload[bulkSampleMode] = value;
+        else {
+          payload.status = value;
+          // REJECTED is a lifecycle event — the endpoint dispatches each
+          // instance through _reject_one_target (closes the attempt, opens
+          // v+1, clears dates), which needs a structured reason.
+          if (isBulkRejecting) {
+            payload.reason = bulkRejectReason;
+            if (bulkRejectNotes.trim()) payload.notes = bulkRejectNotes.trim();
+          }
+        }
+        const res = await componentsApi.bulkEditInstances(payload);
         changed += res.changed_count;
       }
 
@@ -884,7 +929,7 @@ function OrdersV2Content() {
           byPo.set(t.poNumber, arr);
         }
         for (const [po, ids] of Array.from(byPo.entries())) {
-          const res: any = await ordersApi.bulkUpdateDate(po, bulkSampleField, bulkSampleValue, ids);
+          const res: any = await ordersApi.bulkUpdateDate(po, orderField, value, ids);
           changed += res?.orders_updated ?? 0;
         }
       }
@@ -892,33 +937,69 @@ function OrdersV2Content() {
       // Optimistic patch — order-level styles get the column written,
       // component styles get the matching nested instances updated so the
       // drawer and any component summary reflect it without a refetch.
-      const touchedInstances = new Set(instanceIds);
-      const touchedOrderIds = new Set(orderTargets.map(t => t.id));
-      const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
-      const patch = (o: Order): Order => {
-        let next = o;
-        if (touchedOrderIds.has(o.id)) {
-          next = { ...next, [bulkSampleField]: bulkSampleValue } as Order;
-        }
-        if (compType && next.components?.some(c => touchedInstances.has(c.id))) {
-          next = {
-            ...next,
-            components: next.components.map(c =>
-              touchedInstances.has(c.id) ? { ...c, [bulkSampleField]: bulkSampleValue } : c,
-            ),
-          } as Order;
-        }
-        return next;
-      };
-      if (isFactoryView) setLocalOrders(prev => prev.map(patch));
-      else setStoreOrders(orders.map(patch), totalOrders);
+      // Rejections are the exception: the server clears dates and rolls
+      // the attempt number, so a naive local patch would lie. Refetch
+      // those instead.
+      if (isBulkRejecting) {
+        await loadOrders();
+      } else {
+        const touchedInstances = new Set(instanceIds);
+        const touchedOrderIds = new Set(orderTargets.map(t => t.id));
+        const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
+        const instanceField = writingDate ? `${samplePrefix}_${bulkSampleMode}` : bulkSampleField;
+        const patch = (o: Order): Order => {
+          let next = o;
+          if (touchedOrderIds.has(o.id)) {
+            next = { ...next, [orderField]: value } as Order;
+          }
+          if (compType && next.components?.some(c => touchedInstances.has(c.id))) {
+            next = {
+              ...next,
+              components: next.components.map(c =>
+                touchedInstances.has(c.id) ? { ...c, [instanceField]: value } : c,
+              ),
+            } as Order;
+          }
+          return next;
+        };
+        if (isFactoryView) setLocalOrders(prev => prev.map(patch));
+        else setStoreOrders(orders.map(patch), totalOrders);
+      }
 
-      toast.success(`Updated ${changed} sample${changed === 1 ? '' : 's'}`);
+      toast.success(
+        isBulkRejecting
+          ? `Rejected ${changed} sample${changed === 1 ? '' : 's'} — v+1 opened OUTSTANDING`
+          : `Updated ${changed} sample${changed === 1 ? '' : 's'}`,
+      );
       setSelectedIds(new Set());
       lastClickedId.current = null;
       closeBulkPanel();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  /** Export exactly the ticked styles. Deliberately NOT the export modal,
+   *  which works PO-at-a-time — a chase list of 9 specific styles across
+   *  4 POs shouldn't come back as every style on those 4 POs. */
+  const exportSelection = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSaving(true);
+    try {
+      const blob = await excelApi.exportExcel({ order_ids: Array.from(selectedIds) });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${isSupplier ? 'factory' : 'orderbook'}_selection_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Exported ${selectedIds.size} style${selectedIds.size === 1 ? '' : 's'}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Export failed');
     } finally {
       setBulkSaving(false);
     }
@@ -1458,21 +1539,89 @@ function OrdersV2Content() {
                 <option value="fit_sample_status">Fit Sample</option>
                 <option value="pps_status">PPS</option>
               </select>
-              <span className="text-gray-400">→</span>
-              <select
-                value={bulkSampleValue}
-                onChange={(e) => setBulkSampleValue(e.target.value)}
-                className={cn(
-                  'border rounded px-2 py-1 bg-white',
-                  bulkSampleValue ? 'border-gray-300' : 'border-gray-300 text-gray-400',
-                )}
-              >
-                <option value="">— Pick a status —</option>
-                {SAMPLE_STATUS_OPTIONS.filter(s => s !== 'REJECTED').map(s => (
-                  <option key={s} value={s}>{s}</option>
+
+              {/* What we're writing — the status column or one of the two
+                  dates. Setting a received date also auto-flips
+                  OUTSTANDING→RECEIVED server-side via reconcile_sample_status,
+                  so the date alone is often the whole job. */}
+              <div className="inline-flex p-0.5 bg-gray-100 rounded-lg font-semibold">
+                {([
+                  { v: 'status', label: 'Status' },
+                  { v: 'received', label: 'Received' },
+                  { v: 'approved', label: 'Approved' },
+                ] as const).map(m => (
+                  <button
+                    key={m.v}
+                    onClick={() => setBulkSampleMode(m.v)}
+                    className={cn(
+                      'px-2 py-1 rounded-md transition-colors',
+                      bulkSampleMode === m.v ? 'bg-white shadow-sm text-primary-700' : 'text-gray-500 hover:text-gray-700',
+                    )}
+                  >
+                    {m.label}
+                  </button>
                 ))}
-              </select>
+              </div>
+
+              <span className="text-gray-400">→</span>
+
+              {bulkSampleMode === 'status' ? (
+                <select
+                  value={bulkSampleValue}
+                  onChange={(e) => setBulkSampleValue(e.target.value)}
+                  className={cn(
+                    'border rounded px-2 py-1 bg-white',
+                    bulkSampleValue ? 'border-gray-300' : 'border-gray-300 text-gray-400',
+                  )}
+                >
+                  <option value="">— Pick a status —</option>
+                  {SAMPLE_STATUS_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="date"
+                  value={bulkSampleDate}
+                  onChange={(e) => setBulkSampleDate(e.target.value)}
+                  className="border border-gray-300 rounded px-2 py-1"
+                />
+              )}
             </div>
+
+            {/* Rejection is a lifecycle event, not a field write — it closes
+                the current attempt and opens v+1, so it needs a structured
+                reason the factory can act on. */}
+            {isBulkRejecting && (
+              <div className="mx-3 mb-2 p-2.5 rounded border-2 border-red-300 bg-red-50 space-y-2">
+                <div className="text-[10px] text-red-800 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Closes the current attempt on every ticked sample and opens v+1 at OUTSTANDING
+                    with a fresh clock. Received / approved dates are cleared per sample.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={bulkRejectReason}
+                    onChange={(e) => setBulkRejectReason(e.target.value)}
+                    className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+                  >
+                    <option value="">— Reason (required) —</option>
+                    {rejectReasons.map(r => (
+                      <option key={r.code} value={r.code}>{r.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={bulkRejectNotes}
+                    onChange={(e) => setBulkRejectNotes(e.target.value)}
+                    placeholder="Note to the factory (optional)"
+                    className="text-xs border border-gray-300 rounded px-2 py-1 flex-1 min-w-[160px] bg-white"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Target picker — every sample record the write will touch,
                 grouped under its PO, showing the style it sits on and the
@@ -1568,11 +1717,18 @@ function OrdersV2Content() {
                     );
                   })}
                 </div>
-                {bulkSampleValue && bulkSampleTargetCount > 0 && (
+                {(bulkSampleMode === 'status' ? bulkSampleValue : bulkSampleDate) && bulkSampleTargetCount > 0 && (
                   <p className="text-[10px] text-gray-500 mt-1.5">
-                    {bulkSampleTargetCount} sample{bulkSampleTargetCount === 1 ? '' : 's'} will be set to{' '}
-                    <span className="font-semibold text-gray-900">{bulkSampleValue}</span>, overwriting
-                    whatever status they&apos;re on now.
+                    {bulkSampleTargetCount} sample{bulkSampleTargetCount === 1 ? '' : 's'} will have{' '}
+                    {bulkSampleMode === 'status' ? (
+                      <>status set to <span className="font-semibold text-gray-900">{bulkSampleValue}</span></>
+                    ) : (
+                      <>
+                        {bulkSampleMode} date set to{' '}
+                        <span className="font-semibold text-gray-900">{formatDate(bulkSampleDate)}</span>
+                      </>
+                    )}
+                    , overwriting whatever they&apos;re on now.
                   </p>
                 )}
               </div>
@@ -1580,16 +1736,66 @@ function OrdersV2Content() {
 
             <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/60 flex items-center gap-3">
               <p className="text-[10px] text-gray-500 flex-1">
-                REJECTED isn&apos;t here on purpose — rejecting needs a reason and opens a new
-                attempt, so it stays on the per-style reject flow in the detail drawer.
+                {bulkSampleMode === 'received'
+                  ? 'Setting a received date also flips OUTSTANDING samples to RECEIVED automatically.'
+                  : bulkSampleMode === 'approved'
+                    ? 'Sets the approved date only — set the status separately if it needs to move too.'
+                    : 'Status writes land on the sample column; REJECTED closes the attempt and opens v+1.'}
               </p>
               <button
-                disabled={!bulkSampleValue || bulkSaving || bulkSampleTargetCount === 0}
+                disabled={
+                  bulkSaving ||
+                  bulkSampleTargetCount === 0 ||
+                  (bulkSampleMode === 'status' ? !bulkSampleValue : !bulkSampleDate) ||
+                  (isBulkRejecting && !bulkRejectReason)
+                }
                 onClick={applyBulkSample}
-                className="px-3 py-1 rounded-md bg-primary-600 text-white text-xs font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                className={cn(
+                  'px-3 py-1 rounded-md text-white text-xs font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap shrink-0',
+                  isBulkRejecting ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700',
+                )}
               >
                 {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-                Apply to {bulkSampleTargetCount}
+                {isBulkRejecting ? `Reject ${bulkSampleTargetCount}` : `Apply to ${bulkSampleTargetCount}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {bulkPanel === 'fitreq' && (
+          <div className="mb-2 bg-white border border-gray-200 rounded-xl shadow-xl w-[min(94vw,560px)] overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Set Fit Sample Required</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Applies to {selectedIds.size} selected style{selectedIds.size === 1 ? '' : 's'}.
+                  Setting this to N also forces Fit Sample status to NOT REQUIRED, which suppresses
+                  its warnings and counts it as done.
+                </p>
+              </div>
+              <button onClick={closeBulkPanel} className="text-gray-400 hover:text-gray-700 p-0.5 shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3 py-2.5 flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Required</span>
+              <select
+                value={bulkFitRequired}
+                onChange={(e) => setBulkFitRequired(e.target.value)}
+                className={cn('border rounded px-2 py-1 bg-white', bulkFitRequired ? 'border-gray-300' : 'border-gray-300 text-gray-400')}
+              >
+                <option value="">— Pick —</option>
+                {FIT_REQUIRED_OPTIONS.map(v => (
+                  <option key={v} value={v}>{v === 'Y' ? 'Y — required' : 'N — not required'}</option>
+                ))}
+              </select>
+              <button
+                disabled={!bulkFitRequired || bulkSaving}
+                onClick={() => applyBulk('fit_sample_required', bulkFitRequired)}
+                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                Apply to {selectedIds.size}
               </button>
             </div>
           </div>
@@ -1611,18 +1817,39 @@ function OrdersV2Content() {
             Ex-factory date
           </button>
           {!isSupplier && (
-            <button
-              onClick={() => setBulkPanel(p => (p === 'sample' ? null : 'sample'))}
-              className={cn(
-                'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
-                bulkPanel === 'sample'
-                  ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
-              )}
-            >
-              Sample status
-            </button>
+            <>
+              <button
+                onClick={() => setBulkPanel(p => (p === 'sample' ? null : 'sample'))}
+                className={cn(
+                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+                  bulkPanel === 'sample'
+                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                Samples
+              </button>
+              <button
+                onClick={() => setBulkPanel(p => (p === 'fitreq' ? null : 'fitreq'))}
+                className={cn(
+                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
+                  bulkPanel === 'fitreq'
+                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                Fit required
+              </button>
+            </>
           )}
+          <button
+            onClick={exportSelection}
+            disabled={bulkSaving}
+            className="px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap transition-colors disabled:opacity-40"
+            title="Export exactly these styles to Excel"
+          >
+            Export
+          </button>
         </BulkBar>
       </div>
 
