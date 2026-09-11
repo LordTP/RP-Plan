@@ -1,6 +1,6 @@
 'use client';
 
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { MessageSquare, Eye, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SortableTh } from '@/components/orders/v2-list-primitives';
@@ -41,19 +41,11 @@ export interface POGroup {
 // ─── Formatters ───────────────────────────────────────────────────────
 
 export function timeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return 'never';
+  if (!dateStr) return '';
   try {
-    const d = parseISO(dateStr);
-    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `${days}d ago`;
-    return format(d, 'dd MMM yyyy');
+    return formatDistanceToNow(parseISO(dateStr), { addSuffix: true });
   } catch {
-    return 'unknown';
+    return '';
   }
 }
 
