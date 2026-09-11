@@ -193,15 +193,21 @@ async def get_component_names(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List every distinct component name in the system with a count of how
-    many component rows use it. Powers the autocomplete on the add-component
-    form so users reuse existing names instead of creating variants."""
+    """List every distinct component name with a count of how many component
+    rows use it. Powers the autocomplete on the add-component form so users
+    reuse existing names instead of creating variants.
+
+    Scoped for suppliers — the unscoped version leaked every factory's
+    component naming, which is a reasonable proxy for what they're making."""
     rows = db.query(
         OrderComponent.name,
         func.count(OrderComponent.id).label('count')
+    ).join(
+        PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id
     ).filter(
         OrderComponent.name.isnot(None),
-        OrderComponent.name != ''
+        OrderComponent.name != '',
+        *supplier_filter_clause(current_user)
     ).group_by(OrderComponent.name).order_by(func.count(OrderComponent.id).desc()).all()
     return {"names": [{"name": name, "count": count} for name, count in rows]}
 
@@ -209,12 +215,19 @@ async def get_component_names(
 @router.post("/api/components/merge")
 async def merge_component_names(
     data: dict,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
     """Rename every OrderComponent whose `name` is in `from_names` to `to_name`.
     Used to collapse casing/spacing duplicates flagged by the data-quality
-    callout. Atomic — one transaction."""
+    callout. Atomic — one transaction.
+
+    Admin/internal only. This renames across EVERY factory's orders by
+    design — there's no per-factory version of "collapse these duplicate
+    names" that makes sense — so it previously being open to any
+    authenticated user, suppliers included, was a straightforward hole.
+    Its only caller (DesignComponentsContent) is currently unreachable
+    dead code, so tightening this breaks nothing today."""
     from_names = data.get("from_names") or []
     to_name = (data.get("to_name") or "").strip()
 
@@ -251,6 +264,10 @@ async def get_order_components(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    # Without this a supplier could walk order ids and read another factory's
+    # component names, sample state, and full rejection reasons/notes — the
+    # response is decorated with that context further down.
+    assert_supplier_can_access(order, current_user)
     components = db.query(OrderComponent).filter(OrderComponent.order_id == order_id).order_by(OrderComponent.created_at).all()
     component_ids = [c.id for c in components]
     summary = _attempt_summary_for_components(db, component_ids)
@@ -742,8 +759,15 @@ async def get_styles_with_component(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all styles on a PO that have a component with a given name"""
-    orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
+    """Get all styles on a PO that have a component with a given name.
+
+    Supplier-scoped — its sibling styles-with-canonical already filtered,
+    this one didn't, so a supplier could read style codes, descriptions and
+    colours for any PO by guessing a PO number."""
+    orders = db.query(PurchaseOrder).filter(
+        PurchaseOrder.po_number == po_number,
+        *supplier_filter_clause(current_user),
+    ).all()
     results = []
     for o in orders:
         comp = db.query(OrderComponent).filter(

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User, UserRole, PurchaseOrder, PendingDateChange, DateChangeHistory
 from auth import get_current_user, get_current_internal_user
+from supplier_access import supplier_filter_clause
 
 
 router = APIRouter()
@@ -98,14 +99,21 @@ async def get_batch_pending_changes(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get pending date changes for multiple orders in one request"""
+    """Get pending date changes for multiple orders in one request.
+
+    Supplier-scoped via a join on the parent order — the caller supplies
+    arbitrary order_ids, so without this a supplier could read another
+    factory's proposed dates and the free-text reasons attached to them."""
     order_ids = body.get("order_ids", [])
     if not order_ids:
         return {"pending_changes": {}}
 
-    pending = db.query(PendingDateChange).filter(
+    pending = db.query(PendingDateChange).join(
+        PurchaseOrder, PurchaseOrder.id == PendingDateChange.order_id
+    ).filter(
         PendingDateChange.order_id.in_(order_ids),
-        PendingDateChange.status == "pending"
+        PendingDateChange.status == "pending",
+        *supplier_filter_clause(current_user)
     ).all()
 
     result: dict = {}
@@ -131,10 +139,14 @@ async def get_order_pending_changes(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get pending date changes for a specific order"""
-    pending = db.query(PendingDateChange).filter(
+    """Get pending date changes for a specific order. Supplier-scoped —
+    see the batch endpoint above for why."""
+    pending = db.query(PendingDateChange).join(
+        PurchaseOrder, PurchaseOrder.id == PendingDateChange.order_id
+    ).filter(
         PendingDateChange.order_id == order_id,
-        PendingDateChange.status == "pending"
+        PendingDateChange.status == "pending",
+        *supplier_filter_clause(current_user)
     ).all()
 
     return {
