@@ -9,6 +9,7 @@ import {
   X,
   Download,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   Loader2,
   Package,
@@ -548,6 +549,43 @@ function OrdersV2Content() {
     return orders.find(o => o.id === selectedStyleId) || null;
   }, [selectedStyleId, orders]);
 
+  // ─── Drawer open/close ──────────────────────────────────────────────
+  // The drawer stays mounted through its slide-out so the transition
+  // actually plays — `drawerClosing` drives the transform, and the real
+  // unmount happens after the animation window. Matches the duration on
+  // the drawer's transition-transform class; if one changes, change both.
+  const DRAWER_ANIM_MS = 300;
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeDrawer = useCallback(() => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setDrawerClosing(true);
+    closeTimer.current = setTimeout(() => {
+      setSelectedStyleId(null);
+      setOpenOnComments(false);
+      setDrawerClosing(false);
+      closeTimer.current = null;
+    }, DRAWER_ANIM_MS);
+  }, []);
+
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  // Flat style list in the order they're rendered — drives the drawer's
+  // prev/next so paging through styles follows what's on screen rather
+  // than raw id order.
+  const flatStyles = useMemo(() => poGroups.flatMap(g => g.styles), [poGroups]);
+
+  const { prevStyle, nextStyle } = useMemo(() => {
+    if (selectedStyleId == null) return { prevStyle: null, nextStyle: null };
+    const i = flatStyles.findIndex(s => s.id === selectedStyleId);
+    if (i === -1) return { prevStyle: null, nextStyle: null };
+    return {
+      prevStyle: i > 0 ? flatStyles[i - 1] : null,
+      nextStyle: i < flatStyles.length - 1 ? flatStyles[i + 1] : null,
+    };
+  }, [flatStyles, selectedStyleId]);
+
   const handleRefresh = () => {
     loadOrders();
     toast.success('Orders refreshed');
@@ -836,7 +874,10 @@ function OrdersV2Content() {
         {selectedStyle && (
           <DetailPanel
             order={selectedStyle}
-            onClose={() => { setSelectedStyleId(null); setOpenOnComments(false); }}
+            onClose={closeDrawer}
+            closing={drawerClosing}
+            onPrev={prevStyle ? () => setSelectedStyleId(prevStyle.id) : null}
+            onNext={nextStyle ? () => setSelectedStyleId(nextStyle.id) : null}
             onCommentClick={() => handleCommentClick(selectedStyle)}
             isSupplier={isSupplier}
             isDesigner={isDesigner}
@@ -1076,6 +1117,9 @@ function DetailPanel({
   onSave,
   initialTab = 'details',
   onCommentCountChange,
+  closing = false,
+  onPrev,
+  onNext,
 }: {
   order: Order;
   onClose: () => void;
@@ -1086,6 +1130,11 @@ function DetailPanel({
   onSave?: (orderId: number, field: string, value: any) => void;
   initialTab?: 'details' | 'comments';
   onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
+  /** Parent is animating the drawer out — it stays mounted for the slide. */
+  closing?: boolean;
+  /** Page to the previous/next style in the visible list. Null at either end. */
+  onPrev?: (() => void) | null;
+  onNext?: (() => void) | null;
 }) {
   const isProductView = view === 'factory-product';
   const isShippingView = view === 'factory-shipping';
@@ -1116,21 +1165,52 @@ function DetailPanel({
   const sizes = getSizeBreakdown(order, sizeGuideRows);
   const maxSize = Math.max(...sizes.map(s => s.value || 0), 1);
 
-  // Close on Escape
+  // Drive the slide-in. Mounting with translate-x-full then flipping on
+  // the next frame is what makes the transition actually play — setting
+  // the final transform in the same paint as the mount would just snap.
+  const [entered, setEntered] = useState(false);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const shown = entered && !closing;
+
+  // Close on Escape; arrow keys page between styles. Ignored while the
+  // user is typing in a field so inline edits aren't hijacked.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (
+        el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+      );
+      if (e.key === 'Escape') { onClose(); return; }
+      if (typing) return;
+      if (e.key === 'ArrowUp' && onPrev) { e.preventDefault(); onPrev(); }
+      if (e.key === 'ArrowDown' && onNext) { e.preventDefault(); onNext(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onPrev, onNext]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
-    >
+    <>
+      {/* Scrim — lighter than the old modal overlay since the drawer
+          leaves most of the list visible and usable-looking behind it. */}
       <div
-        className="w-full max-w-[1200px] h-[88vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          'fixed inset-0 z-40 bg-gray-900/30 transition-opacity duration-300 motion-reduce:transition-none',
+          shown ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        )}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'fixed top-0 right-0 bottom-0 w-full max-w-[860px] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col',
+          'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
+          shown ? 'translate-x-0' : 'translate-x-full',
+        )}
+        role="dialog"
+        aria-modal="true"
       >
       {/* Header */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
@@ -1197,6 +1277,28 @@ function DetailPanel({
                 )}
               </button>
             </div>
+            {/* Page between styles without closing the drawer — the main
+                win of the drawer over the old centred modal. */}
+            {(onPrev || onNext) && (
+              <div className="inline-flex rounded-md border border-gray-300 bg-white overflow-hidden">
+                <button
+                  onClick={() => onPrev?.()}
+                  disabled={!onPrev}
+                  title="Previous style (↑)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed border-r border-gray-300"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => onNext?.()}
+                  disabled={!onNext}
+                  title="Next style (↓)"
+                  className="px-1.5 py-1 text-gray-500 hover:text-gray-900 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
@@ -1231,13 +1333,16 @@ function DetailPanel({
       )}
 
       {/* Footer */}
-      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
+      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <p className="text-[11px] text-gray-400">
+          {(onPrev || onNext) ? '↑ ↓ to move between styles · Esc to close' : 'Esc to close'}
+        </p>
         <p className="text-[11px] text-gray-400">
           Updated {timeAgo(order.updated_at)}
         </p>
       </div>
       </div>
-    </div>
+    </>
   );
 }
 
