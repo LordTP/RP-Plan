@@ -182,6 +182,38 @@ print("\nF. LIBRARY CRUD")
 r = requests.patch(f'{B}/api/components/library/{canon}', headers=HA,
                    json={'colour': 'Repainted'})
 check('patch identity', r.status_code == 200, f'HTTP {r.status_code}')
+
+# The rename bug: renaming the library entry has to carry every linked
+# instance with it, or /components and the order drawer disagree forever.
+r = requests.patch(f'{B}/api/components/library/{canon}', headers=HA,
+                   json={'name': 'SMOKE RENAMED'})
+db.expire_all()
+names = {i.name for i in
+         db.query(OrderComponent).filter(OrderComponent.canonical_id == canon).all()}
+lib_name = db.query(Component).filter(Component.id == canon).first().name
+check('rename propagates to every instance',
+      r.status_code == 200 and names == {'SMOKE RENAMED'} and lib_name == 'SMOKE RENAMED',
+      f'library {lib_name!r}, instances {sorted(names)}')
+
+# The three paths that used to write an instance name on their own. The first
+# two are closed outright; merge stays open (it's the duplicate-collapse tool)
+# but has to rename the canonical too.
+inst_id = db.query(OrderComponent).filter(OrderComponent.canonical_id == canon).first().id
+r = requests.put(f'{B}/api/components/{inst_id}', headers=HA, json={'name': 'SIDE DOOR'})
+check('PUT component rejects name', r.status_code == 400, f'HTTP {r.status_code}')
+r = requests.post(f'{B}/api/components/{inst_id}/apply-to-po', headers=HA,
+                  json={'name': 'SIDE DOOR'})
+check('apply-to-po rejects name', r.status_code == 400, f'HTTP {r.status_code}')
+r = requests.post(f'{B}/api/components/merge', headers=HA,
+                  json={'from_names': ['SMOKE RENAMED'], 'to_name': 'SMOKE MERGED'})
+db.expire_all()
+names = {i.name for i in
+         db.query(OrderComponent).filter(OrderComponent.canonical_id == canon).all()}
+lib_name = db.query(Component).filter(Component.id == canon).first().name
+check('merge renames canonical and instances together',
+      r.status_code == 200 and names == {'SMOKE MERGED'} and lib_name == 'SMOKE MERGED',
+      f'library {lib_name!r}, instances {sorted(names)}')
+
 r = requests.delete(f'{B}/api/components/library/{canon}', headers=HA)
 db.expire_all()
 left = db.query(OrderComponent).filter(OrderComponent.canonical_id == canon).count()

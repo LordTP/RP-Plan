@@ -204,7 +204,14 @@ async def merge_component_names(
     names" that makes sense — so it previously being open to any
     authenticated user, suppliers included, was a straightforward hole.
     Its only caller (DesignComponentsContent) is currently unreachable
-    dead code, so tightening this breaks nothing today."""
+    dead code, so tightening this breaks nothing today.
+
+    Renames the CANONICAL as well as the instance. This is the one place left
+    that writes an instance name — the single PUT and apply-to-po both 400 on
+    `name` now — and it only stays open because collapsing duplicates is a
+    library-wide operation with no canonical-level equivalent. It has to carry
+    the canonical with it, or it would reintroduce exactly the split it exists
+    to clean up: /components showing the old name, the order drawer the new."""
     from_names = data.get("from_names") or []
     to_name = (data.get("to_name") or "").strip()
 
@@ -213,21 +220,47 @@ async def merge_component_names(
     if not to_name:
         raise HTTPException(status_code=400, detail="to_name is required")
 
-    # Find components to rename (exclude those already matching the target)
-    matching = db.query(OrderComponent).filter(
+    # Canonicals first. A canonical carrying one of the old names is renamed,
+    # and every instance hanging off it follows — including instances whose own
+    # name has already drifted, which a name-match alone would miss.
+    canonicals = db.query(Component).filter(
+        Component.name.in_(from_names),
+        Component.name != to_name,
+    ).all()
+    canonical_ids = [c.id for c in canonicals]
+    for canonical in canonicals:
+        canonical.name = to_name
+
+    renamed = 0
+    if canonical_ids:
+        renamed += db.query(OrderComponent).filter(
+            OrderComponent.canonical_id.in_(canonical_ids),
+            OrderComponent.name != to_name,
+        ).update(
+            {OrderComponent.name: to_name, OrderComponent.updated_at: datetime.utcnow()},
+            synchronize_session=False,
+        )
+
+    # Legacy instances with no canonical link — pre-canonical rows, still on
+    # prod. Nothing owns their name but themselves, so match by name.
+    legacy = db.query(OrderComponent).filter(
+        OrderComponent.canonical_id.is_(None),
         OrderComponent.name.in_(from_names),
         OrderComponent.name != to_name,
     ).all()
-
-    renamed = 0
-    for comp in matching:
+    for comp in legacy:
         comp.name = to_name
         comp.updated_at = datetime.utcnow()
         renamed += 1
 
     db.commit()
 
-    return {"success": True, "renamed_count": renamed, "to_name": to_name}
+    return {
+        "success": True,
+        "renamed_count": renamed,
+        "canonicals_renamed": len(canonicals),
+        "to_name": to_name,
+    }
 
 
 @router.get("/api/orders/{order_id}/components", response_model=List[ComponentResponse])
@@ -293,7 +326,23 @@ async def create_component(
             continue
         for f in [f'{other}_status', f'{other}_received', f'{other}_approved']:
             create_data.pop(f, None)
-    component = OrderComponent(order_id=order_id, **create_data)
+    # Mint a canonical and hang the instance off it. Without this the endpoint
+    # produced an instance whose name nothing owned — invisible to /components
+    # and unreachable by the library rename, i.e. born already in the split
+    # state the rename fix exists to prevent. Fresh canonical per add, matching
+    # POST /api/components/library.
+    # ComponentCreate carries name + sample_type only, so the canonical starts
+    # without a colour. POST /api/components/library is the flow that collects
+    # one; this endpoint has no UI behind it to ask.
+    canonical = Component(
+        name=(create_data.get('name') or '').strip().upper(),
+        sample_type=sample_type,
+        colour='',
+    )
+    db.add(canonical)
+    db.flush()  # need canonical.id before the instance
+    create_data['name'] = canonical.name
+    component = OrderComponent(order_id=order_id, canonical_id=canonical.id, **create_data)
     user_touched_status = [p for p in SAMPLE_PREFIXES_COMPONENT if f'{p}_status' in create_data]
     reconcile_sample_status(component, SAMPLE_PREFIXES_COMPONENT, skip_prefixes=user_touched_status)
     db.add(component)
@@ -320,8 +369,18 @@ async def update_component(
         raise HTTPException(status_code=404, detail="Parent order not found")
     assert_supplier_can_access(parent_order, current_user)
     update_data = data.model_dump(exclude_unset=True)
-    # Suppliers can rename and re-scope but not touch sample lifecycle
-    # fields — those are Source Lab's call.
+    # The name lives on the canonical, not here. Writing it on a single
+    # instance is how the rename bug happened: /components read the canonical,
+    # the order drawer read the instance, and the two disagreed forever after.
+    # PATCH /api/components/library/{canonical_id} renames the canonical AND
+    # every instance linked to it, in one transaction — use that.
+    if 'name' in update_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Component names are owned by the library entry. Rename via PATCH /api/components/library/{canonical_id} so every linked style stays in sync.",
+        )
+    # Suppliers can re-scope but not touch sample lifecycle fields — those are
+    # Source Lab's call.
     if _is_supplier(current_user):
         forbidden = [k for k in update_data if k in SUPPLIER_FORBIDDEN_FIELDS]
         if forbidden:
@@ -565,10 +624,11 @@ async def apply_component_field_to_po(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Apply a component field update to matching components (same name) on
-    selected or all styles on the PO. Suppliers can apply rename / scope-add
-    operations on their own factory's siblings but can't push sample-lifecycle
-    field changes through this endpoint."""
+    """Apply a sample-field update to a component's sibling instances — all of
+    them, or a selected subset. Names are not applicable here: they're owned by
+    the library entry (see the 400 below). Suppliers can reach their own
+    factory's siblings but can't push sample-lifecycle field changes through
+    this endpoint."""
     body = await request.json()
     component = db.query(OrderComponent).filter(OrderComponent.id == component_id).first()
     if not component:
@@ -643,8 +703,19 @@ async def apply_component_field_to_po(
         'strike_off_status', 'strike_off_received', 'strike_off_approved',
         'lab_dip_status', 'lab_dip_received', 'lab_dip_approved',
         'label_status', 'label_received', 'label_approved',
-        'name',
     }
+    # 'name' is deliberately NOT in allowed_fields. This endpoint fans a value
+    # out to siblings, so a rename here renamed instances while leaving the
+    # canonical on its old value — the same split that produced the rename bug.
+    # PATCH /api/components/library/{canonical_id} is the one writable home for
+    # a name; it already reaches every instance, so this path has no rename job
+    # left to do. 400 rather than silently dropping it: a caller that thought
+    # it was renaming should hear otherwise.
+    if 'name' in body:
+        raise HTTPException(
+            status_code=400,
+            detail="Component names are owned by the library entry. Rename via PATCH /api/components/library/{canonical_id} — it already applies to every linked style.",
+        )
     date_fields = {
         'fit_sample_received', 'fit_sample_approved',
         'strike_off_received', 'strike_off_approved',
@@ -670,8 +741,6 @@ async def apply_component_field_to_po(
     updated = 0
     for comp in matching:
         for key, value in update_data.items():
-            if key == 'name':
-                continue  # not tracked as a field change
             old_value = getattr(comp, key, None)
             if old_value != value:
                 db.add(DateChangeHistory(
@@ -1475,6 +1544,31 @@ async def update_component_library_entry(
 
     if changed:
         canonical.updated_at = datetime.utcnow()
+
+        # Propagate the name to every linked instance, in the same
+        # transaction.
+        #
+        # The name is stored twice — once here, and again as a copy on each
+        # OrderComponent. This endpoint used to write only the canonical, so
+        # after a rename the Library showed the new name and every style
+        # showed the old one, forever. The docstring above claimed the change
+        # propagated "by definition"; it didn't.
+        #
+        # Propagating rather than reading through the FK is deliberate: the
+        # instance name is read at 57 sites, seven of them SQL-level
+        # (GROUP BY / ORDER BY / IN), so making it a derived value means
+        # touching all of them. Keeping the copy and making this the only
+        # place it can be WRITTEN fixes the drift with a fraction of the
+        # blast radius — the other write paths are blocked below.
+        if 'name' in changed:
+            renamed = db.query(OrderComponent).filter(
+                OrderComponent.canonical_id == canonical.id
+            ).update(
+                {OrderComponent.name: canonical.name},
+                synchronize_session=False,
+            )
+            changed['name']['instances_updated'] = renamed
+
         db.commit()
         db.refresh(canonical)
 

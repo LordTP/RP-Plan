@@ -684,7 +684,7 @@ function CanonicalDetailPanel({
           <div className="mt-3 p-2 rounded bg-amber-50 border border-amber-200 flex items-start gap-2 text-[11px] text-amber-800">
             <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <div>
-              Editing identity here <strong>renames on all {detail.instances.length} instance{detail.instances.length === 1 ? '' : 's'}</strong>. If you want a different name for just one style, use Detach on that instance (coming in Phase 3).
+              Editing identity here <strong>renames on all {detail.instances.length} instance{detail.instances.length === 1 ? '' : 's'}</strong> — this is the only place a component can be renamed. For a different name on just one style, remove it there and add a new component.
             </div>
           </div>
         )}
