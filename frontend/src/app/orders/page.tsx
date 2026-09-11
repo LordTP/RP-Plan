@@ -161,12 +161,31 @@ function OrdersContent() {
     }
   }, [pageSize, setOrders, setPage, buildCleanFilters, columnFilters, filters]);
 
-  // Post-bulk-save refresh — pulls the current page silently so OrderTable
-  // stays mounted and scroll position sticks. Wired into OrderTable via
-  // the onBulkSaveRefresh prop; replaces the old window.location.reload().
-  const refreshAfterBulkSave = useCallback(() => {
-    loadOrders(1, filters, columnFilters, undefined, { silent: true });
-  }, [loadOrders, filters, columnFilters]);
+  // Post-bulk-save refresh — pulls back EVERYTHING currently loaded in
+  // one shot (pageSize * currentPage) and swaps it into the store
+  // atomically. This exists (instead of just calling loadOrders(1, silent))
+  // because loadOrders resets currentPage to 1 and drops all
+  // infinite-scroll-loaded pages — so a user on page 3 would see the
+  // store shrink to 50 rows, scrollTop snap to the end of that short
+  // list, then the intersection observer would re-load pages 2 and 3
+  // sequentially. Visible symptom: "table moved about a bit up and down
+  // then came back" (reported Sep 11 2026). Fetching the full loaded
+  // range and NOT touching currentPage keeps the sentinel and store in
+  // sync, so nothing shifts.
+  const refreshAfterBulkSave = useCallback(async () => {
+    try {
+      const cleanFilters = buildCleanFilters(filters, columnFilters);
+      const loadedRows = pageSize * Math.max(currentPage, 1);
+      const response = await ordersApi.getOrders(1, loadedRows, cleanFilters);
+      setOrders(response.orders, response.total);
+      // Deliberately no setPage call — currentPage stays where the user
+      // scrolled to. hasMore recomputes naturally against the new total.
+    } catch (error) {
+      console.error('Silent refresh after bulk save failed:', error);
+      // Silent by design: bulk save's own toast already covered the success
+      // message; a background-refresh failure shouldn't disrupt the user.
+    }
+  }, [buildCleanFilters, filters, columnFilters, pageSize, currentPage, setOrders]);
 
   const loadMoreOrders = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
