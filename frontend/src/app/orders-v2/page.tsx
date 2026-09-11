@@ -38,7 +38,7 @@ import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
 import { useStore } from '@/store/useStore';
-import { ordersApi, excelApi, statusesApi, submissionsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
+import { ordersApi, excelApi, statusesApi, submissionsApi, componentsApi, OrderFilters, type SampleSubmission, type SampleType } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { useSizeGuide } from '@/lib/useSizeGuide';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
@@ -718,12 +718,153 @@ function OrdersV2Content() {
   const [bulkSampleValue, setBulkSampleValue] = useState('');
   const [bulkReason, setBulkReason] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+  /** Which targets the sample-status write lands on — component names,
+   *  plus the ORDER_LEVEL sentinel for styles that track this sample at
+   *  order level. */
+  const [bulkSampleTargets, setBulkSampleTargets] = useState<Set<string>>(new Set());
+
+  // Strike Off and Lab Dip move INSIDE components when a style has them —
+  // the order-level column is left blank in that case (see the export's
+  // _COMPONENT_ROLLUP_FIELDS). Fit Sample and PPS are whole-garment
+  // concerns and always stay at order level. So only these two sample
+  // types ever need a component picker.
+  const COMPONENT_BACKED_SAMPLE: Record<string, 'strike_off' | 'lab_dip'> = {
+    strike_off_status: 'strike_off',
+    lab_dip_status: 'lab_dip',
+  };
+
+  // Split the selection into "these component instances" vs "these styles
+  // track it at order level". Without this the bulk write would land on
+  // the order-level column for component styles — a field that's blank by
+  // design and read by nothing, so the change would silently do nothing.
+  const sampleBreakdown = useMemo(() => {
+    const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
+    if (!compType) {
+      return {
+        componentBacked: false,
+        componentGroups: [] as { name: string; instanceIds: number[] }[],
+        orderLevel: selectedOrders,
+      };
+    }
+    const byName = new Map<string, number[]>();
+    const orderLevel: Order[] = [];
+    for (const o of selectedOrders) {
+      const comps = (o.components || []).filter(c => c.sample_type === compType);
+      if (comps.length === 0) {
+        orderLevel.push(o);
+      } else {
+        for (const c of comps) {
+          const arr = byName.get(c.name) || [];
+          arr.push(c.id);
+          byName.set(c.name, arr);
+        }
+      }
+    }
+    return {
+      componentBacked: true,
+      componentGroups: Array.from(byName.entries())
+        .map(([name, instanceIds]) => ({ name, instanceIds }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      orderLevel,
+    };
+  }, [selectedOrders, bulkSampleField]);
+
+  const ORDER_LEVEL_TARGET = '__order_level__';
+
+  // Default every available target on whenever the breakdown changes —
+  // picking a sample type shouldn't leave the user with nothing ticked.
+  useEffect(() => {
+    const next = new Set(sampleBreakdown.componentGroups.map(g => g.name));
+    if (sampleBreakdown.orderLevel.length > 0) next.add(ORDER_LEVEL_TARGET);
+    setBulkSampleTargets(next);
+  }, [sampleBreakdown]);
+
+  const bulkSampleTargetCount = useMemo(() => {
+    let n = 0;
+    for (const g of sampleBreakdown.componentGroups) {
+      if (bulkSampleTargets.has(g.name)) n += g.instanceIds.length;
+    }
+    if (bulkSampleTargets.has(ORDER_LEVEL_TARGET)) n += sampleBreakdown.orderLevel.length;
+    return n;
+  }, [sampleBreakdown, bulkSampleTargets]);
 
   const closeBulkPanel = () => {
     setBulkPanel(null);
     setBulkDate('');
     setBulkSampleValue('');
     setBulkReason('');
+  };
+
+  /** Sample-status writes fan out to TWO different endpoints depending on
+   *  where each target actually stores the value: component instances go
+   *  through the components bulk-edit (which resolves the right column
+   *  from each instance's own sample_type), order-level styles go through
+   *  the PO-scoped order bulk endpoint. */
+  const applyBulkSample = async () => {
+    if (!bulkSampleValue || bulkSampleTargetCount === 0) return;
+    setBulkSaving(true);
+    try {
+      let changed = 0;
+
+      const instanceIds = sampleBreakdown.componentGroups
+        .filter(g => bulkSampleTargets.has(g.name))
+        .flatMap(g => g.instanceIds);
+
+      if (instanceIds.length > 0) {
+        const res = await componentsApi.bulkEditInstances({
+          instance_ids: instanceIds,
+          status: bulkSampleValue,
+        });
+        changed += res.changed_count;
+      }
+
+      const orderTargets = bulkSampleTargets.has(ORDER_LEVEL_TARGET) ? sampleBreakdown.orderLevel : [];
+      if (orderTargets.length > 0) {
+        const byPo = new Map<string, number[]>();
+        for (const o of orderTargets) {
+          const arr = byPo.get(o.po_number) || [];
+          arr.push(o.id);
+          byPo.set(o.po_number, arr);
+        }
+        for (const [po, ids] of Array.from(byPo.entries())) {
+          const res: any = await ordersApi.bulkUpdateDate(po, bulkSampleField, bulkSampleValue, ids);
+          changed += res?.orders_updated ?? 0;
+        }
+      }
+
+      // Optimistic patch — order-level styles get the column written,
+      // component styles get the matching nested instances updated so the
+      // drawer and any component summary reflect it without a refetch.
+      const touchedInstances = new Set(instanceIds);
+      const touchedOrderIds = new Set(orderTargets.map(o => o.id));
+      const compType = COMPONENT_BACKED_SAMPLE[bulkSampleField];
+      const patch = (o: Order): Order => {
+        let next = o;
+        if (touchedOrderIds.has(o.id)) {
+          next = { ...next, [bulkSampleField]: bulkSampleValue } as Order;
+        }
+        if (compType && next.components?.some(c => touchedInstances.has(c.id))) {
+          next = {
+            ...next,
+            components: next.components.map(c =>
+              touchedInstances.has(c.id) ? { ...c, [bulkSampleField]: bulkSampleValue } : c,
+            ),
+          } as Order;
+        }
+        return next;
+      };
+      if (isFactoryView) setLocalOrders(prev => prev.map(patch));
+      else setStoreOrders(orders.map(patch), totalOrders);
+
+      toast.success(`Updated ${changed} sample${changed === 1 ? '' : 's'}`);
+      setSelectedIds(new Set());
+      lastClickedId.current = null;
+      closeBulkPanel();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Bulk update failed');
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
   const applyBulk = async (field: string, value: string | null) => {
@@ -1249,6 +1390,7 @@ function OrdersV2Content() {
               </button>
             </div>
             <div className="px-3 py-2.5 flex items-center gap-2 text-xs flex-wrap">
+              <span className="text-gray-500">Sample</span>
               <select
                 value={bulkSampleField}
                 onChange={(e) => setBulkSampleField(e.target.value)}
@@ -1273,18 +1415,90 @@ function OrdersV2Content() {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Target picker — Strike Off / Lab Dip live on components when
+                a style has them, so the user picks WHICH component rather
+                than blind-writing an order-level column that component
+                styles leave blank. */}
+            {sampleBreakdown.componentBacked && (sampleBreakdown.componentGroups.length > 0 || sampleBreakdown.orderLevel.length > 0) && (
+              <div className="px-3 pb-2">
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1.5">
+                  Apply to
+                </div>
+                <div className="rounded border border-gray-200 divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                  {sampleBreakdown.componentGroups.map((g) => {
+                    const on = bulkSampleTargets.has(g.name);
+                    return (
+                      <label
+                        key={g.name}
+                        className={cn(
+                          'flex items-center gap-2 px-2 py-1.5 text-[11px] cursor-pointer',
+                          on ? 'bg-primary-50/60' : 'hover:bg-gray-50',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setBulkSampleTargets((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(g.name)) next.delete(g.name);
+                            else next.add(g.name);
+                            return next;
+                          })}
+                          className="w-3.5 h-3.5 accent-primary-600"
+                        />
+                        <span className="font-semibold text-gray-900 truncate flex-1">{g.name}</span>
+                        <span className="text-gray-400 tabular-nums">
+                          {g.instanceIds.length} instance{g.instanceIds.length === 1 ? '' : 's'}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {sampleBreakdown.orderLevel.length > 0 && (
+                    <label
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 text-[11px] cursor-pointer',
+                        bulkSampleTargets.has(ORDER_LEVEL_TARGET) ? 'bg-primary-50/60' : 'hover:bg-gray-50',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={bulkSampleTargets.has(ORDER_LEVEL_TARGET)}
+                        onChange={() => setBulkSampleTargets((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(ORDER_LEVEL_TARGET)) next.delete(ORDER_LEVEL_TARGET);
+                          else next.add(ORDER_LEVEL_TARGET);
+                          return next;
+                        })}
+                        className="w-3.5 h-3.5 accent-primary-600"
+                      />
+                      <span className="text-gray-700 truncate flex-1">
+                        Styles with no components
+                        <span className="text-gray-400"> — tracked at order level</span>
+                      </span>
+                      <span className="text-gray-400 tabular-nums">
+                        {sampleBreakdown.orderLevel.length} style{sampleBreakdown.orderLevel.length === 1 ? '' : 's'}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/60 flex items-center gap-3">
+              <p className="text-[10px] text-gray-500 flex-1">
+                REJECTED isn&apos;t here on purpose — rejecting needs a reason and opens a new
+                attempt, so it stays on the per-style reject flow in the detail drawer.
+              </p>
               <button
-                disabled={!bulkSampleValue || bulkSaving}
-                onClick={() => applyBulk(bulkSampleField, bulkSampleValue)}
-                className="ml-auto px-3 py-1 rounded-md bg-primary-600 text-white font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+                disabled={!bulkSampleValue || bulkSaving || bulkSampleTargetCount === 0}
+                onClick={applyBulkSample}
+                className="px-3 py-1 rounded-md bg-primary-600 text-white text-xs font-medium disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap shrink-0"
               >
                 {bulkSaving && <Loader2 className="w-3 h-3 animate-spin" />}
-                Apply to {selectedIds.size}
+                Apply to {bulkSampleTargetCount}
               </button>
-            </div>
-            <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/60 text-[10px] text-gray-500">
-              REJECTED isn&apos;t here on purpose — rejecting needs a reason and opens a new attempt,
-              so it stays on the per-style reject flow in the detail drawer.
             </div>
           </div>
         )}
