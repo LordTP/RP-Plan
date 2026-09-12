@@ -5,6 +5,7 @@ import { ExternalLink, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { DEFAULT_SCOPE, type ApplyScope } from '@/components/samples/ScopePicker';
 import { componentsApi, submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
 import { SAMPLE_STATUS_OPTIONS } from '@/types';
 import type { Order, OrderComponent } from '@/types';
@@ -51,7 +52,12 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   const [rejectFor, setRejectFor] = useState<{ sampleType: SampleType; currentAttempt: number } | null>(null);
   // Sticky scope for the whole modal session: edit only this component, all
   // siblings on the PO with the same name, or a hand-picked subset.
-  const [scope, setScope] = useState<'single' | 'all' | 'selected'>('single');
+  // Same vocabulary as the sample modals (see ScopePicker's ApplyScope) —
+  // this used to call the middle option 'all' while they called the identical
+  // concept 'all_on_po'. The UI stays a segmented bar rather than their radio
+  // stack: it's a sticky header for a whole editing session, not a one-off
+  // choice inside a dialog.
+  const [scope, setScope] = useState<ApplyScope>(DEFAULT_SCOPE);
   const [siblings, setSiblings] = useState<{ id: number; po_number?: string; customer?: string; style_code: string; description: string; colour: string; component_id: number }[]>([]);
   const [selectedSiblingOrderIds, setSelectedSiblingOrderIds] = useState<Set<number>>(new Set());
   const siblingCount = siblings.length;
@@ -116,7 +122,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   const saveField = async (field: string, value: string | null) => {
     setSavingField(field);
     try {
-      const useBulk = (scope === 'all' && siblingCount > 0) ||
+      const useBulk = (scope === 'all_on_po' && siblingCount > 0) ||
                       (scope === 'selected' && selectedSiblingOrderIds.size > 0);
       if (useBulk) {
         // For 'all' scope with a canonical link, siblings can span POs so we
@@ -124,7 +130,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         // this PO" would miss cross-PO siblings otherwise. Legacy rows (no
         // canonical) still use "all on PO" via the undefined shortcut.
         const canonicalAware = component.canonical_id != null;
-        const orderIds = scope === 'all'
+        const orderIds = scope === 'all_on_po'
           ? (canonicalAware ? [order.id, ...siblings.map((s) => s.id)] : undefined)
           : [order.id, ...Array.from(selectedSiblingOrderIds)];
         const res = await componentsApi.applyFieldToPO(component.id, {
@@ -184,8 +190,8 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3 flex-shrink-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <svg className="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
@@ -232,22 +238,22 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
               className={cn(
                 'px-2.5 py-1 rounded-md font-medium transition-colors',
                 scope === 'single'
-                  ? 'bg-violet-600 text-white shadow-sm'
+                  ? 'bg-primary-600 text-white shadow-sm'
                   : 'text-gray-600 hover:bg-white ring-1 ring-gray-200'
               )}
             >
               This style only
             </button>
             <button
-              onClick={() => siblingCount > 0 && setScope('all')}
+              onClick={() => siblingCount > 0 && setScope('all_on_po')}
               disabled={siblingCount === 0}
               title={siblingCount === 0
                 ? `No other styles share "${comp.name}" with this one.`
                 : undefined}
               className={cn(
                 'px-2.5 py-1 rounded-md font-medium transition-colors',
-                scope === 'all'
-                  ? 'bg-violet-600 text-white shadow-sm'
+                scope === 'all_on_po'
+                  ? 'bg-primary-600 text-white shadow-sm'
                   : siblingCount === 0
                     ? 'text-gray-400 ring-1 ring-gray-200 cursor-not-allowed'
                     : 'text-gray-600 hover:bg-white ring-1 ring-gray-200'
@@ -261,7 +267,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
               className={cn(
                 'px-2.5 py-1 rounded-md font-medium transition-colors',
                 scope === 'selected'
-                  ? 'bg-violet-600 text-white shadow-sm'
+                  ? 'bg-primary-600 text-white shadow-sm'
                   : siblingCount === 0
                     ? 'text-gray-400 ring-1 ring-gray-200 cursor-not-allowed'
                     : 'text-gray-600 hover:bg-white ring-1 ring-gray-200'
@@ -274,8 +280,8 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                 </span>
               )}
             </button>
-            {scope === 'all' && siblingCount > 0 && (
-              <span className="text-violet-700 italic ml-1">
+            {scope === 'all_on_po' && siblingCount > 0 && (
+              <span className="text-primary-700 italic ml-1">
                 Pushes to every style linked to <strong>"{comp.name}"</strong>
                 {component.canonical_id != null ? ' (across POs where applicable)' : ` on ${order.po_number}`}
               </span>
@@ -297,7 +303,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                     const allSelected = selectedSiblingOrderIds.size === siblings.length;
                     setSelectedSiblingOrderIds(allSelected ? new Set() : new Set(siblings.map(s => s.id)));
                   }}
-                  className="ml-auto text-violet-700 hover:text-violet-800 font-semibold"
+                  className="ml-auto text-primary-700 hover:text-primary-800 font-semibold"
                 >
                   {selectedSiblingOrderIds.size === siblings.length ? 'Deselect all' : 'Select all'}
                 </button>
@@ -398,7 +404,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                         value={status || ''}
                         onChange={(e) => onStatusChange(type, prefix, e.target.value)}
                         disabled={savingField === `${prefix}_status`}
-                        className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50"
+                        className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
                       >
                         <option value="">— Not set —</option>
                         {SAMPLE_STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -499,7 +505,7 @@ function FieldBlock({ label, saving, children }: { label: string; saving: boolea
     <div>
       <label className={cn(
         'text-[10px] font-semibold uppercase tracking-wider mb-1 flex items-center gap-1.5',
-        saving ? 'text-violet-600' : 'text-gray-400',
+        saving ? 'text-primary-600' : 'text-gray-400',
       )}>
         {label}
         {saving && <Loader2 className="w-2.5 h-2.5 animate-spin" />}

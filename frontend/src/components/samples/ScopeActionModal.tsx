@@ -6,6 +6,10 @@ import toast from 'react-hot-toast';
 import { submissionsApi, type SampleType } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
+import {
+  ScopePicker, scopeTargetCount, DEFAULT_SCOPE,
+  type ApplyScope, type Sibling,
+} from './ScopePicker';
 
 type ActionKind = 'approve' | 'markReceived';
 
@@ -19,16 +23,6 @@ interface Props {
   attemptNo: number;
   onClose: () => void;
   onDone: () => void;
-}
-
-type ApplyScope = 'single' | 'all_on_po' | 'selected';
-
-interface Sibling {
-  order_id: number;
-  component_id: number | null;
-  style_code: string | null;
-  description: string | null;
-  colour: string | null;
 }
 
 const SAMPLE_LABEL: Record<SampleType, string> = {
@@ -52,7 +46,7 @@ export function ScopeActionModal({
 }: Props) {
   const [siblings, setSiblings] = useState<Sibling[]>([]);
   const [loadingSiblings, setLoadingSiblings] = useState(true);
-  const [applyScope, setApplyScope] = useState<ApplyScope>('single');
+  const [applyScope, setApplyScope] = useState<ApplyScope>(DEFAULT_SCOPE);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
   const [receivedAt, setReceivedAt] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
@@ -78,11 +72,10 @@ export function ScopeActionModal({
   }, [onClose, submitting]);
 
   const siblingCount = siblings.length;
-  const effectiveCount = useMemo(() => {
-    if (applyScope === 'single') return 1;
-    if (applyScope === 'all_on_po') return 1 + siblingCount;
-    return 1 + selectedOrderIds.size;
-  }, [applyScope, siblingCount, selectedOrderIds.size]);
+  const effectiveCount = useMemo(
+    () => scopeTargetCount(applyScope, siblingCount, selectedOrderIds.size),
+    [applyScope, siblingCount, selectedOrderIds.size],
+  );
 
   const toggleSelected = (id: number) => {
     setSelectedOrderIds((prev) => {
@@ -178,62 +171,17 @@ export function ScopeActionModal({
             </div>
           )}
 
-          <div>
-            <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">
-              Apply to
-            </label>
-            {loadingSiblings ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Checking sibling styles…
-              </div>
-            ) : siblingCount === 0 ? (
-              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                No other styles on this PO {componentName ? `have "${componentName}"` : 'share this sample type'} — action applies to this style only.
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <ScopeRadio
-                  checked={applyScope === 'single'}
-                  onChange={() => setApplyScope('single')}
-                  title="This style only"
-                  subtitle={styleCode ? `Just ${styleCode}` : 'Just the one you clicked'}
-                  accent={isApprove ? 'emerald' : 'blue'}
-                />
-                <ScopeRadio
-                  checked={applyScope === 'all_on_po'}
-                  onChange={() => setApplyScope('all_on_po')}
-                  title="All styles on PO"
-                  subtitle={`${1 + siblingCount} styles ${componentName ? `with "${componentName}"` : ''}`}
-                  accent={isApprove ? 'emerald' : 'blue'}
-                />
-                <ScopeRadio
-                  checked={applyScope === 'selected'}
-                  onChange={() => setApplyScope('selected')}
-                  title="Select specific styles"
-                  subtitle={applyScope === 'selected' ? `${selectedOrderIds.size} of ${siblingCount} siblings ticked` : 'Pick which siblings to include'}
-                  accent={isApprove ? 'emerald' : 'blue'}
-                />
-                {applyScope === 'selected' && (
-                  <div className="ml-6 mt-2 border border-gray-200 rounded-lg bg-gray-50/40 max-h-40 overflow-y-auto divide-y divide-gray-100">
-                    {siblings.map((s) => (
-                      <label key={s.order_id} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedOrderIds.has(s.order_id)}
-                          onChange={() => toggleSelected(s.order_id)}
-                          className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        />
-                        <span className="font-mono text-gray-700">{s.style_code || `#${s.order_id}`}</span>
-                        <span className="text-gray-500 truncate">{s.description}</span>
-                        <span className="text-gray-400 ml-auto truncate max-w-[90px]">{s.colour}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <ScopePicker
+            scope={applyScope}
+            onScopeChange={setApplyScope}
+            siblings={siblings}
+            loading={loadingSiblings}
+            selectedOrderIds={selectedOrderIds}
+            onToggleSelected={toggleSelected}
+            styleCode={styleCode}
+            componentName={componentName}
+            accent={isApprove ? 'emerald' : 'blue'}
+          />
         </div>
 
         {/* Footer */}
@@ -259,43 +207,5 @@ export function ScopeActionModal({
         </div>
       </div>
     </div>
-  );
-}
-
-function ScopeRadio({
-  checked,
-  onChange,
-  title,
-  subtitle,
-  accent,
-}: {
-  checked: boolean;
-  onChange: () => void;
-  title: string;
-  subtitle: string;
-  accent: 'emerald' | 'blue';
-}) {
-  const activeBg = accent === 'emerald' ? 'bg-emerald-50/60 border-emerald-200' : 'bg-blue-50/60 border-blue-200';
-  const activeText = accent === 'emerald' ? 'text-emerald-800' : 'text-blue-800';
-  const activeSubtext = accent === 'emerald' ? 'text-emerald-700' : 'text-blue-700';
-  const radioColour = accent === 'emerald' ? 'text-emerald-600 focus:ring-emerald-500' : 'text-blue-600 focus:ring-blue-500';
-  return (
-    <label
-      className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
-        checked ? activeBg : 'bg-white border-gray-200 hover:bg-gray-50'
-      )}
-    >
-      <input
-        type="radio"
-        checked={checked}
-        onChange={onChange}
-        className={cn('mt-0.5 w-3.5 h-3.5 focus:ring-offset-0 border-gray-300', radioColour)}
-      />
-      <div className="min-w-0">
-        <div className={cn('text-xs font-semibold', checked ? activeText : 'text-gray-800')}>{title}</div>
-        <div className={cn('text-[11px]', checked ? activeSubtext : 'text-gray-500')}>{subtitle}</div>
-      </div>
-    </label>
   );
 }

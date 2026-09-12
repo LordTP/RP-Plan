@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
+import { DEFAULT_SCOPE, type ApplyScope } from '@/components/samples/ScopePicker';
 import { ordersApi } from '@/lib/api';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
@@ -49,7 +50,11 @@ interface BulkSibling {
   colour: string;
 }
 
-type ApplyMode = 'single' | 'all' | 'selected';
+// Same three scopes as everywhere else — this file called the middle one
+// 'all' where the sample modals call it 'all_on_po'. The compact radios below
+// stay: this picker lives inline in a cell-editor popover, where ScopePicker's
+// bordered cards would be far too heavy.
+type ApplyMode = ApplyScope;
 
 export function InlineBulkScopeEditor({
   fieldKey,
@@ -72,7 +77,7 @@ export function InlineBulkScopeEditor({
 }) {
   const ctx = useBulkScope();
   const [value, setValue] = useState(initialValue);
-  const [mode, setMode] = useState<ApplyMode>('single');
+  const [mode, setMode] = useState<ApplyMode>(DEFAULT_SCOPE);
   const [siblings, setSiblings] = useState<BulkSibling[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -113,7 +118,7 @@ export function InlineBulkScopeEditor({
     });
   };
 
-  const totalIfBulk = mode === 'all' ? 1 + siblings.length : 1 + selectedIds.size;
+  const totalIfBulk = mode === 'all_on_po' ? 1 + siblings.length : 1 + selectedIds.size;
   const prettyLabel = fieldLabel || fieldKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   const handleSubmit = async () => {
@@ -125,7 +130,7 @@ export function InlineBulkScopeEditor({
     }
     setSaving(true);
     try {
-      const orderIds = mode === 'all'
+      const orderIds = mode === 'all_on_po'
         ? []  // empty list = all on PO
         : [ctx.currentOrderId, ...Array.from(selectedIds)];
       const result: any = await ordersApi.bulkUpdateDate(
@@ -208,7 +213,7 @@ export function InlineBulkScopeEditor({
               <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5 block">Apply to</label>
               <div className="space-y-1">
                 <ScopeRadio checked={mode === 'single'} onChange={() => setMode('single')} title="This style only" />
-                <ScopeRadio checked={mode === 'all'} onChange={() => setMode('all')} title={`All styles on this PO (${1 + siblings.length})`} />
+                <ScopeRadio checked={mode === 'all_on_po'} onChange={() => setMode('all_on_po')} title={`All styles on this PO (${1 + siblings.length})`} />
                 <ScopeRadio checked={mode === 'selected'} onChange={() => setMode('selected')} title={`Select specific styles (${selectedIds.size + 1} of ${siblings.length + 1})`} />
                 {mode === 'selected' && (
                   <div className="ml-5 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-gray-50/40 divide-y divide-gray-100">
