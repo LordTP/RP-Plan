@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Minus,
+  CalendarOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
@@ -39,7 +40,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { COLUMNS } from '@/types';
 
-type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes' | 'backup' | 'warnings';
+type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes' | 'backup' | 'warnings' | 'closures';
 
 export default function SettingsPage() {
   return (
@@ -182,6 +183,7 @@ function SettingsContent() {
       heading: 'How the app behaves',
       items: [
         { key: 'warnings', label: 'Warning thresholds', hint: 'How long before we chase', icon: AlertTriangle, show: isAdmin },
+        { key: 'closures', label: 'Factory closures', hint: 'Days the clock stops', icon: CalendarOff, show: isAdmin },
         { key: 'notifications', label: 'Notifications', hint: 'Email automations', icon: Bell, show: isAdmin },
         { key: 'sizes', label: 'Size guide', hint: 'Size ranges per gender', icon: Ruler, show: isFullInternal },
       ],
@@ -290,6 +292,8 @@ function SettingsContent() {
             {activeTab === 'backup' && isAdmin && <BackupTab />}
 
             {activeTab === 'warnings' && isAdmin && <WarningThresholdsTab />}
+
+            {activeTab === 'closures' && isAdmin && <FactoryClosuresTab />}
 
             {activeTab === 'fields' && <FieldReferenceTab />}
           </main>
@@ -2450,6 +2454,316 @@ function WarningThresholdsTab() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Factory closures
+// ─────────────────────────────────────────────────────────────────────────
+
+type Closure = {
+  id: number;
+  label: string;
+  start_date: string;
+  end_date: string;
+  factory: string | null;
+  active: boolean;
+  notes: string | null;
+  calendar_days: number;
+  working_days: number;
+};
+
+type ClosureForm = {
+  label: string;
+  start_date: string;
+  end_date: string;
+  factory: string;
+  notes: string;
+  active: boolean;
+};
+
+const blankClosure = (): ClosureForm => ({
+  label: '', start_date: '', end_date: '', factory: '', notes: '', active: true,
+});
+
+/** Rendered as "3 Feb – 20 Feb 2027", collapsing the repeated year. */
+function closureRange(start: string, end: string) {
+  const a = new Date(start + 'T00:00:00');
+  const b = new Date(end + 'T00:00:00');
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return `${start} – ${end}`;
+  const d = (x: Date) => x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const sameYear = a.getFullYear() === b.getFullYear();
+  return sameYear
+    ? `${d(a)} – ${d(b)} ${b.getFullYear()}`
+    : `${d(a)} ${a.getFullYear()} – ${d(b)} ${b.getFullYear()}`;
+}
+
+function FactoryClosuresTab() {
+  const [rows, setRows] = useState<Closure[]>([]);
+  const [today, setToday] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null);
+  const [form, setForm] = useState<ClosureForm>(blankClosure());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/settings/factory-closures');
+      setRows(res.data.closures);
+      setToday(res.data.today);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to load closures');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  function startEdit(c: Closure) {
+    setEditingId(c.id);
+    setForm({
+      label: c.label, start_date: c.start_date, end_date: c.end_date,
+      factory: c.factory || '', notes: c.notes || '', active: c.active,
+    });
+  }
+
+  function startNew() {
+    setEditingId('new');
+    setForm(blankClosure());
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const body = { ...form, factory: form.factory.trim() || null };
+      if (editingId === 'new') await api.post('/api/settings/factory-closures', body);
+      else await api.put(`/api/settings/factory-closures/${editingId}`, body);
+      toast.success(editingId === 'new' ? 'Closure added' : 'Closure updated');
+      setEditingId(null);
+      await load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(c: Closure) {
+    try {
+      await api.put(`/api/settings/factory-closures/${c.id}`, {
+        label: c.label, start_date: c.start_date, end_date: c.end_date,
+        factory: c.factory, notes: c.notes, active: !c.active,
+      });
+      await load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to update');
+    }
+  }
+
+  async function remove(c: Closure) {
+    if (!window.confirm(`Delete "${c.label}"?\n\nBusiness-day counts will start including ${closureRange(c.start_date, c.end_date)} again.`)) return;
+    try {
+      await api.delete(`/api/settings/factory-closures/${c.id}`);
+      toast.success('Closure deleted');
+      await load();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to delete');
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+  }
+
+  const phaseOf = (c: Closure): 'current' | 'upcoming' | 'past' => {
+    if (!today) return 'upcoming';
+    if (c.end_date < today) return 'past';
+    if (c.start_date > today) return 'upcoming';
+    return 'current';
+  };
+
+  const sections: { phase: 'current' | 'upcoming' | 'past'; heading: string }[] = [
+    { phase: 'current', heading: 'Happening now' },
+    { phase: 'upcoming', heading: 'Upcoming' },
+    { phase: 'past', heading: 'Past' },
+  ];
+
+  const editor = (
+    <div className="rounded-xl border-2 border-primary-300 bg-primary-50/40 px-4 py-3.5 space-y-3">
+      <div className="grid grid-cols-[1fr_150px_150px] gap-3">
+        <label className="block">
+          <span className="block text-[11px] font-semibold text-gray-600 mb-1">Name</span>
+          <input
+            value={form.label}
+            onChange={(e) => setForm(f => ({ ...f, label: e.target.value }))}
+            placeholder="Chinese New Year 2027"
+            className="w-full px-2.5 py-1.5 text-[13px] rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] font-semibold text-gray-600 mb-1">First day shut</span>
+          <input
+            type="date"
+            value={form.start_date}
+            onChange={(e) => setForm(f => ({ ...f, start_date: e.target.value }))}
+            className="w-full px-2.5 py-1.5 text-[13px] rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-[11px] font-semibold text-gray-600 mb-1">Last day shut</span>
+          <input
+            type="date"
+            value={form.end_date}
+            onChange={(e) => setForm(f => ({ ...f, end_date: e.target.value }))}
+            className="w-full px-2.5 py-1.5 text-[13px] rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+          />
+        </label>
+      </div>
+      <label className="block">
+        <span className="block text-[11px] font-semibold text-gray-600 mb-1">
+          Note <span className="font-normal text-gray-400">— optional, e.g. who confirmed the dates</span>
+        </span>
+        <input
+          value={form.notes}
+          onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
+          className="w-full px-2.5 py-1.5 text-[13px] rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+        />
+      </label>
+      <div className="flex items-center justify-end gap-2 pt-0.5">
+        <button onClick={() => setEditingId(null)} className="px-3 py-1.5 text-[12.5px] text-gray-600 hover:text-gray-900">
+          Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={saving || !form.label.trim() || !form.start_date || !form.end_date}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary-600 text-white text-[12.5px] font-semibold hover:bg-primary-700 disabled:opacity-40"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {editingId === 'new' ? 'Add closure' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="pb-10">
+      <div className="rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 mb-5 flex items-start gap-2.5">
+        <CalendarOff className="w-4 h-4 text-primary-600 mt-0.5 flex-shrink-0" />
+        <p className="text-[12.5px] text-primary-900 leading-relaxed">
+          Days listed here never count towards any chase threshold. While a factory is shut, the
+          clock on every warning, chaser email and turnaround statistic stops — so nothing gets
+          flagged for going unanswered by a factory nobody is working in.
+          Chinese New Year is the usual reason; the dates move every year, so they are typed in
+          rather than worked out.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12px] text-gray-500">
+          {rows.filter(r => r.active).length} active{' '}
+          {rows.filter(r => r.active).length === 1 ? 'closure' : 'closures'}
+        </p>
+        {editingId !== 'new' && (
+          <button
+            onClick={startNew}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 text-white text-[12.5px] font-semibold hover:bg-primary-700"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add closure
+          </button>
+        )}
+      </div>
+
+      {editingId === 'new' && <div className="mb-4">{editor}</div>}
+
+      {rows.length === 0 && editingId !== 'new' && (
+        <div className="rounded-xl border border-dashed border-gray-300 py-12 text-center">
+          <CalendarOff className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+          <p className="text-[13px] text-gray-500">No closures yet.</p>
+          <p className="text-[12px] text-gray-400 mt-0.5">Business-day counts currently run straight through Chinese New Year.</p>
+        </div>
+      )}
+
+      {sections.map(({ phase, heading }) => {
+        const group = rows.filter(r => phaseOf(r) === phase);
+        if (group.length === 0) return null;
+        return (
+          <section key={phase} className="mb-6">
+            <div className="flex items-center gap-2.5 mb-2">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-gray-500">{heading}</h3>
+              <span className="flex-1 h-px bg-gray-200" />
+            </div>
+            <div className="space-y-2">
+              {group.map(c => {
+                if (editingId === c.id) return <div key={c.id}>{editor}</div>;
+                const muted = !c.active || phase === 'past';
+                return (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      'rounded-xl border bg-white px-4 py-3 flex items-start gap-4 transition-colors',
+                      phase === 'current' && c.active ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200',
+                      muted && 'opacity-60',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13.5px] font-semibold text-gray-900">{c.label}</span>
+                        {phase === 'current' && c.active && (
+                          <span className="text-[9.5px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">
+                            shut now
+                          </span>
+                        )}
+                        {!c.active && (
+                          <span className="text-[9.5px] font-bold uppercase tracking-wide text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
+                            ignored
+                          </span>
+                        )}
+                        <span className="text-[9.5px] font-semibold uppercase tracking-wide text-gray-400">
+                          {c.factory || 'all factories'}
+                        </span>
+                      </div>
+                      <p className="text-[12.5px] text-gray-700 mt-0.5 tabular-nums">
+                        {closureRange(c.start_date, c.end_date)}
+                        <span className="text-gray-400">
+                          {' · '}{c.calendar_days} days{' · '}
+                          {c.active ? `${c.working_days} working days not counted` : `${c.working_days} working days (not applied)`}
+                        </span>
+                      </p>
+                      {c.notes && <p className="text-[11.5px] text-gray-400 mt-1 leading-snug">{c.notes}</p>}
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => toggleActive(c)}
+                        title={c.active ? 'Stop applying this closure' : 'Apply this closure again'}
+                        className="px-2 py-1 rounded-md text-[11px] font-semibold text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                      >
+                        {c.active ? 'Ignore' : 'Apply'}
+                      </button>
+                      <button
+                        onClick={() => startEdit(c)}
+                        title="Edit"
+                        className="p-1.5 rounded-md text-gray-400 hover:text-gray-800 hover:bg-gray-100"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => remove(c)}
+                        title="Delete"
+                        className="p-1.5 rounded-md text-gray-300 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

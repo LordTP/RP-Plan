@@ -70,6 +70,7 @@ from routers import shipment_drafts as shipment_drafts_router
 from routers import qa as qa_router
 from routers import size_guide as size_guide_router
 from routers import notifications as notifications_router
+from routers import closures as closures_router
 app.include_router(users_router.router)
 app.include_router(components_router.router)
 app.include_router(tracking_router.router)
@@ -85,6 +86,7 @@ app.include_router(shipment_drafts_router.router)
 app.include_router(qa_router.router)
 app.include_router(size_guide_router.router)
 app.include_router(notifications_router.router)
+app.include_router(closures_router.router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
@@ -395,6 +397,18 @@ async def startup_event():
     seed_db = SessionLocal()
     try:
         app_settings.seed_defaults(seed_db)
+    finally:
+        seed_db.close()
+
+    # Seed the factory closure calendar with upcoming Chinese New Year windows.
+    # Only fires when the table is empty, so deleted rows stay deleted.
+    seed_db = SessionLocal()
+    try:
+        added = closures_router.seed_default_closures(seed_db)
+        if added:
+            print(f"Seeded {added} Chinese New Year closure windows (estimates — confirm in Settings)")
+    except Exception as e:
+        print(f"Could not seed factory closures: {e}")
     finally:
         seed_db.close()
 

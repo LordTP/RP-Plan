@@ -23,6 +23,8 @@ from models import (
 )
 import app_settings
 import email_service
+# One shared business-day counter — notifications used to carry its own copy.
+from sample_helpers import business_days_between
 
 
 logger = logging.getLogger(__name__)
@@ -67,25 +69,6 @@ def get_recipient_emails(db: Session, automation_key: str) -> List[str]:
             seen.add(addr.lower())
             emails.append(addr)
     return emails
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Business-day arithmetic (Mon–Fri)
-# ─────────────────────────────────────────────────────────────────────────
-
-def business_days_between(start: datetime, end: datetime) -> int:
-    """Count Mon–Fri days strictly between start and end (start not counted;
-    end IS counted). Weekends dropped. Negative if end < start."""
-    if end < start:
-        return -business_days_between(end, start)
-    total = 0
-    d = start.date()
-    end_date = end.date()
-    while d < end_date:
-        d += timedelta(days=1)
-        if d.weekday() < 5:  # 0=Mon .. 4=Fri
-            total += 1
-    return total
 
 
 # ─────────────────────────────────────────────────────────────────────────

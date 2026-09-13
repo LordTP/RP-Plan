@@ -1,7 +1,7 @@
 """
 Database models for China Orderbook Portal
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey, Text, Enum, UniqueConstraint, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text, Enum, UniqueConstraint, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -610,3 +610,38 @@ class NotificationSent(Base):
     first_sent_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     reminder_sent_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)  # When the trigger condition no longer holds
+
+
+class FactoryClosure(Base):
+    """A stretch of days when the factories are shut and no work happens.
+
+    Chinese New Year is the reason this exists: plants go dark for two to
+    four weeks, and without this every chase threshold kept ticking through
+    the shutdown. Orders would pile into the warnings centre in February for
+    the crime of not being answered by a factory nobody was working in, and
+    the turnaround stats in analytics would score that factory as slow.
+
+    Dates covered by an active closure are skipped by business_days_between(),
+    so every threshold, chaser email and turnaround figure inherits this at
+    once rather than each growing its own exception.
+
+    Admin-entered rather than computed. CNY moves with the lunar calendar, but
+    more importantly the *shutdown* is much longer than the public holiday and
+    differs between plants, so there is no formula that gets it right —
+    somebody who has spoken to the factory has to type the window in.
+
+    `factory` NULL means the closure applies to everyone, which is how CNY is
+    normally used. The column is here from day one so that per-factory windows
+    are a later UI change rather than a schema migration.
+    """
+    __tablename__ = "factory_closures"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String(120), nullable=False)
+    start_date = Column(Date, nullable=False, index=True)
+    end_date = Column(Date, nullable=False, index=True)  # inclusive
+    factory = Column(String(255), nullable=True, index=True)
+    active = Column(Boolean, default=True, nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
