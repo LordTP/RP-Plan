@@ -20,8 +20,24 @@ triggers:
 Deploy via DigitalOcean Console (Thomas uses the DO web console, not SSH):
 
 ```bash
-cd /root/app && git pull && docker compose up -d --build frontend backend && docker restart app_nginx_1
+cd /root/app && git pull && docker compose up -d --build frontend backend && docker restart app_nginx_1 && docker image prune -a -f
 ```
+
+The trailing prune is not optional housekeeping. Every deploy leaves the
+previous frontend and backend images behind, and the droplet only has 24GB:
+in Sep 2026 it reached 91% full with 122 images, 5 of them in use and 12.75GB
+reclaimable. At 100% the next build fails AND Postgres can't write, which is
+a live outage rather than a failed deploy.
+
+It runs AFTER the build and nginx restart on purpose — if the build fails,
+the old images are still there and the running containers keep serving.
+
+`prune -a` removes every image no running container uses, including the
+`python:3.11-slim` and `node:18-alpine` bases, so the next build re-downloads
+them and takes a few minutes longer. It does NOT touch Local Volumes, so the
+Postgres data is safe.
+
+Check disk with `df -h /` and `docker system df` if a build ever fails oddly.
 
 ## Environment
 
