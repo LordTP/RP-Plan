@@ -30,6 +30,14 @@ const SAMPLE_TAGS: Record<SampleType, { label: string; className: string }> = {
  *  This choice is permanent — the backend locks sample_type at create and the
  *  edit endpoints reject cross-type field writes — so it gets real estate and
  *  an explicit warning rather than a 140px dropdown. */
+/** Display-only shortening. The stored value stays the canonical string —
+ *  this is purely so eight position pills don't wrap into a wall. */
+function shortPosition(p: string): string {
+  return p
+    .replace('CHEST POSITION – ', 'CHEST ')
+    .replace(' AS WORN', '');
+}
+
 const SAMPLE_TYPE_CARDS: {
   value: SampleType;
   title: string;
@@ -78,11 +86,17 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
   const [templateOpen, setTemplateOpen] = useState(false);
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  // Which library entry the copy came from. The duplicate check excludes it:
+  // flagging the entry you deliberately copied from as a surprise discovery
+  // is noise, and it offered "Copy details" for the one you'd just copied.
+  const [copiedFromId, setCopiedFromId] = useState<number | null>(null);
+  const [copiedColour, setCopiedColour] = useState<string>('');
 
   const reset = useCallback(() => {
     setSampleType(''); setName(''); setColour(''); setDescription('');
     setPositions([]); setSpecUrl(''); setSupplierNotes('');
-    setSelectedOrderIds(new Set()); setTemplateOpen(false); setCopiedFrom(null);
+    setSelectedOrderIds(new Set()); setTemplateOpen(false); setCopiedFrom(null); setCopiedFromId(null); setCopiedColour('');
+    setShowExtras(false);
   }, []);
 
   // Mount hidden, then transition in on the next frame — a CSS transition
@@ -129,6 +143,11 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
     return () => window.removeEventListener('keydown', onKey);
   }, [open, dirty, onClose]);
 
+  const extrasFilled = [specUrl, description, supplierNotes].filter((v) => v.trim()).length;
+  const [showExtras, setShowExtras] = useState(false);
+  const stillIdenticalToCopy = copiedFrom != null
+    && name.trim().toUpperCase() === copiedFrom.trim().toUpperCase()
+    && colour.trim().toUpperCase() === copiedColour.trim().toUpperCase();
   const colourRequired = sampleType === 'strike_off' || sampleType === 'lab_dip';
   const colourMissing = colourRequired && !colour.trim();
   const identityDone = Boolean(name.trim()) && Boolean(sampleType) && !colourMissing;
@@ -152,7 +171,14 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
     setSpecUrl(entry.spec_url || '');
     setSupplierNotes(entry.supplier_notes || '');
     setCopiedFrom(entry.name);
+    setCopiedFromId(entry.id);
+    setCopiedColour(entry.colour || '');
     setTemplateOpen(false);
+    // A copied entry can carry spec/description/notes; reveal them rather
+    // than leaving prefilled values behind a collapsed heading.
+    if ((entry.description || '').trim() || (entry.spec_url || '').trim() || (entry.supplier_notes || '').trim()) {
+      setShowExtras(true);
+    }
     requestAnimationFrame(() => nameRef.current?.focus());
   }
 
@@ -304,32 +330,37 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
               <section className={cn('transition-opacity', !sampleType && 'opacity-40 pointer-events-none select-none')}>
                 <StepHeading n={2} title="Identity" done={identityDone} />
 
+                {/* One notice, not two. Copying then leaving the identity
+                    untouched really would create a twin, so that's worth
+                    saying — but as the next step of the copy you just made,
+                    not as a separate "already in the library" discovery about
+                    the entry you chose yourself. */}
                 {copiedFrom && (
-                  <p className="text-[10px] text-primary-700 bg-primary-50 border border-primary-100 rounded px-2 py-1 mb-2">
-                    Details copied from <strong>{copiedFrom}</strong>. This is still a brand-new entry — edit anything below.
-                  </p>
+                  stillIdenticalToCopy ? (
+                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mb-2 leading-relaxed">
+                      Copied from <strong>{copiedFrom}</strong>. Change the name or colour —
+                      as-is this creates a second entry identical to it.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-primary-700 bg-primary-50 border border-primary-100 rounded px-2.5 py-1.5 mb-2 leading-relaxed">
+                      Details copied from <strong>{copiedFrom}</strong>. This is a brand-new entry.
+                    </p>
+                  )
                 )}
 
-                <Field label="Name" required>
-                  <input
-                    ref={nameRef}
-                    value={name}
-                    onChange={(e) => setName(e.target.value.toUpperCase())}
-                    placeholder="CHEST PRINT"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </Field>
-
-                {sampleType && (
-                  <DuplicateWarning
-                    name={name}
-                    sampleType={sampleType}
-                    colour={colour}
-                    onCopy={applyTemplate}
-                  />
-                )}
-
-                <div className="grid grid-cols-2 gap-3 mt-2.5">
+                {/* The two required fields share a row — everything below is
+                    optional and lives behind the disclosure, so what's on
+                    screen by default is exactly what gates the create. */}
+                <div className="grid grid-cols-[1fr_170px] gap-3">
+                  <Field label="Name" required>
+                    <input
+                      ref={nameRef}
+                      value={name}
+                      onChange={(e) => setName(e.target.value.toUpperCase())}
+                      placeholder="CHEST PRINT"
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    />
+                  </Field>
                   <Field label="Colour" required={colourRequired}>
                     <input
                       value={colour}
@@ -341,15 +372,18 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
                       )}
                     />
                   </Field>
-                  <Field label="Spec URL">
-                    <input
-                      value={specUrl}
-                      onChange={(e) => setSpecUrl(e.target.value)}
-                      placeholder="https://…"
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </Field>
                 </div>
+
+                {sampleType && (
+                  <DuplicateWarning
+                    name={name}
+                    sampleType={sampleType}
+                    colour={colour}
+                    excludeId={copiedFromId}
+                    onCopy={applyTemplate}
+                  />
+                )}
+
 
                 {/* Positions are a strike-off concept only — a lab dip or a
                     label has nowhere to sit on the garment. */}
@@ -370,7 +404,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
                                 : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700',
                             )}
                           >
-                            {p}
+                            {shortPosition(p)}
                           </button>
                         );
                       })}
@@ -378,25 +412,58 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
                   </Field>
                 )}
 
-                <Field label="Description" className="mt-2.5">
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={2}
-                    placeholder="Optional — what this component is"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </Field>
+                {/* Spec URL, description and supplier notes are all optional
+                    and rarely filled at create time — they were adding three
+                    fields' worth of scroll to every add. Collapsed by default,
+                    with a count so nothing filled in is ever hidden silently. */}
+                {/* State-driven rather than a <details open={...}>: binding
+                    `open` to "has content" would snap it back open every time
+                    React re-rendered, so you could never collapse it again
+                    after typing. */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowExtras((v) => !v)}
+                    className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700"
+                  >
+                    <ChevronRight className={cn('w-3 h-3 transition-transform', showExtras && 'rotate-90')} />
+                    More details
+                    {extrasFilled > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-primary-100 text-primary-700 text-[9px] tabular-nums normal-case tracking-normal">
+                        {extrasFilled}
+                      </span>
+                    )}
+                  </button>
 
-                <Field label="Supplier notes" className="mt-2.5">
-                  <textarea
-                    value={supplierNotes}
-                    onChange={(e) => setSupplierNotes(e.target.value)}
-                    rows={2}
-                    placeholder="Anything the factory should know"
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </Field>
+                  <div className={cn('mt-2.5 space-y-2.5', !showExtras && 'hidden')}>
+                    <Field label="Spec URL">
+                      <input
+                        value={specUrl}
+                        onChange={(e) => setSpecUrl(e.target.value)}
+                        placeholder="https://…"
+                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </Field>
+                    <Field label="Description">
+                      <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={2}
+                        placeholder="What this component is"
+                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </Field>
+                    <Field label="Supplier notes">
+                      <textarea
+                        value={supplierNotes}
+                        onChange={(e) => setSupplierNotes(e.target.value)}
+                        rows={2}
+                        placeholder="Anything the factory should know"
+                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                    </Field>
+                  </div>
+                </div>
               </section>
             </div>
 
@@ -565,11 +632,14 @@ function Field({
  *  the write: show the match, offer to copy its details, let them proceed
  *  knowingly. */
 function DuplicateWarning({
-  name, sampleType, colour, onCopy,
+  name, sampleType, colour, excludeId, onCopy,
 }: {
   name: string;
   sampleType: SampleType;
   colour: string;
+  /** The entry the user copied from, if any — never warn about that one.
+   *  It isn't a discovery, and offering "Copy details" for it is circular. */
+  excludeId: number | null;
   onCopy: (entry: CanonicalComponent) => void;
 }) {
   const [matches, setMatches] = useState<CanonicalComponent[]>([]);
@@ -588,13 +658,15 @@ function DuplicateWarning({
         const data = await componentsApi.listLibrary({ q: trimmed, sample_type: sampleType, include_blank: true });
         // Out-of-order responses: only the newest keystroke's result wins.
         if (id !== reqId.current) return;
-        setMatches(data.components.filter((c) => (c.name || '').toUpperCase() === trimmed));
+        setMatches(data.components.filter(
+          (c) => (c.name || '').toUpperCase() === trimmed && c.id !== excludeId,
+        ));
       } catch {
         if (id === reqId.current) setMatches([]);
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [trimmed, sampleType]);
+  }, [trimmed, sampleType, excludeId]);
 
   // A different colour is a legitimately different component, so only the
   // same-colour matches are worth interrupting for.
