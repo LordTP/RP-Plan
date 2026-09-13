@@ -1520,8 +1520,20 @@ async def update_component_library_entry(
     """Update canonical identity fields (name, description, colour, spec_url,
     supplier_notes). Change propagates to every instance by definition.
 
-    Suppliers can call this only when the canonical has an instance on one
-    of their POs — same 'natural scoping' as the list/get endpoints.
+    Suppliers can call this only when EVERY instance of the canonical sits on
+    one of their POs.
+
+    It used to be enough to have one instance on one of their POs — the same
+    'natural scoping' the list and get endpoints use. That was safe while an
+    identity edit was a local thing. It stopped being safe when the rename
+    started propagating to every linked instance: sharing a single style with
+    a canonical was then enough to rename that component on another factory's
+    styles too. A sweep of the component surface caught it renaming ACME-99's
+    component from a PRIME-23 login.
+
+    Reading stays naturally scoped — the list and detail endpoints already
+    filter out instances the supplier can't see. It's only WRITING identity
+    that now needs to own the whole thing.
     """
     canonical = db.query(Component).filter(Component.id == canonical_id).first()
     if not canonical:
@@ -1529,15 +1541,28 @@ async def update_component_library_entry(
 
     supplier_clauses = supplier_filter_clause(current_user)
     if supplier_clauses:
-        has_scoped_instance = (
+        total_instances = (
+            db.query(OrderComponent)
+            .filter(OrderComponent.canonical_id == canonical_id)
+            .count()
+        )
+        scoped_instances = (
             db.query(OrderComponent)
             .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
             .filter(OrderComponent.canonical_id == canonical_id)
             .filter(*supplier_clauses)
-            .first()
+            .count()
         )
-        if not has_scoped_instance:
+        if scoped_instances == 0:
             raise HTTPException(status_code=404, detail="Component not found")
+        if scoped_instances != total_instances:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This component is also used on another factory's styles, so its "
+                    "details can't be edited here. Ask Source Lab to make the change."
+                ),
+            )
 
     EDITABLE_FIELDS = {'name', 'description', 'colour', 'position', 'spec_url', 'supplier_notes'}
     # Normalise: name goes uppercase, position goes JSON-array + validated
