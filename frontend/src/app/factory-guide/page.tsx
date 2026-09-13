@@ -344,16 +344,24 @@ function FactoryGuideContent() {
 
           <Step number="2.2" title="Library — browse + edit identity">
             <p>
-              Left rail: alphabetical list of every add-event group, each with a colour chip and (for Strike Offs) a position chip. Click one to see identity + rollup + all styles in that group.
+              A rail of cards down the left, <strong>one per name</strong>, each showing how many
+              separate entries share that name and how many styles they cover between them. Click a
+              card and the right panel lists every entry under it — its colour, its position (Strike
+              Offs only), the POs it touches and each style&apos;s status.
             </p>
-            <MockShot caption="Library tab — left rail lists add-event groups with a colour chip; right panel shows identity, rollup counts, and every style linked to the entry.">
+            <p>
+              Grouped by name because a name is a label, not an identity. Every Add Component mints a
+              fresh entry, so &quot;Rib Fabric&quot; can be a dozen unrelated ones. A flat list of
+              those is unreadable, which is exactly what the old table gave you.
+            </p>
+            <MockShot caption="Library tab — a card per name on the left; the right panel lists every separate entry sharing it, with its styles and statuses.">
               <LibraryTabMock />
             </MockShot>
             <Tips>
-              <Tip icon={Tag}>Names are stored UPPERCASE, but the library does not dedupe by name. Two entries with the same name can exist side-by-side if they came from separate add-events.</Tip>
+              <Tip icon={Tag}>Names are stored UPPERCASE. Entries are never merged by name — two with the same name sit under the same card as separate entries, because they came from separate adds.</Tip>
               <Tip icon={Tag}>Colour is <strong>required</strong> for Strike Offs + Lab Dips, optional for Labels.</Tip>
               <Tip icon={Tag}>Position is Strike-Off-only. Pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).</Tip>
-              <Tip icon={Search}>Search on the left rail matches name, description, colour, and supplier notes.</Tip>
+              <Tip icon={Search}>Search matches name, description, colour and supplier notes — and it narrows the entries inside a card, not just which cards show.</Tip>
             </Tips>
             <Callout type="warn" title="Editing identity propagates within the add-event group">
               Rename or update the colour on the Library and it hits every instance in that same add-event group — not other library entries that happen to share the name. If a change needs to reach a style in a different entry, edit that entry too, or delete + re-add so it lands in the same group.
@@ -451,7 +459,7 @@ function FactoryGuideContent() {
               clear. Expand any card to see every style in that group with its own status.
             </p>
             <MockShot caption="Worklist — one card per add-event, status tiles across the top double as filters.">
-              <InProgressMock />
+              <WorklistMock />
             </MockShot>
             <Tips>
               <Tip icon={Tag}>Cards / Table toggle — cards to scan, table when you want a dense list.</Tip>
@@ -1721,96 +1729,113 @@ function AddModalMock() {
   );
 }
 
-function InProgressMock() {
-  const groups: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; styles: number; attention: number; active?: boolean }[] = [
-    { name: 'CHEST PRINT — HOME KIT BLUE', type: 'strike_off', styles: 5, attention: 3, active: true },
-    { name: 'PEACOAT NAVY', type: 'lab_dip', styles: 4, attention: 1 },
-    { name: 'CARE LABEL — STANDARD', type: 'label', styles: 3, attention: 0 },
-    { name: 'SLEEVE EMB — CHELSEA CREST', type: 'strike_off', styles: 2, attention: 0 },
+/**
+ * The Worklist as it actually looks: status tiles that double as filters, a
+ * filter row, then a grid of add-event cards. Redrawn from the live page —
+ * the previous mock still showed the old In Progress left-rail layout with
+ * only the tab label changed, which is arguably worse than not having a
+ * picture at all.
+ */
+function WorklistMock() {
+  const tiles = [
+    { label: 'IN FLIGHT', n: '9', active: true },
+    { label: 'NEEDS ATTENTION', n: '1', red: true },
+    { label: 'REJECTED', n: '1', red: true },
+    { label: 'STALE 14D+', n: '0' },
+    { label: 'OUTSTANDING', n: '5' },
+    { label: 'RECEIVED', n: '3' },
   ];
+  const cards: {
+    type: 'strike_off' | 'lab_dip' | 'label';
+    name: string; sub: string; chips: { t: string; tone: 'red' | 'amber' | 'blue' }[];
+    exfac: string; attention?: string; multi?: boolean;
+  }[] = [
+    { type: 'strike_off', name: 'CHEST PRINT — HOME KIT BLUE', sub: '2 styles · 2 POs',
+      chips: [{ t: 'Rejected', tone: 'red' }, { t: 'Outstanding', tone: 'amber' }],
+      exfac: '06/11/2026', attention: '1 needs attention', multi: true },
+    { type: 'strike_off', name: 'CHEST PRINT — HOME KIT BLUE', sub: '1 style · PO 5252 · LEVY MERCHANDISING',
+      chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '30/10/2026' },
+    { type: 'lab_dip', name: 'PEACOAT NAVY', sub: '1 style · PO 5261 · TRUEPATH RETAIL',
+      chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '31/10/2026' },
+    { type: 'label', name: 'CARE LABEL — STANDARD', sub: '2 styles · 2 POs',
+      chips: [{ t: '2 Received', tone: 'blue' }], exfac: '13/10/2026', multi: true },
+  ];
+  const chipTone = {
+    red: 'bg-red-50 text-red-700',
+    amber: 'bg-amber-50 text-amber-700',
+    blue: 'bg-blue-50 text-blue-700',
+  } as const;
+
   return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-4xl mx-auto">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-          <p className="text-sm font-bold text-gray-900">Components</p>
-          <div className="flex items-center gap-3">
-            <span className="pb-2 text-[11px] font-medium text-gray-500">Library</span>
-            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">Worklist</span>
-          </div>
+    <div className="p-3 bg-gray-50">
+      {/* Tabs */}
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-sm font-extrabold text-gray-900">Components</p>
+          <span className="text-[10px] text-gray-400">Every sample still in flight</span>
+          <span className="ml-auto inline-flex rounded-md border border-gray-200 bg-white overflow-hidden">
+            <span className="px-2 py-1 text-[10px] font-bold text-violet-700 bg-violet-50">Worklist</span>
+            <span className="px-2 py-1 text-[10px] font-medium text-gray-500">Library</span>
+          </span>
+          <span className="px-2 py-1 rounded-md bg-primary-600 text-white text-[10px] font-semibold">+ Add component</span>
         </div>
-        <div className="grid grid-cols-[240px_1fr]">
-          {/* Left rail */}
-          <div className="border-r border-gray-100 bg-gray-50/40 p-2 space-y-1">
-            <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[10px] text-gray-400 bg-white flex items-center mb-2">
-              <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
-              Search components…
+
+        {/* Status tiles — these are the filters */}
+        <div className="grid grid-cols-6 gap-1.5 mb-2">
+          {tiles.map(t => (
+            <div key={t.label} className={cn(
+              'rounded-md border bg-white px-2 py-1.5',
+              t.active ? 'border-primary-400 ring-1 ring-primary-200' : 'border-gray-200',
+            )}>
+              <p className="text-[7.5px] font-bold tracking-wide text-gray-500">{t.label}</p>
+              <p className={cn('text-sm font-extrabold', t.red ? 'text-red-600' : 'text-gray-900')}>{t.n}</p>
             </div>
-            {groups.map((g, i) => (
-              <div key={i} className={cn(
-                'p-2 rounded border text-[11px]',
-                g.active ? 'bg-violet-50 border-l-4 border-l-violet-500 border-gray-200' : 'bg-white border-gray-200'
-              )}>
-                <div className="flex items-center gap-1.5">
-                  <TypeBadge type={g.type} />
-                  <span className="font-semibold text-gray-900 truncate flex-1">{g.name}</span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1 tabular-nums flex items-center gap-1.5">
-                  <span>{g.styles} styles</span>
-                  {g.attention > 0 && (
-                    <>
-                      <span className="text-gray-300">·</span>
-                      <span className="text-red-600 font-semibold">{g.attention} needs attention</span>
-                    </>
+          ))}
+        </div>
+
+        {/* Filter row */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <div className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[9px] text-gray-400">
+            Search component, style, PO, customer…
+          </div>
+          <span className="text-[8px] font-bold text-gray-400">TYPE</span>
+          {['All', 'Strike Off', 'Lab Dip', 'Label'].map((x, i) => (
+            <span key={x} className={cn('px-1.5 py-0.5 rounded-full border text-[9px] font-semibold',
+              i === 0 ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-500')}>{x}</span>
+          ))}
+          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Cards</span>
+          <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-500 text-[9px] font-semibold">Table</span>
+        </div>
+
+        {/* Add-event cards */}
+        <div className="grid grid-cols-2 gap-1.5">
+          {cards.map((c, i) => (
+            <div key={i} className={cn('rounded-lg border bg-white overflow-hidden',
+              c.attention ? 'border-red-200' : 'border-gray-200')}>
+              <div className="p-2">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-sm border border-gray-300" />
+                  <TypeBadge type={c.type} />
+                  {c.attention && (
+                    <span className="text-[8px] font-bold text-white bg-red-500 px-1 py-0.5 rounded-full">{c.attention}</span>
                   )}
                 </div>
+                <p className="text-[11px] font-extrabold text-gray-900 leading-tight">{c.name}</p>
+                <p className="text-[9px] text-gray-500 mt-0.5">{c.sub}</p>
+                <div className="flex gap-1 mt-1">
+                  {c.chips.map(ch => (
+                    <span key={ch.t} className={cn('text-[8.5px] font-semibold px-1.5 py-0.5 rounded', chipTone[ch.tone])}>{ch.t}</span>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-          {/* Right */}
-          <div className="p-4 space-y-3">
-            <div className="rounded-lg border border-gray-200 p-3 flex items-center gap-3">
-              <TypeBadge type="strike_off" />
-              <p className="text-sm font-bold text-gray-900 flex-1">CHEST PRINT — HOME KIT BLUE</p>
-              <span className="text-[10px] font-bold text-red-700 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">3 needs attention</span>
-              <span className="text-[10px] font-semibold text-violet-600">2 selected · Bulk edit</span>
-            </div>
-            {/* PO group */}
-            <div>
-              <div className="flex items-center gap-2 px-1 mb-1.5">
-                <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
-                <span className="px-2 py-0.5 rounded-md bg-gray-900 text-white text-[10px] font-bold tabular-nums">PO 5205 · S004450A</span>
-                <span className="text-[10px] text-gray-700 font-semibold">STOKE</span>
-                <span className="text-[10px] text-gray-500">· PRIME-23</span>
-                <span className="text-[10px] text-gray-400 ml-auto">3 styles</span>
-              </div>
-              <div className="space-y-1">
-                {[
-                  { code: 'S004450A-0001', desc: 'Home Kit Body · Blue', status: 'OUTSTANDING', tone: 'amber' as const, days: '18d', attention: true },
-                  { code: 'S004450A-0003', desc: 'Home Kit Body · Red', status: 'RECEIVED', tone: 'blue' as const, days: '5d', attention: false },
-                  { code: 'S004450K-0001', desc: 'Kids Kit Body · Blue', status: 'OUTSTANDING', tone: 'amber' as const, days: '9d', attention: false },
-                ].map((r, i) => (
-                  <div key={i} className={cn(
-                    'rounded-lg bg-white ring-1 flex items-stretch',
-                    r.attention ? 'ring-red-100' : 'ring-amber-100'
-                  )}>
-                    <div className="flex items-center gap-2 pl-3 pr-3 py-2 min-w-[220px] border-r border-gray-100">
-                      <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
-                      <StatusPill tone={r.tone}>{r.status}</StatusPill>
-                      {r.attention && <span className="text-red-600 text-[10px] font-semibold tabular-nums ml-auto">{r.days}</span>}
-                    </div>
-                    <div className="flex-1 py-2 px-3 min-w-0">
-                      <p className="text-[11px] font-bold text-gray-900">{r.code}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{r.desc}</p>
-                    </div>
-                    <div className="py-2 pr-3 flex items-center">
-                      <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
-                    </div>
-                  </div>
-                ))}
+              <div className="px-2 py-1 border-t border-gray-100 bg-gray-50/60 flex items-center gap-2">
+                <span className="text-[8.5px] text-gray-400">idle 0d</span>
+                <span className="text-[8.5px] text-gray-500">ex-fac {c.exfac}</span>
+                <span className="ml-auto text-[8.5px] font-semibold text-primary-600">
+                  {c.multi ? '\u203a Styles' : 'Open'}
+                </span>
               </div>
             </div>
-          </div>
-        </div>
+          ))}
       </div>
     </div>
   );
