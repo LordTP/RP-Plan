@@ -317,22 +317,28 @@ function FactoryGuideContent() {
           </Step>
 
           {/* 2. The two views on /components */}
-          <Step number="2.1" title="The /components page — Library + In Progress">
+          <Step number="2.1" title="The /components page — Worklist + Library">
             <p>
               Everything happens under <strong>Components</strong> in the nav. Two tabs at the top:
             </p>
             <Table>
               <TableRow
-                label="Library"
-                value="The add-event catalogue — one row per group of instances that were created together in a single Add Component action. Browse, edit shared identity (name, colour, position, spec), see rollup counts and every style in the group. Bulk edit across every PO in the group from here."
+                label="Worklist"
+                value="What needs chasing today. One card per add-event — the group of styles created together in a single Add Component action — with status tiles across the top you can click to filter (Needs attention, In flight, and so on). Expand a card to see every style in the group. There's a Cards / Table toggle if you'd rather scan a dense list."
               />
               <TableRow
-                label="In Progress"
-                value="The working queue — components with unfinished samples. Left rail lists components that need chasing; right panel shows PO groups and instance cards. Click a card to open an edit modal in place."
+                label="Library"
+                value="What components exist. A rail of cards, one per NAME, and a detail panel listing every separate entry sharing that name — because one name is not one component. Each Add Component creates a fresh entry, so 'Rib Fabric' can be a dozen unrelated ones across different POs and seasons."
               />
             </Table>
-            <Callout type="info" title="Library vs In Progress in one line">
-              <strong>Library</strong> = "what components exist?"  ·  <strong>In Progress</strong> = "what needs chasing today?"
+            <Callout type="info" title="Worklist vs Library in one line">
+              <strong>Worklist</strong> = "what needs chasing today?"  ·  <strong>Library</strong> = "what components exist?"
+            </Callout>
+            <Callout type="warn" title="OUT OF STEP — the one alarm in the Library">
+              If an entry's own styles hold different statuses, it's flagged <strong>OUT OF STEP</strong>.
+              Entries that merely share a name differ all the time — different POs, different seasons,
+              approved months apart — and that's normal. But one entry is one add and one decision, so
+              its styles should move together. When one lags behind, somebody missed it.
             </Callout>
           </Step>
 
@@ -432,27 +438,31 @@ function FactoryGuideContent() {
             </Tips>
           </Step>
 
-          {/* 4. In Progress + editing */}
-          <Step number="4.1" title="In Progress — the working queue">
+          {/* 4. Worklist + editing */}
+          <Step number="4.1" title="Worklist — the working queue">
             <p>
-              Left rail: components with unfinished work (anything that's not Approved or on a shipped style). Each row shows how many styles are affected and, in red, how many of those need attention (rejected, stale outstanding, or ex-fac urgent).
+              One card per <strong>add-event</strong> — the group of styles created together in a single
+              Add Component action — showing the component's name, colour, sample type, how many styles
+              it covers and how long it has been waiting.
             </p>
             <p>
-              Click a row to see its instances grouped by PO — with customer, factory, and each style's sample status.
+              Status tiles run across the top. They are filters, not just counts: click{' '}
+              <strong>Needs attention</strong> to cut the list to the urgent ones, click it again to
+              clear. Expand any card to see every style in that group with its own status.
             </p>
-            <MockShot caption="In Progress tab — left rail lists components with unfinished work, right panel groups instances by PO.">
+            <MockShot caption="Worklist — one card per add-event, status tiles across the top double as filters.">
               <InProgressMock />
             </MockShot>
             <Tips>
-              <Tip icon={Tag}>Type filter (All / SO / LD / LB) at the top of the left rail scopes the whole tab.</Tip>
-              <Tip icon={Tag}>Hide shipped drops components whose orders are already on a shipment.</Tip>
-              <Tip icon={Tag}>Needs attention only shrinks the list to just the urgent stuff.</Tip>
+              <Tip icon={Tag}>Cards / Table toggle — cards to scan, table when you want a dense list.</Tip>
+              <Tip icon={Tag}>Type filter (All / SO / LD / LB) scopes the whole tab.</Tip>
+              <Tip icon={Tag}>Search narrows to a PO number, style code or component name.</Tip>
             </Tips>
           </Step>
 
           <Step number="4.2" title="Editing a single instance">
             <p>
-              Click any instance card in the In Progress right panel and an edit modal opens on top — no page navigation. Set status, received date, approved date, or reject with a reason. Save and the change immediately reflects in both tabs.
+              Expand a Worklist card and click any style on it — an edit modal opens on top, no page navigation. Set status, received date, approved date, or reject with a reason. Save and the change immediately reflects in both tabs.
             </p>
             <MockShot caption="Sample lifecycle inside the instance edit modal — status pill, three field tiles, attempt history.">
               <ComponentCardMock
@@ -468,10 +478,17 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          {/* 5. Bulk edit */}
-          <Step number="5.1" title="Bulk edit across styles + POs">
+          {/* 5. Bulk edit — Source Lab only. Documented here so factories know
+              what Source Lab is doing on their components, not as a how-to. */}
+          <Step number="5.1" title="Bulk edit across styles + POs — Source Lab only">
+            <Callout type="warn" title="You won't see this — it's here so you know what's happening">
+              Bulk edit sets sample status, received and approved dates, which are Source Lab's
+              to set. The button doesn't appear for factory logins and the endpoint refuses the
+              request. This section explains what Source Lab is doing to your components, so a
+              status changing across several styles at once isn't a surprise.
+            </Callout>
             <p>
-              Tick the checkbox on multiple instance cards (or use the PO-level checkbox to grab a whole PO). A <strong>Bulk edit… (N)</strong> button appears in the right-panel header — click it to open the modal. The status dropdown has the full seven options (NOT REQUIRED / OUTSTANDING / P23 ADVISE UPDATE / LATE / RECEIVED / APPROVED / REJECTED). Received + Approved dates are separate optional field overrides.
+              Source Lab tick the checkbox on multiple styles (or use the PO-level checkbox to grab a whole PO). A dark <strong>bar floats up at the bottom of the screen</strong> showing how many are selected, with a <strong>Bulk edit</strong> button on it — the same bar you get on the orders table. The status dropdown has the full seven options (NOT REQUIRED / OUTSTANDING / P23 ADVISE UPDATE / LATE / RECEIVED / APPROVED / REJECTED). Received + Approved dates are separate optional field overrides.
             </p>
             <p>
               Picking <strong>REJECTED</strong> swaps in a red panel with the standard reason list (Colour / Placement / Stitch / Material / Spec / Print / Other) plus an optional note. Confirming closes the current attempt on each ticked instance and opens v+1 at OUTSTANDING with a fresh clock. Received / Approved dates are cleared per instance — this is a lifecycle event, not a field edit.
@@ -482,8 +499,10 @@ function FactoryGuideContent() {
             <p>
               You can set any combination of the three fields. If any of the ticked instances already have an Approved date and you're setting a new one, you'll see a warning before it overwrites.
             </p>
-            <Callout type="info" title="This is the big merch win">
-              Approve "CHEST PRINT — HOME KIT BLUE" across 6 styles on 3 POs in one action — no more clicking through each style individually.
+            <Callout type="info" title="Why it matters to you">
+              Source Lab can approve "CHEST PRINT — HOME KIT BLUE" across 6 styles on 3 POs in one
+              action. So several of your styles can move to APPROVED at the same moment from a
+              single decision — that's expected, not a glitch.
             </Callout>
             <Callout type="info" title="No accidental dismiss">
               The bulk edit modal only closes via the X or Cancel — clicking outside the card won't drop your work. Same behaviour on the single-instance edit modal.
@@ -1495,7 +1514,7 @@ function WarningEntryMock() {
 }
 
 
-/* ─── New mocks for the library-first Add flow + In Progress + Bulk edit ─── */
+/* ─── Mocks for the library-first Add flow, the Worklist and bulk edit ─── */
 
 function LibraryTabMock() {
   const items: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; colour?: string; position?: string; styles: number; customers: number; active?: boolean }[] = [
@@ -1512,7 +1531,7 @@ function LibraryTabMock() {
           <p className="text-sm font-bold text-gray-900">Components</p>
           <div className="flex items-center gap-3 border-b-2 border-transparent">
             <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">Library</span>
-            <span className="pb-2 text-[11px] font-medium text-gray-500">In Progress</span>
+            <span className="pb-2 text-[11px] font-medium text-gray-500">Worklist</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <div className="text-[10px] text-gray-400">+ Add component</div>
@@ -1589,7 +1608,7 @@ function LibraryTabMock() {
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">All styles using this</p>
-                <p className="text-[10px] font-semibold text-violet-600">Bulk edit…</p>
+                <p className="text-[10px] font-semibold text-violet-600">Bulk edit</p>
               </div>
               <div className="divide-y divide-gray-100 text-[11px]">
                 {[
@@ -1716,7 +1735,7 @@ function InProgressMock() {
           <p className="text-sm font-bold text-gray-900">Components</p>
           <div className="flex items-center gap-3">
             <span className="pb-2 text-[11px] font-medium text-gray-500">Library</span>
-            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">In Progress</span>
+            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">Worklist</span>
           </div>
         </div>
         <div className="grid grid-cols-[240px_1fr]">
@@ -1753,7 +1772,7 @@ function InProgressMock() {
               <TypeBadge type="strike_off" />
               <p className="text-sm font-bold text-gray-900 flex-1">CHEST PRINT — HOME KIT BLUE</p>
               <span className="text-[10px] font-bold text-red-700 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">3 needs attention</span>
-              <span className="text-[10px] font-semibold text-violet-600">Bulk edit… (0)</span>
+              <span className="text-[10px] font-semibold text-violet-600">2 selected · Bulk edit</span>
             </div>
             {/* PO group */}
             <div>
