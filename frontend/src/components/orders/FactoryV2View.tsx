@@ -34,6 +34,7 @@ import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
+import { statusPillStyle } from '@/features/component-shared';
 import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE, SHOW_COSTING } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
@@ -2272,18 +2273,42 @@ export function ComponentsSection({
                     {comp.sample_type === 'strike_off' ? 'SO' : comp.sample_type === 'lab_dip' ? 'LD' : 'LB'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1">
-                  {/* Quick status summary — only the component's chosen
-                      sample type renders a chip. */}
-                  {comp.sample_type === 'strike_off' && (
-                    <SampleAreaChip label="SO" done={(comp.strike_off_status || '').toUpperCase() === 'APPROVED' || (comp.strike_off_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.strike_off_approved} submissions={submissions} componentId={comp.id} sampleType="strike" />
-                  )}
-                  {comp.sample_type === 'lab_dip' && (
-                    <SampleAreaChip label="LD" done={(comp.lab_dip_status || '').toUpperCase() === 'APPROVED' || (comp.lab_dip_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.lab_dip_approved} submissions={submissions} componentId={comp.id} sampleType="lab" />
-                  )}
-                  {comp.sample_type === 'label' && (
-                    <SampleAreaChip label="LB" done={(comp.label_status || '').toUpperCase() === 'APPROVED' || (comp.label_status || '').toUpperCase() === 'NOT REQUIRED' || !!comp.label_approved} submissions={submissions} componentId={comp.id} sampleType="label" />
-                  )}
+                {/* The actual status, not just done/not-done.
+                    This used to be a tick chip, so the only way to find out
+                    whether something was outstanding, received or rejected was
+                    to expand every component in turn — which is what made the
+                    sampling section unreadable at a glance. The dates come
+                    along too, since "approved" without a date is half an
+                    answer. */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {(() => {
+                    const prefix = comp.sample_type;
+                    const status = (comp as any)[`${prefix}_status`] as string | null;
+                    const approved = (comp as any)[`${prefix}_approved`] as string | null;
+                    const received = (comp as any)[`${prefix}_received`] as string | null;
+                    const pill = statusPillStyle(status);
+                    const when = approved || received;
+                    return (
+                      <>
+                        {when && (
+                          <span className="text-[10px] text-gray-400 tabular-nums hidden sm:inline">
+                            {format(parseISO(String(when).split('T')[0]), 'd MMM')}
+                          </span>
+                        )}
+                        <AttemptBadge
+                          attemptNo={(comp as any)[`${prefix}_attempt_no`]}
+                          rejectionCount={(comp as any)[`${prefix}_rejection_count`]}
+                          size="xs"
+                        />
+                        <span className={cn(
+                          'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
+                          pill.bg, pill.text,
+                        )}>
+                          {pill.label}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
               </button>
 
@@ -2711,41 +2736,5 @@ function TimelineItem({ label, date, note, highlight, editable, onSave }: {
         )}
       </div>
     </div>
-  );
-}
-
-// Small at-a-glance chip showing the current state of a sample area on a component
-// — tick for approved, amber for in-progress, and a v2/v3 badge + prior-rejection
-// count when the area has been rejected at least once.
-function SampleAreaChip({
-  label,
-  done,
-  submissions,
-  componentId,
-  sampleType,
-}: {
-  label: string;
-  done: boolean;
-  submissions: SampleSubmission[];
-  componentId: number | null;
-  sampleType: SampleType;
-}) {
-  const matching = submissions.filter(s => s.component_id === componentId && s.sample_type === sampleType);
-  const attemptNo = matching.length === 0 ? 1 : Math.max(...matching.map(s => s.attempt_no));
-  const rejections = matching.filter(s => s.outcome === 'REJECTED').length;
-  const stuck = rejections >= 2;
-  const inRework = attemptNo > 1 && !done;
-
-  let classes = 'bg-green-100 text-green-700';
-  if (!done && inRework && stuck) classes = 'bg-red-100 text-red-700 ring-1 ring-red-400';
-  else if (!done && inRework)      classes = 'bg-amber-100 text-amber-800 ring-1 ring-amber-400';
-  else if (!done)                  classes = 'bg-amber-100 text-amber-700';
-
-  return (
-    <span className={cn('text-[9px] px-1.5 py-0.5 rounded font-semibold inline-flex items-center gap-0.5', classes)}>
-      {done && '✓'} {label}
-      {attemptNo > 1 && <span className="font-bold">v{attemptNo}</span>}
-      {rejections > 0 && <span className="text-red-600">·{rejections}</span>}
-    </span>
   );
 }

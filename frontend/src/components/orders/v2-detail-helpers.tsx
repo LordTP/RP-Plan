@@ -359,6 +359,55 @@ export function SectionDivider() {
   return <div className="px-6"><div className="border-t border-gray-200" /></div>;
 }
 
+/**
+ * A sample card that leads with its STATUS.
+ *
+ * SampleCard below stacks Status, Received and Approved as identical
+ * label/value rows, so the one thing you actually scan for — is this done? —
+ * looks exactly like the two dates beside it. Six of those in a column is the
+ * wall that made this section hard to read.
+ *
+ * Here the status is a coloured pill in the header and tints the card's edge,
+ * so a glance down the section reads as green/amber/red rather than as prose.
+ * The dates keep their DetailRows underneath, so editing is unchanged.
+ */
+export function SampleStatusCard({
+  label, status, scope, attempt, children,
+}: {
+  label: string;
+  status: string | null | undefined;
+  /** "order-level" etc — says where this sample lives, which used to be a
+   *  separate heading floating above the card. */
+  scope?: string;
+  attempt?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const s = (status || '').trim().toUpperCase();
+  const tone =
+    s === 'APPROVED' ? { edge: 'border-emerald-200', head: 'bg-emerald-50/70', pill: 'bg-emerald-100 text-emerald-800' }
+    : s === 'NOT REQUIRED' ? { edge: 'border-gray-200', head: 'bg-gray-50', pill: 'bg-gray-100 text-gray-500' }
+    : s === 'RECEIVED' ? { edge: 'border-blue-200', head: 'bg-blue-50/70', pill: 'bg-blue-100 text-blue-800' }
+    : s === 'REJECTED' || s === 'LATE' ? { edge: 'border-red-200', head: 'bg-red-50/70', pill: 'bg-red-100 text-red-800' }
+    : s ? { edge: 'border-amber-200', head: 'bg-amber-50/70', pill: 'bg-amber-100 text-amber-800' }
+    : { edge: 'border-gray-200', head: 'bg-gray-50/60', pill: 'bg-gray-100 text-gray-400' };
+
+  return (
+    <div className={cn('rounded-lg border overflow-hidden bg-white', tone.edge)}>
+      <div className={cn('px-3 py-2 border-b flex items-center gap-2 flex-wrap', tone.edge, tone.head)}>
+        <span className="text-[10.5px] uppercase tracking-wider font-bold text-gray-700">{label}</span>
+        {scope && <span className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">{scope}</span>}
+        {attempt}
+        <span className={cn('ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap', tone.pill)}>
+          {s || 'not set'}
+        </span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function SampleCard({ label, highlight, children }: {
   label: string;
   highlight?: boolean;

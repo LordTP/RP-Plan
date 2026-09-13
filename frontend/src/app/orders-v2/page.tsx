@@ -36,7 +36,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -2286,18 +2286,18 @@ function DetailBody({
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Order-level samples</div>
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     {(hasCol('strike_off_status') || hasCol('strike_off_received')) && (
-                      <SampleCard label="Strike Off">
+                      <SampleStatusCard label="Strike Off" status={order.strike_off_status}>
                         {hasCol('strike_off_status') && <DetailRow label="Status" value={order.strike_off_status} editable={canEdit('strike_off_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="strike_off_status" onSave={(v) => handleSampleStatusSave('strike_off_status', v)} />}
                         {hasCol('strike_off_received') && <DetailRow label="Received" value={formatDate(order.strike_off_received)} type="date" rawValue={order.strike_off_received} editable={canEdit('strike_off_received')} fieldKey="strike_off_received" onSave={(v) => onSave?.(order.id, 'strike_off_received', v)} />}
                         {hasCol('strike_off_approved') && <DetailRow label="Approved" value={formatDate(order.strike_off_approved)} type="date" rawValue={order.strike_off_approved} editable={canEdit('strike_off_approved')} fieldKey="strike_off_approved" onSave={(v) => onSave?.(order.id, 'strike_off_approved', v)} />}
-                      </SampleCard>
+                      </SampleStatusCard>
                     )}
                     {(hasCol('lab_dip_status') || hasCol('lab_dip_received')) && (
-                      <SampleCard label="Lab Dip">
+                      <SampleStatusCard label="Lab Dip" status={order.lab_dip_status}>
                         {hasCol('lab_dip_status') && <DetailRow label="Status" value={order.lab_dip_status} editable={canEdit('lab_dip_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="lab_dip_status" onSave={(v) => handleSampleStatusSave('lab_dip_status', v)} />}
                         {hasCol('lab_dip_received') && <DetailRow label="Received" value={formatDate(order.lab_dip_received)} type="date" rawValue={order.lab_dip_received} editable={canEdit('lab_dip_received')} fieldKey="lab_dip_received" onSave={(v) => onSave?.(order.id, 'lab_dip_received', v)} />}
                         {hasCol('lab_dip_approved') && <DetailRow label="Approved" value={formatDate(order.lab_dip_approved)} type="date" rawValue={order.lab_dip_approved} editable={canEdit('lab_dip_approved')} fieldKey="lab_dip_approved" onSave={(v) => onSave?.(order.id, 'lab_dip_approved', v)} />}
-                      </SampleCard>
+                      </SampleStatusCard>
                     )}
                   </div>
                 </>
@@ -2305,28 +2305,26 @@ function DetailBody({
 
               {/* Fit Sample — always at order/style level. */}
               {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                <>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
-                  <SampleCard label="Fit Sample" highlight>
+                <div className="mt-4">
+                  <SampleStatusCard label="Fit Sample" scope="order-level" status={order.fit_sample_status}>
                     {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
                     {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} />}
                     {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
                     {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
-                  </SampleCard>
-                </>
+                  </SampleStatusCard>
+                </div>
               )}
 
               {/* PPS — always order-level. */}
               {(hasCol('pps_status') || hasCol('pps_received')) && (
-                <>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS · order-level</div>
-                  <SampleCard label="Pre-Production Sample" highlight>
+                <div className="mt-3">
+                  <SampleStatusCard label="Pre-Production Sample" scope="order-level" status={order.pps_status}>
                     {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => handleSampleStatusSave('pps_status', v)} />}
                     {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} fieldKey="pps_received" onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
                     {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} fieldKey="pps_sent_to_customer" onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
                     {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} fieldKey="pps_approved" onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
-                  </SampleCard>
-                </>
+                  </SampleStatusCard>
+                </div>
               )}
 
               {/* Other order-level samples — photo / shipment / ex-fac from PP */}
