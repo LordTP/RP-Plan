@@ -264,6 +264,14 @@ export const ordersApi = {
     return response.data;
   },
 
+  bulkAddCommentOnIds: async (orderIds: number[], commentText: string): Promise<{ comments_added: number }> => {
+    const response = await api.post('/api/orders/bulk-add-comment', {
+      order_ids: orderIds,
+      comment_text: commentText,
+    });
+    return response.data;
+  },
+
   bulkAddComment: async (poNumber: string, commentText: string, mentionedUserIds?: number[]): Promise<{ comments_added: number }> => {
     const response = await api.post('/api/orders/bulk-add-comment', {
       po_number: poNumber,
@@ -1010,6 +1018,66 @@ export interface BoardResponse {
     worst_days: number; factories: string[];
   };
 }
+
+export interface BulkEditableField {
+  key: string;
+  label: string;
+  type: 'text' | 'date' | 'number' | 'choice';
+  group: string;
+  identity: boolean;
+  choices: string[] | null;
+}
+export interface BulkEditPreview {
+  field: { key: string; label: string; type: string; identity: boolean };
+  new_value: string;
+  selected: number;
+  will_change: number;
+  already_correct: number;
+  overwriting: number;
+  examples: { order_id: number; po_number: string; style_code: string | null; from: string; to: string }[];
+  applied: boolean;
+  updated?: number;
+}
+
+export interface BulkCurrentValues {
+  field: { key: string; label: string; type: string; identity: boolean };
+  total: number;
+  po_count: number;
+  uniform: boolean;
+  distinct: { value: string; count: number }[];
+  by_po: {
+    po_number: string;
+    customer: string | null;
+    factory: string | null;
+    rows: { order_id: number; style_code: string | null; description: string | null; value: string }[];
+  }[];
+}
+
+export const bulkEditApi = {
+  fields: async (): Promise<{ fields: BulkEditableField[]; max_rows: number }> => {
+    const response = await api.get('/api/bulk-edit/fields');
+    return response.data;
+  },
+  /** What the selection currently holds for a field, before anything is typed. */
+  current: async (orderIds: number[], fieldName: string): Promise<BulkCurrentValues> => {
+    const response = await api.post('/api/bulk-edit/current', {
+      order_ids: orderIds, field_name: fieldName,
+    });
+    return response.data;
+  },
+
+  /** Defaults to a preview — pass apply:true to actually write. */
+  run: async (body: {
+    order_ids: number[];
+    field_name: string;
+    new_value: string | null;
+    apply?: boolean;
+    confirm_identity?: boolean;
+  }): Promise<BulkEditPreview> => {
+    const response = await api.post('/api/bulk-edit/apply', body);
+    return response.data;
+  },
+};
 
 export const dashboardBoardApi = {
   get: async (limit: number = 40): Promise<BoardResponse> => {
