@@ -109,19 +109,35 @@ function FactoryGuideContent() {
 
           <Step number="2" title="Reading a PO + the styles inside">
             <p>
-              An expanded PO shows every style on the order. For each style you'll see the style code, description, colour, quantity, the Ex-Factory date, and the status.
+              Clicking a PO expands it into one row per style — code, description, colour, status,
+              ex-factory and quantity. That is the summary. To actually <strong>read</strong> a style,
+              click its row: a detail panel slides in from the right with everything on it.
             </p>
-            <MockShot caption="A PO expanded — one row per style, with a Date change button on each">
+            <MockShot caption="A PO expanded — one row per style, with the amber date-change icon on each">
               <ExpandedPOMock />
             </MockShot>
+            <p>
+              The panel is where you will spend most of your time. Four KPI tiles across the top, then
+              a <strong>Jump to</strong> bar — Product, Sampling, Shipping, Timeline — so you can get
+              straight to the part you need on a long style.
+            </p>
+            <MockShot caption="Click a style and its detail panel slides in — KPI tiles, Jump to, then each section">
+              <StyleDetailMock />
+            </MockShot>
             <Table>
-              <TableRow label="Style code" value="The unique code for the style. Source Lab sets this and it doesn't change." />
-              <TableRow label="Description / Colour" value="What the garment is and which colourway." />
-              <TableRow label="Quantity" value="Units ordered for that style. Read-only." />
-              <TableRow label="Ex-Factory" value="The current target ex-factory date. If a revised date has been approved, that's what shows here." />
-              <TableRow label="Status" value="Where the order is in the lifecycle — Sampling, Production, Shipped, etc. Source Lab updates this." />
-              <TableRow label="Date change button" value="The orange button on the right of each style row. Click it to request a change to the Revised Ex-Factory date (see step 4)." />
+              <TableRow label="Total Qty" value="Units ordered for that style. Read-only." />
+              <TableRow label="Ex-Factory" value="The current target date, with how far away it is underneath. If a revised date has been approved, that is the one showing." />
+              <TableRow label="ETA Customer" value="When the goods are expected with the customer. Source Lab maintains this." />
+              <TableRow label="Sampling" value="How many samples are signed off out of how many are needed, e.g. '0 of 2', with what is still outstanding named underneath." />
+              <TableRow label="Product" value="Description, customer, order reference, colour, gender, season, direct/repeat/new. A small pencil marks the fields you are allowed to edit." />
+              <TableRow label="Sampling section" value="Every component on the style as a card — Strike Off, Lab Dip or Label badge, its status, and when it was approved. Click a card to open it." />
+              <TableRow label="Comments" value="Top right of the panel. Mention someone with @ and they get an email." />
+              <TableRow label="Date change" value="The amber calendar icon on a style row in the list. Click it to request a change to the Revised Ex-Factory date (see step 4)." />
             </Table>
+            <Callout type="info" title="Move between styles without closing">
+              The chevrons beside Comments step to the previous or next style in the list, so you can
+              work down a PO without going back and forth.
+            </Callout>
           </Step>
 
           <Step number="3" title="Tracking your date-change requests">
@@ -891,6 +907,99 @@ function ProductPageMock() {
     <V2Chrome expandLabel="Expand all">
       {V2_POS.map(r => <PORow key={r.po} {...r} />)}
     </V2Chrome>
+  );
+}
+
+/* The style detail panel, drawn from the live slide-out. */
+function StyleDetailMock() {
+  const kpis: [string, string, string | null][] = [
+    ['TOTAL QTY', '393', null],
+    ['EX-FACTORY', '07 Oct 2026', 'in 23d'],
+    ['ETA CUSTOMER', '\u2014', null],
+    ['SAMPLING', '0 of 2', 'Fit, PPS pending'],
+  ];
+  const product: [string, string, boolean?][] = [
+    ['Description', 'SS27 SHORT'],
+    ['Customer', 'TRUEPATH RETAIL'],
+    ['Order Reference', '\u2014'],
+    ['Colour', 'WHITE'],
+    ['Gender', '\u2014', true],
+    ['Season', 'SS27'],
+  ];
+  const comps: [string, 'strike_off' | 'lab_dip' | 'label'][] = [
+    ['AOP PRINT', 'strike_off'], ['AOP PRINT', 'strike_off'],
+    ['RIB FABRIC', 'strike_off'], ['HIGH RISK RED', 'lab_dip'],
+  ];
+  return (
+    <div className="bg-white">
+      {/* header */}
+      <div className="px-3 pt-2.5 pb-2 border-b border-gray-100">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[8.5px] text-gray-400">DEMO-5301 · S005010A-0121-NRO · updated 6 hours ago</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-[13px] font-extrabold text-gray-900">SS27 SHORT</p>
+              <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span>
+              <span className="text-[9px] text-gray-500">· WHITE</span>
+            </div>
+          </div>
+          <span className="px-1.5 py-1 rounded-md border border-gray-200 text-[9px] font-semibold text-gray-600">Comments</span>
+          <span className="px-1 py-1 rounded-md border border-gray-200 text-[9px] text-gray-400">⌃ ⌄</span>
+          <span className="text-[10px] text-gray-400">✕</span>
+        </div>
+      </div>
+      {/* KPI tiles */}
+      <div className="grid grid-cols-4 gap-1.5 p-2 bg-gray-50/70">
+        {kpis.map(([l, v, sub], i) => (
+          <div key={l} className={cn('rounded-md border bg-white px-2 py-1.5',
+            i === 3 ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200')}>
+            <p className="text-[7px] font-bold tracking-wide text-gray-500">{l}</p>
+            <p className="text-[11px] font-extrabold text-gray-900 leading-tight">{v}</p>
+            {sub && <p className="text-[7px] text-gray-400">{sub}</p>}
+          </div>
+        ))}
+      </div>
+      {/* jump to */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-gray-100">
+        <span className="text-[7.5px] font-bold text-gray-400">JUMP TO</span>
+        <span className="px-1.5 py-0.5 rounded bg-primary-600 text-white text-[8.5px] font-semibold">Product</span>
+        <span className="text-[8.5px] text-gray-600">Sampling</span>
+        <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7.5px] font-bold">2 pending</span>
+        <span className="text-[8.5px] text-gray-600">Shipping</span>
+        <span className="text-[8.5px] text-gray-600">Timeline</span>
+      </div>
+      {/* product */}
+      <div className="p-2">
+        <p className="text-[8px] font-bold text-gray-700 border-l-2 border-primary-500 pl-1.5 mb-1">PRODUCT</p>
+        <div className="rounded-md border border-gray-200 overflow-hidden">
+          {product.map(([k, v, editable]) => (
+            <div key={k} className="flex items-center px-2 py-1 border-b border-gray-50 last:border-0">
+              <span className="text-[9px] text-gray-600 flex-1">{k}{editable && <span className="text-gray-300"> ✎</span>}</span>
+              <span className="text-[9px] font-semibold text-gray-900">{v}</span>
+            </div>
+          ))}
+        </div>
+        {/* sampling */}
+        <div className="flex items-center gap-1.5 mt-2 mb-1">
+          <p className="text-[8px] font-bold text-gray-700 border-l-2 border-amber-500 pl-1.5">SAMPLING</p>
+          <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 PENDING</span>
+          <span className="ml-1 text-[8px] text-gray-500">COMPONENTS</span>
+          <span className="px-1 rounded-full bg-gray-100 text-gray-600 text-[7px] font-bold">6</span>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {comps.map(([name, type], i) => (
+            <div key={i} className="rounded-md border border-green-200 bg-white px-2 py-1.5">
+              <div className="flex items-center gap-1"><TypeBadge type={type} /><span className="ml-auto text-[9px] text-gray-300">›</span></div>
+              <p className="text-[9.5px] font-bold text-gray-900 mt-0.5">{name}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="px-1 py-0.5 rounded bg-green-100 text-green-700 text-[7.5px] font-bold">APPROVED</span>
+                <span className="text-[7.5px] text-gray-400">approved 3 Sep</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
