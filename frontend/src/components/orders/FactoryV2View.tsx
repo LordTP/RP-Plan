@@ -40,7 +40,7 @@ import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
-import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, BulkBar } from '@/components/orders/v2-list-primitives';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
   sortGroups,
@@ -1308,7 +1308,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           <button
             onClick={exportSelection}
             disabled={isExportingSelection}
-            className="px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap transition-colors disabled:opacity-40"
+            className={bulkAction}
             title="Export exactly these styles to Excel"
           >
             {isExportingSelection ? 'Exporting…' : 'Export'}

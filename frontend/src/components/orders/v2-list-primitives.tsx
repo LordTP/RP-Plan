@@ -337,30 +337,54 @@ export function StatusBar({
 // itself with `fixed bottom-6`, which pulled it out of the caller's
 // flow and made it render ON TOP of those panels instead of below them.
 
+/**
+ * Shared button styling for whatever a caller puts inside a BulkBar. Exported
+ * so the three call sites don't each hand-roll a variant that drifts.
+ */
+export const bulkAction =
+  'px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 ' +
+  'text-white whitespace-nowrap transition-colors disabled:opacity-40 ' +
+  'disabled:hover:bg-white/10';
+
+/** Destructive variant — same pill, red fill. */
+export const bulkActionDanger =
+  'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500 hover:bg-red-600 ' +
+  'text-white whitespace-nowrap transition-colors disabled:opacity-40';
+
+/** Primary variant, for the one action a bar is mostly there for. */
+export const bulkActionPrimary =
+  'px-3 py-1.5 rounded-full text-xs font-semibold bg-primary-500 hover:bg-primary-600 ' +
+  'text-white whitespace-nowrap transition-colors disabled:opacity-40';
+
 export function BulkBar({
   count,
-  noun = 'style',
+  noun: _noun = 'style',
   onClear,
   children,
 }: {
   count: number;
+  /** No longer rendered — kept so existing call sites keep type-checking. */
   noun?: string;
   onClear: () => void;
   children?: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 flex items-center gap-2 text-xs">
-      <span className="font-semibold text-gray-900 tabular-nums whitespace-nowrap">
-        {count} {noun}{count === 1 ? '' : 's'} selected
+    <div className="bg-gray-900 text-white rounded-full shadow-2xl ring-1 ring-white/10
+                    px-2 py-1.5 flex items-center gap-2 text-xs">
+      {/* "3 selected", not "3 styles selected" — the shorter label is what
+          makes the orders-table pill read cleanly, and what is selected is
+          obvious from the screen you are on. */}
+      <span className="pl-3 pr-1 text-sm font-semibold tabular-nums whitespace-nowrap">
+        {count} selected
       </span>
-      <span className="w-px h-5 bg-gray-200" />
+      <span className="text-white/30">·</span>
       {children}
-      <span className="w-px h-5 bg-gray-200" />
       <button
         onClick={onClear}
-        className="text-gray-500 hover:text-gray-900 px-1 whitespace-nowrap"
+        className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/10
+                   hover:bg-white/20 transition-colors whitespace-nowrap"
       >
-        Clear
+        Cancel
       </button>
     </div>
   );

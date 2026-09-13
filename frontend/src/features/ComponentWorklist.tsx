@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { relativeTimeShort } from '@/lib/sampleStatus';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { BulkEditModal, type BulkEditInstance } from '@/components/orders/BulkEditModal';
-import { StatusTile, TogglePill, Segmented, SortableTh, StatusBar, BulkBar } from '@/components/orders/v2-list-primitives';
+import { StatusTile, TogglePill, Segmented, SortableTh, StatusBar, BulkBar, bulkActionPrimary } from '@/components/orders/v2-list-primitives';
 import {
   type Instance, type TypeFilter,
   activeSampleFor, attemptFor, isNeedsAttention, isInFlight, isStale, isExFacUrgent, ageDays,
@@ -437,7 +437,7 @@ export function ComponentWorklist({
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
           <BulkBar count={selected.size} noun="sample" onClear={() => setSelected(new Set())}>
             {mixedTypes ? (
-              <span className="text-[11px] text-amber-700 px-1">
+              <span className="text-[11px] text-amber-300 px-1">
                 Mixed sample types — select one type to bulk edit
               </span>
             ) : (
@@ -445,7 +445,7 @@ export function ComponentWorklist({
                 onClick={() => setBulkOpen(true)}
                 disabled={isSupplier}
                 title={isSupplier ? 'Source Lab marks samples received and approved' : undefined}
-                className="px-2.5 py-1 rounded-md bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={bulkActionPrimary}
               >
                 Edit samples
               </button>

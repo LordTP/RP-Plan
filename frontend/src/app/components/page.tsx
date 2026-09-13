@@ -580,14 +580,14 @@ function CanonicalDetailPanel({
               />
               Select all
             </label>
-            {!isSupplier && (
-              <button
-                onClick={() => setBulkOpen(true)}
-                disabled={selectedInstanceIds.size === 0}
-                className="text-[11px] font-semibold text-primary-600 hover:text-primary-700 disabled:text-slate-300 disabled:cursor-not-allowed"
-              >
-                Bulk edit… ({selectedInstanceIds.size})
-              </button>
+            {/* The bulk action lives in the floating pill at the bottom of the
+                screen now, matching the orders table — a disabled link that
+                only lights up once you have ticked something is easy to miss,
+                and the pill puts the action where your eyes already are. */}
+            {selectedInstanceIds.size > 0 && (
+              <span className="text-[11px] font-semibold text-primary-600">
+                {selectedInstanceIds.size} selected
+              </span>
             )}
           </div>
         </div>
@@ -606,6 +606,31 @@ function CanonicalDetailPanel({
           ))}
         </div>
       </div>
+
+      {/* Floating bulk bar — same pill as the orders table. */}
+      {!isSupplier && selectedInstanceIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white
+                        rounded-full shadow-2xl px-2 py-1.5 flex items-center gap-2 ring-1 ring-white/10">
+          <span className="pl-3 pr-1 text-sm font-semibold">
+            {selectedInstanceIds.size} selected
+          </span>
+          <span className="text-white/30">·</span>
+          <button
+            onClick={() => setBulkOpen(true)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-primary-500
+                       hover:bg-primary-600 transition-colors"
+          >
+            Bulk edit
+          </button>
+          <button
+            onClick={() => setSelectedInstanceIds(new Set())}
+            className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/10
+                       hover:bg-white/20 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {bulkOpen && (
         <BulkEditModal

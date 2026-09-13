@@ -37,7 +37,7 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
-import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
+import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
   SampleStatusPill,
@@ -1650,10 +1650,8 @@ function OrdersV2Content() {
           <button
             onClick={() => setBulkPanel(p => (p === 'date' ? null : 'date'))}
             className={cn(
-              'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
-              bulkPanel === 'date'
-                ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
-                : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              bulkAction,
+              bulkPanel === 'date' && 'bg-primary-500 text-white hover:bg-primary-500',
             )}
           >
             Ex-factory date
@@ -1663,10 +1661,8 @@ function OrdersV2Content() {
               <button
                 onClick={() => setBulkPanel(p => (p === 'sample' ? null : 'sample'))}
                 className={cn(
-                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
-                  bulkPanel === 'sample'
-                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                  bulkAction,
+                  bulkPanel === 'sample' && 'bg-primary-500 text-white hover:bg-primary-500',
                 )}
               >
                 Samples
@@ -1674,10 +1670,8 @@ function OrdersV2Content() {
               <button
                 onClick={() => setBulkPanel(p => (p === 'fitreq' ? null : 'fitreq'))}
                 className={cn(
-                  'px-2.5 py-1 rounded-md border whitespace-nowrap transition-colors',
-                  bulkPanel === 'fitreq'
-                    ? 'border-primary-400 bg-primary-50 text-primary-800 font-medium'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+                  bulkAction,
+                  bulkPanel === 'fitreq' && 'bg-primary-500 text-white hover:bg-primary-500',
                 )}
               >
                 Fit required
@@ -1687,7 +1681,7 @@ function OrdersV2Content() {
           <button
             onClick={exportSelection}
             disabled={bulkSaving}
-            className="px-2.5 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap transition-colors disabled:opacity-40"
+            className={bulkAction}
             title="Export exactly these styles to Excel"
           >
             Export
