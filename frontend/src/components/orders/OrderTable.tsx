@@ -123,6 +123,10 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Order[] | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; orderId: number } | null>(null);
+  // The row you last clicked into. Stays marked while the cell editor's
+  // blurred backdrop is up, and afterwards — on a 200-row table, saving an
+  // edit used to leave nothing showing where you'd just been.
+  const [activeRowId, setActiveRowId] = useState<number | null>(null);
   const canBulkDelete = isInternal;
 
   useEffect(() => {
@@ -712,26 +716,54 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
               orders.map((order, rowIndex) => {
                 const orderChangedFields = changedFields?.[String(order.id)] || [];
                 const isSelected = selectedIds.has(order.id);
+                const isActiveRow = activeRowId === order.id;
+                const isChangedRow = orderChangedFields.length > 0 && !isSelected;
+
+                // One precedence, applied to the row AND to the sticky cells.
+                //
+                // Sticky columns paint their own opaque background (they have
+                // to — they slide over the scrolling ones), so whatever the row
+                // says has to be restated here or the highlight disappears
+                // under them. Keeping the two in one place is what stops a row
+                // going green while its frozen columns stay blue.
+                //
+                // Exactly one hover utility per state: two competing ones on
+                // the same property resolve by Tailwind's output order, not by
+                // the order written here.
+                const [rowBg, stickyRowBg] = isSelected
+                  ? ["!bg-violet-50 hover:!bg-violet-100", "bg-violet-50"]
+                  : isChangedRow
+                    ? ["!bg-green-50 hover:!bg-green-100", "bg-green-50 group-hover:bg-green-100"]
+                    : isActiveRow
+                      ? ["bg-primary-50 hover:bg-primary-100", "bg-primary-50 group-hover:bg-primary-100"]
+                      : ["hover:bg-primary-50/70", "bg-white group-hover:bg-primary-50/70"];
 
                 return (
                 <tr
                   key={order.id}
+                  // Marks the row on the way IN to a click, so it's already
+                  // highlighted behind the cell editor's backdrop.
+                  onMouseDown={() => setActiveRowId(order.id)}
                   onContextMenu={canBulkDelete ? (e) => {
                     e.preventDefault();
                     if (!selectedIds.has(order.id)) setSelectedIds(new Set([order.id]));
                     setContextMenu({ x: e.clientX, y: e.clientY, orderId: order.id });
                   } : undefined}
+                  // `group` lets the sticky cells pick the hover up too. They
+                  // set their own opaque background (they have to — they slide
+                  // over the scrolling columns), which meant the row hover
+                  // simply vanished underneath them and made the highlight
+                  // look broken rather than subtle.
                   className={cn(
-                    "table-row border-b border-gray-100 hover:bg-gray-50",
-                    isSelected && "!bg-violet-50 hover:!bg-violet-100",
-                    orderChangedFields.length > 0 && !isSelected && "!bg-green-50",
+                    "group table-row border-b border-gray-100",
+                    rowBg,
                     order.unread_comment_count && order.unread_comment_count > 0 && "!border-l-2 !border-l-primary-400"
                   )}
                 >
                   {/* Select cell — first, sticky. Only when canBulkDelete. */}
                   {canBulkDelete && (
                     <td
-                      className={cn("px-0 py-1 text-center border border-gray-100", isSelected ? "bg-violet-50" : "bg-white")}
+                      className={cn("px-0 py-1 text-center border border-gray-100", stickyRowBg)}
                       style={{ position: 'sticky', left: 0, zIndex: 10, width: SELECT_COL_WIDTH, minWidth: SELECT_COL_WIDTH }}
                     >
                       <input
@@ -765,7 +797,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                   )}
                   {/* Comment cell - sticky after select */}
                   <td
-                    className={cn("px-0.5 py-1 text-center border border-gray-100", isSelected ? "bg-violet-50" : "bg-white")}
+                    className={cn("px-0.5 py-1 text-center border border-gray-100", stickyRowBg)}
                     style={{ position: 'sticky', left: canBulkDelete ? SELECT_COL_WIDTH : 0, zIndex: 10, width: COMMENT_COL_WIDTH, minWidth: COMMENT_COL_WIDTH }}
                   >
                     <button
@@ -810,7 +842,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                         column.key === 'gender' && "bg-amber-50/30",
                         isSupplierEditable(column.key, order) && "bg-green-50 border-green-200/60",
                         isCellChanged && "!bg-emerald-200 !border-emerald-400",
-                        isStickyCol && !isCellChanged && !isSupplierEditable(column.key, order) && "bg-white",
+                        isStickyCol && !isCellChanged && !isSupplierEditable(column.key, order) && stickyRowBg,
                         isLastStickyCol && "sticky-shadow"
                       )}
                       style={{
