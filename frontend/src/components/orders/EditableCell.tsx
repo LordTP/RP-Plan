@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, X, Loader2, Search } from 'lucide-react';
 import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from '@/lib/utils';
@@ -41,7 +41,46 @@ interface EditableCellProps {
   pendingChange?: PendingChangeInfo;
 }
 
-export function EditableCell({
+/**
+ * Memoised on purpose.
+ *
+ * /orders renders up to 77 columns × 200 rows — around 15,000 of these. None
+ * of them were memoised, so every piece of OrderTable state that changes on
+ * interaction (ticking a row, right-clicking, opening the status dropdown)
+ * re-rendered all 15,000. That is what made scrolling and clicking into a
+ * cell feel sticky.
+ *
+ * The comparator is explicit rather than shallow because two props are
+ * objects: `order` changes identity on every refetch even when nothing this
+ * cell shows has moved, and `column` comes from a filtered array rebuilt each
+ * render. Comparing what the cell actually READS keeps the memo effective.
+ * Anything added to the render path below must be added here too, or the cell
+ * will render stale.
+ */
+export const EditableCell = memo(EditableCellInner, (a, b) => (
+  a.value === b.value
+  && a.column.key === b.column.key
+  && a.column.editable === b.column.editable
+  && a.column.width === b.column.width
+  && a.isEditable === b.isEditable
+  && a.isSupplierEditable === b.isSupplierEditable
+  && a.userRole === b.userRole
+  && a.isChanged === b.isChanged
+  && a.onSave === b.onSave
+  && a.onBulkSave === b.onBulkSave
+  && a.pendingChange === b.pendingChange
+  // The cell reads these off `order` directly, so identity alone isn't enough.
+  && a.order.id === b.order.id
+  && a.order.status === b.order.status
+  && a.order.factory === b.order.factory
+  && a.order.po_number === b.order.po_number
+  && a.order.style_code === b.order.style_code
+  && a.order.order_sent_to_factory_date === b.order.order_sent_to_factory_date
+  && a.order.date_notes === b.order.date_notes
+  && a.order.components === b.order.components
+));
+
+function EditableCellInner({
   value,
   column,
   order,

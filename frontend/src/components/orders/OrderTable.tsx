@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStore } from '@/store/useStore';
@@ -377,7 +377,26 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const lastSizeColIndex = visibleColumns.findIndex(c => c.key === 'size_14');
   const hasSizeColumns = firstSizeColIndex >= 0 && lastSizeColIndex >= 0 && genderColIndex >= 0;
 
-  const handleSave = async (orderId: number, field: string, value: any, changeReason?: string) => {
+  // Both of these are load-bearing useCallbacks, not decoration: EditableCell
+  // is memoised and receives them on all ~15,000 cells. A fresh identity each
+  // render would make every one of them re-render anyway.
+  //
+  // Prior code called window.location.reload() here — a full browser refresh
+  // scrolled the table back to the top and reset the infinite-scroll page
+  // state. Now we ask the parent to re-fetch the current page in place;
+  // OrderTable stays mounted, tableRef's scrollTop is preserved, the user
+  // stays where they were. Falls back to reload only if the parent didn't
+  // provide the callback.
+  const handleBulkSaveRefresh = useCallback(() => {
+    toast.success('Bulk update successful');
+    if (onBulkSaveRefresh) {
+      onBulkSaveRefresh();
+    } else {
+      window.location.reload();
+    }
+  }, [onBulkSaveRefresh]);
+
+  const handleSave = useCallback(async (orderId: number, field: string, value: any, changeReason?: string) => {
     // Intercept REJECTED on a sample status field — open the reject modal so
     // we capture a structured reason/note, same flow as the V2 detail panel.
     // Orders with components route the user to V2 detail because the modal
@@ -441,7 +460,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
       toast.error(message);
       throw error;
     }
-  };
+  }, [orders, updateOrderInList, onOrderUpdate, user]);
 
   const handleStatusChange = async (order: Order, newStatus: string) => {
     // Intercept "Shipped" status - require tracking reference via modal
@@ -872,22 +891,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                               isSupplierEditable={isSupplierEditable(column.key, order)}
                               userRole={user?.role || 'supplier'}
                               onSave={handleSave}
-                              onBulkSave={() => {
-                                toast.success('Bulk update successful');
-                                // Prior code called window.location.reload() here — a
-                                // full browser refresh scrolled the table back to the
-                                // top and reset the infinite-scroll page state. Now
-                                // we ask the parent to re-fetch the current page in
-                                // place; OrderTable stays mounted, tableRef's
-                                // scrollTop is preserved, the user stays where they
-                                // were. Falls back to reload only if the parent
-                                // didn't provide the callback.
-                                if (onBulkSaveRefresh) {
-                                  onBulkSaveRefresh();
-                                } else {
-                                  window.location.reload();
-                                }
-                              }}
+                              onBulkSave={handleBulkSaveRefresh}
                               isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
                               pendingChange={pendingChanges[order.id]?.[column.key]}
                             />
