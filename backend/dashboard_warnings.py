@@ -7,10 +7,61 @@ from datetime import datetime
 from database import get_db
 from models import User, PurchaseOrder, OrderComponent
 from auth import get_current_user
-from sample_helpers import is_sample_done, business_days_between
+from sample_helpers import is_sample_done, business_days_between, closure_days_between
 import app_settings
 
 router = APIRouter()
+
+
+# The warnings population, shared. The board endpoint renders the same orders,
+# so this lives in one place — if the two drifted, the board would show a style
+# as stuck that the warnings centre had already dropped, or the reverse.
+def active_order_clauses():
+    """Clauses selecting orders still in play.
+
+      - Status indicates the order's finished (Cancelled / Delivered / Complete).
+        NULL or empty status means "no explicit status yet" — those rows
+        are still active and must NOT be excluded.
+      - tracking_reference is set — the order's been confirmed onto a
+        shipment, so the sampling / spec / approval windows aren't
+        actionable anymore. Treat NULL and empty string equivalently.
+      - PPS is done (status APPROVED / NOT REQUIRED or pps_approved date
+        is set). Once PPS is signed off the order's past the sampling
+        phase entirely — every other warning we fire on it would be stale.
+
+    Important: SQL three-valued logic means `~status.in_(...)` silently
+    drops rows where status IS NULL (NULL IN (...) evaluates to NULL,
+    NOT NULL is NULL, the row is filtered). The explicit OR with IS NULL
+    keeps those rows in the population.
+
+    The IS NULL arm on the PPS filter is load-bearing, and its absence was a
+    live bug: for a row with pps_status NULL, `NULL IN (...)` is NULL,
+    `pps_approved IS NOT NULL` is False, `or_(NULL, False)` is NULL, and
+    `~NULL` is NULL — so the row was filtered OUT. Every order that had not
+    reached PPS yet, which is most of them, vanished from the warnings centre.
+    Measured on a 52-order set: 52 dropped, leaving it permanently empty.
+    """
+    finished_statuses = ["Cancelled", "Delivered", "Complete", "Completed"]
+    pps_done_statuses = ["APPROVED", "NOT REQUIRED"]
+    return [
+        or_(
+            PurchaseOrder.status.is_(None),
+            PurchaseOrder.status == '',
+            ~PurchaseOrder.status.in_(finished_statuses),
+        ),
+        or_(
+            PurchaseOrder.tracking_reference.is_(None),
+            PurchaseOrder.tracking_reference == '',
+        ),
+        or_(
+            PurchaseOrder.pps_status.is_(None),
+            PurchaseOrder.pps_status == '',
+            ~or_(
+                PurchaseOrder.pps_status.in_(pps_done_statuses),
+                PurchaseOrder.pps_approved.isnot(None),
+            ),
+        ),
+    ]
 
 
 @router.get("/api/warnings/dashboard")
@@ -26,53 +77,8 @@ async def get_dashboard_warnings(
          for t in app_settings.WARNING_THRESHOLDS}
     now = datetime.utcnow()
 
-    # Drop orders that are no longer in play:
-    #   - Status indicates the order's finished (Cancelled / Delivered / Complete).
-    #     NULL or empty status means "no explicit status yet" — those rows
-    #     are still active and must NOT be excluded.
-    #   - tracking_reference is set — the order's been confirmed onto a
-    #     shipment, so the sampling / spec / approval windows aren't
-    #     actionable anymore. Treat NULL and empty string equivalently.
-    #   - PPS is done (status APPROVED / NOT REQUIRED or pps_approved date
-    #     is set). Once PPS is signed off the order's past the sampling
-    #     phase entirely — every other warning we fire on it would be
-    #     stale.
-    #
-    # Important: SQL three-valued logic means `~status.in_(...)` silently
-    #   drops rows where status IS NULL (NULL IN (...) evaluates to NULL,
-    #   NOT NULL is NULL, the row is filtered). The explicit OR with
-    #   IS NULL keeps those rows in the warning population.
-    finished_statuses = ["Cancelled", "Delivered", "Complete", "Completed"]
-    pps_done_statuses = ["APPROVED", "NOT REQUIRED"]
-    all_orders = db.query(PurchaseOrder).filter(
-        or_(
-            PurchaseOrder.status.is_(None),
-            PurchaseOrder.status == '',
-            ~PurchaseOrder.status.in_(finished_statuses),
-        ),
-        or_(
-            PurchaseOrder.tracking_reference.is_(None),
-            PurchaseOrder.tracking_reference == '',
-        ),
-        # PPS-done filter: order falls off the warnings centre once PPS
-        # is APPROVED / NOT REQUIRED or an approval date has been set.
-        #
-        # The IS NULL arm is load-bearing, and its absence was a live bug: the
-        # same three-valued logic described above bites here too. For a row
-        # with pps_status NULL, `NULL IN (...)` is NULL, `pps_approved IS NOT
-        # NULL` is False, `or_(NULL, False)` is NULL, and `~NULL` is NULL — so
-        # the row was filtered OUT. Every order that had not reached PPS yet,
-        # which is most of them, vanished from the warnings centre entirely.
-        # Measured on a 52-order set: 52 dropped, leaving it permanently empty.
-        or_(
-            PurchaseOrder.pps_status.is_(None),
-            PurchaseOrder.pps_status == '',
-            ~or_(
-                PurchaseOrder.pps_status.in_(pps_done_statuses),
-                PurchaseOrder.pps_approved.isnot(None),
-            ),
-        ),
-    ).all()
+    # Population shared with the board endpoint — see active_order_clauses().
+    all_orders = db.query(PurchaseOrder).filter(*active_order_clauses()).all()
 
     # Group orders by PO number — warnings are per-PO
     po_groups = {}
@@ -83,22 +89,47 @@ async def get_dashboard_warnings(
 
     warnings = []
 
+    # --- Warnings 1 & 2: paperwork that should have followed the order ---
+    def overdue_sends(orders, field, threshold):
+        """Styles in this PO sent to the factory `threshold`+ business days
+        ago that still have no date in `field`.
+
+        Both `order_sent_to_factory_date` and the paperwork dates are per-row
+        editable (COLUMNS marks them editable), so rows inside one PO
+        routinely disagree. This used to read orders[0] as a stand-in for the
+        whole PO, which missed real work in both directions: if style 1 had
+        its tech packs and style 2 did not, the PO stayed silent; if style 1
+        was never sent to the factory at all, the PO stayed silent even
+        though style 2 was weeks overdue.
+
+        Reports the worst offender's age and how many styles are waiting.
+        """
+        waiting = [
+            (business_days_between(o.order_sent_to_factory_date, now), o)
+            for o in orders
+            if o.order_sent_to_factory_date and not getattr(o, field)
+        ]
+        waiting = [(days, o) for days, o in waiting if days >= threshold]
+        if not waiting:
+            return None
+        waiting.sort(key=lambda pair: pair[0], reverse=True)
+        days_since, worst = waiting[0]
+        return {
+            "customer": worst.customer,
+            "factory": worst.factory,
+            "days_since": days_since,
+            "trigger_date": worst.order_sent_to_factory_date.isoformat(),
+            # Styles still waiting, not styles on the PO — the warning is
+            # about the outstanding work, so that is the number to show.
+            "style_count": len(waiting),
+        }
+
     # --- Warning 1: Tech Packs need sending ---
-    # Order sent to factory populated, 3+ business days ago, but tech packs not sent
     tech_packs_needed = []
     for po_num, orders in po_groups.items():
-        rep = orders[0]  # Representative row (same across PO)
-        if rep.order_sent_to_factory_date and not rep.tech_packs_sent_to_factory:
-            days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= T['warn_tech_packs_days']:
-                tech_packs_needed.append({
-                    "po_number": po_num,
-                    "customer": rep.customer,
-                    "factory": rep.factory,
-                    "days_since": days_since,
-                    "trigger_date": rep.order_sent_to_factory_date.isoformat(),
-                    "style_count": len(orders),
-                })
+        hit = overdue_sends(orders, 'tech_packs_sent_to_factory', T['warn_tech_packs_days'])
+        if hit:
+            tech_packs_needed.append({"po_number": po_num, **hit})
     tech_packs_needed.sort(key=lambda x: x["days_since"], reverse=True)
 
     if tech_packs_needed:
@@ -114,18 +145,9 @@ async def get_dashboard_warnings(
     # --- Warning 2: Specs need sending ---
     specs_needed = []
     for po_num, orders in po_groups.items():
-        rep = orders[0]
-        if rep.order_sent_to_factory_date and not rep.specs_sent_to_factory:
-            days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= T['warn_specs_days']:
-                specs_needed.append({
-                    "po_number": po_num,
-                    "customer": rep.customer,
-                    "factory": rep.factory,
-                    "days_since": days_since,
-                    "trigger_date": rep.order_sent_to_factory_date.isoformat(),
-                    "style_count": len(orders),
-                })
+        hit = overdue_sends(orders, 'specs_sent_to_factory', T['warn_specs_days'])
+        if hit:
+            specs_needed.append({"po_number": po_num, **hit})
     specs_needed.sort(key=lambda x: x["days_since"], reverse=True)
 
     if specs_needed:
@@ -369,7 +391,16 @@ async def get_dashboard_warnings(
         latest_approval = max(candidate_dates)
         # Calendar days, not business days — Mimi's request: "5/6 weeks
         # including weekends" maps to 40 calendar days from the approval.
-        days_since = (now - latest_approval).days
+        #
+        # This is the one counter that does not run through
+        # business_days_between(), so it is also the one a factory closure
+        # hurts most: a three-week Chinese New Year shutdown sits entirely
+        # inside a 40-day window without leaving a trace, and every order
+        # whose approval landed in January would flag in February having had
+        # barely three working weeks. Subtract the closed days so the window
+        # stays "about 5-6 weeks of a factory actually being open".
+        closed_days = closure_days_between(latest_approval, now)
+        days_since = (now - latest_approval).days - closed_days
         if days_since < T['warn_pps_received_days']:
             continue
 
@@ -383,6 +414,7 @@ async def get_dashboard_warnings(
                 "customer": o.customer,
                 "factory": o.factory,
                 "days_since": days_since,
+                "closure_days": closed_days,
             })
     pps_received_overdue.sort(key=lambda x: x["days_since"], reverse=True)
 
