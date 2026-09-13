@@ -36,7 +36,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -1979,7 +1979,6 @@ function DetailBody({
   maxSize: number;
 }) {
   const [hasComponents, setHasComponents] = useState(false);
-  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'timeline'>('product');
 
   // Share is against the SIZED total, not order.total_quantity — the two can
   // disagree when a size sits outside the style's guide, and percentages that
@@ -2027,52 +2026,14 @@ function DetailBody({
   const samplingRef = useRef<HTMLElement>(null);
   const timelineRef = useRef<HTMLElement>(null);
 
-  const sectionRefs = {
-    product: productRef,
-    sampling: samplingRef,
-    timeline: timelineRef,
-  } as const;
-
-  // Use getBoundingClientRect rather than offsetTop — sections aren't
-  // guaranteed to use the scroller as their offsetParent (it has no
-  // explicit position), so offsetTop walks past it and gives garbage.
-  const scrollToSection = (key: 'product' | 'sampling' | 'timeline') => {
-    const el = sectionRefs[key].current;
-    const scroller = modalContentRef.current;
-    if (!el || !scroller) return;
-    const elRect = el.getBoundingClientRect();
-    const scrollerRect = scroller.getBoundingClientRect();
-    const top = elRect.top - scrollerRect.top + scroller.scrollTop - 8;
-    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  };
-
-  // Track which section is most-visible. Uses getBoundingClientRect for
-  // robust math, plus a bottom-of-scroll snap so the last (timeline)
-  // section can still light up — it's short and may never push its top
-  // past the threshold by scrolling alone.
-  useEffect(() => {
-    const scroller = modalContentRef.current;
-    if (!scroller) return;
-    const onScroll = () => {
-      // At the bottom of the scroll → force the last section active.
-      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
-        setActiveSection('timeline');
-        return;
-      }
-      const scrollerTop = scroller.getBoundingClientRect().top;
-      const threshold = scrollerTop + 60; // 60px into the visible area
-      const order: ('product' | 'sampling' | 'timeline')[] = ['product', 'sampling', 'timeline'];
-      let current: typeof order[number] = 'product';
-      for (const key of order) {
-        const el = sectionRefs[key].current;
-        if (el && el.getBoundingClientRect().top <= threshold) current = key;
-      }
-      setActiveSection(current);
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The scroll-spy and jump-to nav that used to live here are gone with the
+  // pill bar. They existed to move between four stacked sections; with three
+  // sections laid out in two columns there is nothing meaningful to jump
+  // past, and tracking a 'most visible section' across two columns would
+  // have meant picking a winner between them on every scroll tick.
+  //
+  // productRef / samplingRef / timelineRef are kept — they still mark the
+  // sections and cost nothing.
 
   // Sampling progress badge — count distinct sample types and how many are done.
   // For the hero strip + Sampling pill "N pending" counter.
@@ -2191,98 +2152,23 @@ function DetailBody({
         )}
       </div>
 
-      {/* Sticky pill nav */}
-      <div className="px-6 py-2 border-b border-gray-200 bg-white/95 backdrop-blur flex items-center gap-1.5 flex-shrink-0">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-2">Jump to</span>
-        <SectionPill active={activeSection === 'product'} label="Product" onClick={() => scrollToSection('product')} />
-        <SectionPill
-          active={activeSection === 'sampling'}
-          label="Sampling"
-          badge={samplePending > 0 ? `${samplePending} pending` : undefined}
-          badgeTone="amber"
-          onClick={() => scrollToSection('sampling')}
-        />
-        <SectionPill active={activeSection === 'timeline'} label="Journey" onClick={() => scrollToSection('timeline')} />
-      </div>
-
       {/* Scroll body — all sections rendered, separated by dividers */}
       <BulkScopeProvider
         poNumber={order.po_number}
         currentOrderId={order.id}
         onAfterBulkSave={() => onSave?.(order.id, '__refresh__', null)}
       >
+      {/* Two columns, not one long scroll.
+          The drawer is 1180px wide and was running a single column down the
+          middle of it, so Product's twelve label/value rows sat one per line
+          with nothing beside them. Sampling is what people come here to work
+          on, so it takes the wider side; the identity fields and the journey
+          read fine narrow. */}
       <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] items-start">
+      <div className="min-w-0 xl:border-r xl:border-gray-200">
 
-        {/* ─── Product section ─── */}
-        <section ref={productRef} className="px-6 pt-6 pb-3">
-          <SectionHeader accent="blue" label="Product" />
-          <div className="grid grid-cols-2 gap-4">
-            {/* Product details card */}
-            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-              {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} fieldKey="description" onSave={(v) => onSave?.(order.id, 'description', v)} />}
-              {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} fieldKey="customer" onSave={(v) => onSave?.(order.id, 'customer', v)} />}
-              {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} fieldKey="customer_po_number" onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
-              {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} fieldKey="system_po_number" onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
-              {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} fieldKey="china_orderbook_ref" onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
-              {hasCol('colour') && <DetailRow label="Colour" value={order.colour} editable={canEdit('colour')} fieldKey="colour" onSave={(v) => onSave?.(order.id, 'colour', v)} />}
-              {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} fieldKey="gender" onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
-              {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} fieldKey="season" onSave={(v) => onSave?.(order.id, 'season', v)} />}
-              {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} fieldKey="factory" onSave={(v) => onSave?.(order.id, 'factory', v)} />}
-              {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} fieldKey="terms" onSave={(v) => onSave?.(order.id, 'terms', v)} />}
-              {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} fieldKey="sales_person" onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
-              {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} fieldKey="direct_repeat_new" onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
-            </div>
-            {/* Size breakdown card */}
-            {sizes.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
-                  <SizeGuideTooltip gender={order.gender} />
-                </div>
-                {/* A tile per size, carrying the COUNT and its share.
-                    The bars alone showed the shape of the run without a single
-                    figure in it, so "how many 0-3M?" meant reading a bar
-                    against an axis that wasn't there. The bar survives as a
-                    background fill, which is enough to keep the shape. */}
-                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(sizes.length, 6)}, minmax(0, 1fr))` }}>
-                  {sizes.map(s => {
-                    const val = s.value || 0;
-                    const share = totalSized > 0 ? Math.round((val / totalSized) * 100) : 0;
-                    const biggest = val > 0 && val === maxSize;
-                    return (
-                      <div
-                        key={s.label}
-                        className={cn(
-                          'relative overflow-hidden rounded-lg border bg-white px-1.5 pt-1.5 pb-1 text-center',
-                          biggest ? 'border-primary-200' : 'border-gray-200',
-                        )}
-                        title={`${s.label}: ${val} units${share ? ` · ${share}% of the run` : ''}`}
-                      >
-                        <span
-                          className="absolute inset-x-0 bottom-0 bg-primary-50"
-                          style={{ height: `${maxSize > 0 ? (val / maxSize) * 100 : 0}%` }}
-                        />
-                        <div className="relative text-[8.5px] font-bold uppercase tracking-wide text-gray-400 truncate">{s.label}</div>
-                        <div className={cn('relative text-[15px] font-bold tabular-nums leading-tight', biggest ? 'text-primary-700' : 'text-gray-900')}>
-                          {val}
-                        </div>
-                        <div className="relative text-[9px] text-gray-500 tabular-nums">{share}%</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="border-t border-gray-100 mt-3 pt-2 flex items-baseline gap-2 text-[11px] text-gray-500">
-                  <span className="text-[13px] font-bold text-gray-900 tabular-nums">{formatQty(order.total_quantity)}</span>
-                  <span>units across {sizes.length} size{sizes.length === 1 ? '' : 's'}</span>
-                  {biggestSize && <span className="ml-auto">biggest run <b className="text-gray-700">{biggestSize}</b></span>}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <SectionDivider />
-
+        {/* Wide column — the work: samples, then the size run. */}
         {/* ─── Sampling section ─── */}
         {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
           <>
@@ -2389,6 +2275,82 @@ function DetailBody({
           </>
         )}
 
+
+        {/* ─── Size breakdown ─── */}
+        <section className="px-6 pt-2 pb-6">
+            {sizes.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
+                  <SizeGuideTooltip gender={order.gender} />
+                </div>
+                {/* A tile per size, carrying the COUNT and its share.
+                    The bars alone showed the shape of the run without a single
+                    figure in it, so "how many 0-3M?" meant reading a bar
+                    against an axis that wasn't there. The bar survives as a
+                    background fill, which is enough to keep the shape. */}
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(sizes.length, 6)}, minmax(0, 1fr))` }}>
+                  {sizes.map(s => {
+                    const val = s.value || 0;
+                    const share = totalSized > 0 ? Math.round((val / totalSized) * 100) : 0;
+                    const biggest = val > 0 && val === maxSize;
+                    return (
+                      <div
+                        key={s.label}
+                        className={cn(
+                          'relative overflow-hidden rounded-lg border bg-white px-1.5 pt-1.5 pb-1 text-center',
+                          biggest ? 'border-primary-200' : 'border-gray-200',
+                        )}
+                        title={`${s.label}: ${val} units${share ? ` · ${share}% of the run` : ''}`}
+                      >
+                        <span
+                          className="absolute inset-x-0 bottom-0 bg-primary-50"
+                          style={{ height: `${maxSize > 0 ? (val / maxSize) * 100 : 0}%` }}
+                        />
+                        <div className="relative text-[8.5px] font-bold uppercase tracking-wide text-gray-400 truncate">{s.label}</div>
+                        <div className={cn('relative text-[15px] font-bold tabular-nums leading-tight', biggest ? 'text-primary-700' : 'text-gray-900')}>
+                          {val}
+                        </div>
+                        <div className="relative text-[9px] text-gray-500 tabular-nums">{share}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="border-t border-gray-100 mt-3 pt-2 flex items-baseline gap-2 text-[11px] text-gray-500">
+                  <span className="text-[13px] font-bold text-gray-900 tabular-nums">{formatQty(order.total_quantity)}</span>
+                  <span>units across {sizes.length} size{sizes.length === 1 ? '' : 's'}</span>
+                  {biggestSize && <span className="ml-auto">biggest run <b className="text-gray-700">{biggestSize}</b></span>}
+                </div>
+              </div>
+            )}
+        </section>
+      </div>
+      <div className="min-w-0">
+        {/* Narrow column — the facts: who/what, then the dates. */}
+        {/* ─── Product section ─── */}
+        <section ref={productRef} className="px-6 pt-6 pb-3">
+          <SectionHeader accent="blue" label="Product" />
+          <div className="grid grid-cols-2 gap-4">
+            {/* Product details card */}
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+              {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} fieldKey="description" onSave={(v) => onSave?.(order.id, 'description', v)} />}
+              {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} fieldKey="customer" onSave={(v) => onSave?.(order.id, 'customer', v)} />}
+              {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} fieldKey="customer_po_number" onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
+              {hasCol('system_po_number') && !isSupplier && <DetailRow label="System PO#" value={order.system_po_number} editable={canEdit('system_po_number')} fieldKey="system_po_number" onSave={(v) => onSave?.(order.id, 'system_po_number', v)} />}
+              {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} editable={canEdit('china_orderbook_ref')} fieldKey="china_orderbook_ref" onSave={(v) => onSave?.(order.id, 'china_orderbook_ref', v)} />}
+              {hasCol('colour') && <DetailRow label="Colour" value={order.colour} editable={canEdit('colour')} fieldKey="colour" onSave={(v) => onSave?.(order.id, 'colour', v)} />}
+              {hasCol('gender') && <DetailRow label="Gender" value={order.gender} editable={canEdit('gender')} fieldKey="gender" onSave={(v) => onSave?.(order.id, 'gender', v)} extra={<SizeGuideTooltip gender={order.gender} />} />}
+              {hasCol('season') && <DetailRow label="Season" value={order.season} editable={canEdit('season')} fieldKey="season" onSave={(v) => onSave?.(order.id, 'season', v)} />}
+              {hasCol('factory') && <DetailRow label="Factory" value={order.factory} editable={canEdit('factory')} fieldKey="factory" onSave={(v) => onSave?.(order.id, 'factory', v)} />}
+              {hasCol('terms') && <DetailRow label="Terms" value={order.terms} editable={canEdit('terms')} fieldKey="terms" onSave={(v) => onSave?.(order.id, 'terms', v)} />}
+              {hasCol('sales_person') && !isSupplier && <DetailRow label="Sales Person" value={order.sales_person} editable={canEdit('sales_person')} fieldKey="sales_person" onSave={(v) => onSave?.(order.id, 'sales_person', v)} />}
+              {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} editable={canEdit('direct_repeat_new')} fieldKey="direct_repeat_new" onSave={(v) => onSave?.(order.id, 'direct_repeat_new', v)} />}
+            </div>
+          </div>
+        </section>
+
+        <SectionDivider />
+
         {/* ─── Journey — was Shipping + Timeline ───
              Seven of the eight timeline items were already fields in the
              Shipping section: Vessel ETD, Vessel ETA Port, Revised Vessel ETA,
@@ -2436,7 +2398,9 @@ function DetailBody({
           </div>
         </section>
 
-      </div>
+      </div>{/* right column */}
+      </div>{/* two-column grid */}
+      </div>{/* scroll body */}
       </BulkScopeProvider>
 
       {rejectModal && (
