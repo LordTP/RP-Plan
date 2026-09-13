@@ -1979,7 +1979,13 @@ function DetailBody({
   maxSize: number;
 }) {
   const [hasComponents, setHasComponents] = useState(false);
-  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
+  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'timeline'>('product');
+
+  // Share is against the SIZED total, not order.total_quantity — the two can
+  // disagree when a size sits outside the style's guide, and percentages that
+  // don't add up to 100 read as a bug.
+  const totalSized = sizes.reduce((n, s) => n + (s.value || 0), 0);
+  const biggestSize = sizes.find(s => (s.value || 0) === maxSize && maxSize > 0)?.label || null;
 
   // Reject-sample modal state — fires when the user picks REJECTED on an
   // order-level sample status (Fit / Strike / Lab / PPS). Mirrors the
@@ -2019,20 +2025,18 @@ function DetailBody({
   // the active pill based on which section is currently in view.
   const productRef = useRef<HTMLElement>(null);
   const samplingRef = useRef<HTMLElement>(null);
-  const shippingRef = useRef<HTMLElement>(null);
   const timelineRef = useRef<HTMLElement>(null);
 
   const sectionRefs = {
     product: productRef,
     sampling: samplingRef,
-    shipping: shippingRef,
     timeline: timelineRef,
   } as const;
 
   // Use getBoundingClientRect rather than offsetTop — sections aren't
   // guaranteed to use the scroller as their offsetParent (it has no
   // explicit position), so offsetTop walks past it and gives garbage.
-  const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
+  const scrollToSection = (key: 'product' | 'sampling' | 'timeline') => {
     const el = sectionRefs[key].current;
     const scroller = modalContentRef.current;
     if (!el || !scroller) return;
@@ -2057,7 +2061,7 @@ function DetailBody({
       }
       const scrollerTop = scroller.getBoundingClientRect().top;
       const threshold = scrollerTop + 60; // 60px into the visible area
-      const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
+      const order: ('product' | 'sampling' | 'timeline')[] = ['product', 'sampling', 'timeline'];
       let current: typeof order[number] = 'product';
       for (const key of order) {
         const el = sectionRefs[key].current;
@@ -2198,8 +2202,7 @@ function DetailBody({
           badgeTone="amber"
           onClick={() => scrollToSection('sampling')}
         />
-        <SectionPill active={activeSection === 'shipping'} label="Shipping" onClick={() => scrollToSection('shipping')} />
-        <SectionPill active={activeSection === 'timeline'} label="Timeline" onClick={() => scrollToSection('timeline')} />
+        <SectionPill active={activeSection === 'timeline'} label="Journey" onClick={() => scrollToSection('timeline')} />
       </div>
 
       {/* Scroll body — all sections rendered, separated by dividers */}
@@ -2236,24 +2239,42 @@ function DetailBody({
                   <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
                   <SizeGuideTooltip gender={order.gender} />
                 </div>
-                <div className="space-y-1.5">
-                  {sizes.map(s => (
-                    <div key={s.label} className="flex items-center gap-3">
-                      <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
-                      <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
-                          style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
-                        >
-                          <span className="text-[10px] font-bold text-white">{s.value}</span>
+                {/* A tile per size, carrying the COUNT and its share.
+                    The bars alone showed the shape of the run without a single
+                    figure in it, so "how many 0-3M?" meant reading a bar
+                    against an axis that wasn't there. The bar survives as a
+                    background fill, which is enough to keep the shape. */}
+                <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(sizes.length, 6)}, minmax(0, 1fr))` }}>
+                  {sizes.map(s => {
+                    const val = s.value || 0;
+                    const share = totalSized > 0 ? Math.round((val / totalSized) * 100) : 0;
+                    const biggest = val > 0 && val === maxSize;
+                    return (
+                      <div
+                        key={s.label}
+                        className={cn(
+                          'relative overflow-hidden rounded-lg border bg-white px-1.5 pt-1.5 pb-1 text-center',
+                          biggest ? 'border-primary-200' : 'border-gray-200',
+                        )}
+                        title={`${s.label}: ${val} units${share ? ` · ${share}% of the run` : ''}`}
+                      >
+                        <span
+                          className="absolute inset-x-0 bottom-0 bg-primary-50"
+                          style={{ height: `${maxSize > 0 ? (val / maxSize) * 100 : 0}%` }}
+                        />
+                        <div className="relative text-[8.5px] font-bold uppercase tracking-wide text-gray-400 truncate">{s.label}</div>
+                        <div className={cn('relative text-[15px] font-bold tabular-nums leading-tight', biggest ? 'text-primary-700' : 'text-gray-900')}>
+                          {val}
                         </div>
+                        <div className="relative text-[9px] text-gray-500 tabular-nums">{share}%</div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-                <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
-                  <span className="text-gray-500">Total units</span>
-                  <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
+                <div className="border-t border-gray-100 mt-3 pt-2 flex items-baseline gap-2 text-[11px] text-gray-500">
+                  <span className="text-[13px] font-bold text-gray-900 tabular-nums">{formatQty(order.total_quantity)}</span>
+                  <span>units across {sizes.length} size{sizes.length === 1 ? '' : 's'}</span>
+                  {biggestSize && <span className="ml-auto">biggest run <b className="text-gray-700">{biggestSize}</b></span>}
                 </div>
               </div>
             )}
@@ -2279,6 +2300,20 @@ function DetailBody({
                   <ComponentsSection orderId={order.id} poNumber={order.po_number} hasCol={hasCol} canEdit={canEdit} onComponentsLoaded={(n) => setHasComponents(n > 0)} />
                 </div>
               )}
+
+              {/* Order-level samples get their own enclosure.
+                  Fit, PPS, photo and shipment are whole-garment concerns that
+                  belong to the STYLE, not to any component — the backend
+                  enforces it, SAMPLE_PREFIXES_COMPONENT excludes fit and pps
+                  outright. They used to sit as loose cards under small text
+                  headings, which read as more components rather than as a
+                  different kind of thing. */}
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/40 p-3 mt-3">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Order-level</span>
+                  <span className="flex-1 h-px bg-gray-200" />
+                  <span className="text-[10px] text-gray-400">whole garment · not tied to a component</span>
+                </div>
 
               {/* Style-level Strike + Lab — only when no components exist (default fallback). */}
               {!hasComponents && (hasCol('strike_off_status') || hasCol('lab_dip_status')) && (
@@ -2327,7 +2362,8 @@ function DetailBody({
                 </div>
               )}
 
-              {/* Other order-level samples — photo / shipment / ex-fac from PP */}
+              {/* Photo / shipment / ex-fac from PP — date-only, so they pair
+                  up rather than each taking a full card. */}
               {(hasCol('photo_sample_received') || hasCol('shipment_sample_received') || hasCol('ex_factory_from_pp_approval')) && (
                 <div className="grid grid-cols-3 gap-2 mt-4">
                   {hasCol('photo_sample_received') && (
@@ -2347,45 +2383,35 @@ function DetailBody({
                   )}
                 </div>
               )}
+              </div>
             </section>
             <SectionDivider />
           </>
         )}
 
-        {/* ─── Shipping section ─── */}
-        <section ref={shippingRef} className="px-6 pt-6 pb-3">
-          <SectionHeader accent="teal" label="Shipping" />
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Vessel</div>
-              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} fieldKey="fcl_lcl" onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-                {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} fieldKey="vessel_name" onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-                {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} fieldKey="vessel_etd" onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-                {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} fieldKey="vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-                {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} fieldKey="revised_vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-                {(order.tracking_reference || hasCol('tracking_reference')) && <DetailRow label="Tracking Ref" value={order.tracking_reference} editable={canEdit('tracking_reference')} fieldKey="tracking_reference" onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
-              <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={order.date_notes?.original_del_date_to_customer || formatDate(order.original_del_date_to_customer)} type="date" rawValue={order.date_notes?.original_del_date_to_customer || order.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} fieldKey="original_del_date_to_customer" onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
-                {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
-                {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
-                {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
-                {hasCol('customer_po_open_month') && order.customer_po_open_month && <DetailRow label="Open Month" value={order.customer_po_open_month} />}
-                {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && <DetailRow label="Expected UK Month" value={order.expected_dispatch_arrive_uk_month} />}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <SectionDivider />
-
-        {/* ─── Timeline section ─── */}
+        {/* ─── Journey — was Shipping + Timeline ───
+             Seven of the eight timeline items were already fields in the
+             Shipping section: Vessel ETD, Vessel ETA Port, Revised Vessel ETA,
+             ETA UK, ETA Customer, Estimated Delivery and Customer Requested.
+             One set of facts rendered twice, and you scrolled past both. The
+             timeline is the better of the two — it puts them in order and
+             shows what's next — so Shipping's DATES are gone and the handful
+             of things that weren't dates moved here, where they belong next to
+             the leg they describe. */}
         <section ref={timelineRef} className="px-6 pt-6 pb-6">
-          <SectionHeader accent="violet" label="Timeline" />
+          <SectionHeader accent="violet" label="Journey" />
+
+          {(hasCol('fcl_lcl') || hasCol('vessel_name') || hasCol('tracking_reference')
+            || order.customer_po_open_month || order.expected_dispatch_arrive_uk_month) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+              {hasCol('fcl_lcl') && <JourneyFact label="FCL / LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} fieldKey="fcl_lcl" onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
+              {hasCol('vessel_name') && <JourneyFact label="Vessel" value={order.vessel_name} editable={canEdit('vessel_name')} fieldKey="vessel_name" onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
+              {(order.tracking_reference || hasCol('tracking_reference')) && <JourneyFact label="Tracking ref" value={order.tracking_reference} mono editable={canEdit('tracking_reference')} fieldKey="tracking_reference" onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
+              {order.customer_po_open_month && <JourneyFact label="PO open month" value={order.customer_po_open_month} />}
+              {order.expected_dispatch_arrive_uk_month && <JourneyFact label="Expected UK" value={order.expected_dispatch_arrive_uk_month} />}
+            </div>
+          )}
+
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="relative">
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
@@ -2696,6 +2722,37 @@ function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey
             title={editable ? 'Click to edit' : undefined}
           >
             {note || formatDate(date)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A single non-date fact on the Journey — vessel, FCL/LCL, tracking ref.
+ *  These came from the old Shipping section, where they sat as label/value
+ *  rows among a dozen dates. They describe the shipping leg rather than being
+ *  steps in it, so they read better as a strip above the timeline than as
+ *  entries within it. */
+function JourneyFact({
+  label, value, mono, editable, fieldKey, onSave,
+}: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+  editable?: boolean;
+  fieldKey?: string;
+  onSave?: (v: string) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 min-w-0">
+      <div className="text-[9px] uppercase tracking-widest text-gray-400 font-bold leading-none">{label}</div>
+      <div className="mt-1 min-w-0">
+        {editable && fieldKey && onSave ? (
+          <DetailRow label="" value={value} editable fieldKey={fieldKey} onSave={onSave} />
+        ) : (
+          <span className={cn('text-[12px] font-semibold text-gray-800 truncate block', mono && 'font-mono text-[11px]')}>
+            {value || '—'}
           </span>
         )}
       </div>
