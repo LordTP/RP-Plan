@@ -13,7 +13,7 @@ import { componentsApi, ordersApi, CANONICAL_POSITIONS, type CanonicalComponent,
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { ComponentWorklist } from '@/features/ComponentWorklist';
-import { ComponentLibraryTable } from '@/features/ComponentLibraryTable';
+import { ComponentLibraryCards } from '@/features/ComponentLibraryCards';
 import { SideDrawer, DrawerHeader } from '@/features/component-shared';
 import { Segmented } from '@/components/orders/v2-list-primitives';
 import type { Order, OrderComponent } from '@/types';
@@ -57,7 +57,6 @@ function ComponentsContent() {
   const [editing, setEditing] = useState<{ order: Order; component: OrderComponent } | null>(null);
   const [libraryReloadKey, setLibraryReloadKey] = useState(0);
   const [selectedCanonicalId, setSelectedCanonicalId] = useState<number | null>(null);
-  const [libraryRowIds, setLibraryRowIds] = useState<number[]>([]);
 
   const isSupplier = String(useStore((s) => s.user)?.role || '').toLowerCase() === 'supplier';
 
@@ -93,11 +92,10 @@ function ComponentsContent() {
   }, [openParam, router]);
 
   // Prev/next paging through the library table's current row order.
-  const drawerIdx = selectedCanonicalId != null ? libraryRowIds.indexOf(selectedCanonicalId) : -1;
-  const goPrev = drawerIdx > 0 ? () => setSelectedCanonicalId(libraryRowIds[drawerIdx - 1]) : undefined;
-  const goNext = drawerIdx >= 0 && drawerIdx < libraryRowIds.length - 1
-    ? () => setSelectedCanonicalId(libraryRowIds[drawerIdx + 1])
-    : undefined;
+  // The old table had one flat row order, so the drawer could page along it.
+  // The rail groups by name and the panel lists entries within a name, so
+  // there's no single sequence to step through — better no arrows than arrows
+  // following an order the user can't see.
 
   return (
     <AppShell title="Components">
@@ -140,12 +138,10 @@ function ComponentsContent() {
             onBulkEditDone={() => { loadOrders(); setLibraryReloadKey((k) => k + 1); }}
           />
         ) : (
-          <ComponentLibraryTable
+          <ComponentLibraryCards
             reloadKey={libraryReloadKey}
             openCanonicalId={openCanonicalId}
-            selectedId={selectedCanonicalId}
-            onSelect={setSelectedCanonicalId}
-            onRowsChange={setLibraryRowIds}
+            onOpenEntry={setSelectedCanonicalId}
           />
         )}
 
@@ -157,9 +153,6 @@ function ComponentsContent() {
                 title="Library entry"
                 subtitle="Renaming here updates every style this is on"
                 onClose={closeDrawer}
-                onPrev={goPrev}
-                onNext={goNext}
-                position={drawerIdx >= 0 ? `${drawerIdx + 1} / ${libraryRowIds.length}` : undefined}
               />
               <div className="flex-1 overflow-y-auto p-5">
                 <CanonicalDetailPanel

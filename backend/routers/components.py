@@ -910,6 +910,16 @@ async def list_component_library(
             func.sum(approved_case).label('approved_count'),
             func.sum(received_case).label('received_count'),
             func.sum(outstanding_case).label('outstanding_count'),
+            # How many DIFFERENT statuses this canonical's instances hold.
+            #
+            # The approved/received/outstanding counts can't answer "are these
+            # in step?" on their own — they ignore REJECTED, LATE, NOT REQUIRED
+            # and blank, so two REJECTED instances score zero on all three and
+            # look identical to two blanks. COALESCE gives NULL a value of its
+            # own, because "one approved, one not started" IS out of step.
+            func.count(func.distinct(
+                func.coalesce(func.upper(status_case), '\u0000none')
+            )).label('distinct_statuses'),
         )
         .outerjoin(OrderComponent, OrderComponent.canonical_id == Component.id)
         .outerjoin(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
@@ -981,10 +991,113 @@ async def list_component_library(
             "approved_count": int(r.approved_count or 0),
             "received_count": int(r.received_count or 0),
             "outstanding_count": int(r.outstanding_count or 0),
+            # True when this entry's own styles disagree with each other. The
+            # LEFT JOIN means a canonical with no instances still produces one
+            # row, so the styles_count guard keeps blanks out of it.
+            "out_of_step": styles_count > 1 and int(r.distinct_statuses or 0) > 1,
             "has_spec": bool(r.spec_url),
             "is_blank": styles_count == 0,
         })
     return {"components": results}
+
+
+@router.get("/api/components/library/by-name")
+async def get_component_library_family(
+    name: str = Query(..., description="Canonical name, matched case-insensitively"),
+    sample_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every canonical sharing a name, each with its instances.
+
+    The library page groups by name because one name covers many separate
+    entries — every "Add component" mints a fresh canonical, so a name is a
+    label that many identities share rather than an identity itself. Before
+    the wipe there were 19 canonicals called "Rib Fabric".
+
+    Without this the page would call /library/{id} once per canonical to open
+    a single name — 19 round trips to expand one card. Same per-instance shape
+    as the single-canonical endpoint, and the same supplier scoping: instances
+    outside the caller's factory are filtered out, and entries left with none
+    are dropped entirely.
+    """
+    wanted = (name or "").strip().upper()
+    if not wanted:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    q = db.query(Component).filter(func.upper(Component.name) == wanted)
+    if sample_type:
+        q = q.filter(Component.sample_type == sample_type)
+    canonicals = q.order_by(Component.created_at.asc(), Component.id.asc()).all()
+    if not canonicals:
+        raise HTTPException(status_code=404, detail="No components with that name")
+
+    supplier_clauses = supplier_filter_clause(current_user)
+    canonical_ids = [c.id for c in canonicals]
+
+    rows_q = (
+        db.query(OrderComponent, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+        .filter(OrderComponent.canonical_id.in_(canonical_ids))
+    )
+    if supplier_clauses:
+        rows_q = rows_q.filter(*supplier_clauses)
+
+    by_canonical: dict = {cid: [] for cid in canonical_ids}
+    for oc, po in rows_q.all():
+        prefix = oc.sample_type
+        received_val = getattr(oc, f"{prefix}_received", None)
+        approved_val = getattr(oc, f"{prefix}_approved", None)
+        by_canonical[oc.canonical_id].append({
+            "instance_id": oc.id,
+            "order_id": po.id,
+            "po_number": po.po_number,
+            "customer": po.customer,
+            "style_code": po.style_code,
+            "description": po.description,
+            "colour": po.colour,
+            "order_status": po.status,
+            "status": getattr(oc, f"{prefix}_status", None),
+            "received": received_val.isoformat() if received_val else None,
+            "approved": approved_val.isoformat() if approved_val else None,
+        })
+
+    entries = []
+    for c in canonicals:
+        instances = by_canonical.get(c.id, [])
+        # A supplier who can see none of an entry's styles shouldn't see the
+        # entry. Internal users keep blank entries — an entry applied to
+        # nothing yet is still real and still theirs to edit.
+        if supplier_clauses and not instances:
+            continue
+        statuses = {(i["status"] or "").strip().upper() for i in instances}
+        entries.append({
+            "id": c.id,
+            "name": c.name,
+            "sample_type": c.sample_type,
+            "description": c.description,
+            "colour": c.colour,
+            "position": _read_positions(c),
+            "spec_url": c.spec_url,
+            "supplier_notes": c.supplier_notes,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "instances": instances,
+            "styles_count": len(instances),
+            "po_numbers": sorted({i["po_number"] for i in instances if i["po_number"]}),
+            # The safety check: this entry's own styles disagreeing with each
+            # other. Compared against the same normalised status the rail uses.
+            "out_of_step": len(instances) > 1 and len(statuses) > 1,
+        })
+
+    if supplier_clauses and not entries:
+        raise HTTPException(status_code=404, detail="No components with that name")
+
+    return {
+        "name": canonicals[0].name,
+        "sample_type": canonicals[0].sample_type,
+        "entries": entries,
+        "out_of_step_count": sum(1 for e in entries if e["out_of_step"]),
+    }
 
 
 @router.get("/api/components/library/{canonical_id}")

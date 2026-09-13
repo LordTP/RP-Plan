@@ -391,6 +391,15 @@ export const componentsApi = {
     return response.data;
   },
 
+  /** Every entry sharing a name, each with its instances — one request
+   *  instead of one per canonical, which for "Rib Fabric" was 19. */
+  getLibraryFamily: async (name: string, sampleType?: string): Promise<ComponentFamily> => {
+    const response = await api.get('/api/components/library/by-name', {
+      params: { name, sample_type: sampleType },
+    });
+    return response.data;
+  },
+
   getLibraryEntry: async (canonicalId: number): Promise<CanonicalDetail> => {
     const response = await api.get(`/api/components/library/${canonicalId}`);
     return response.data;
@@ -456,6 +465,47 @@ export interface CanonicalComponent {
   outstanding_count: number;
   has_spec: boolean;
   is_blank: boolean;
+  /** This entry's own styles disagree with each other. Not a comparison
+   *  between entries sharing a name — those differ legitimately. */
+  out_of_step: boolean;
+}
+
+/** One instance of a canonical, as returned by the by-name family endpoint. */
+export interface FamilyInstance {
+  instance_id: number;
+  order_id: number;
+  po_number: string;
+  customer: string | null;
+  style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  order_status: string | null;
+  status: string | null;
+  received: string | null;
+  approved: string | null;
+}
+
+export interface FamilyEntry {
+  id: number;
+  name: string;
+  sample_type: 'strike_off' | 'lab_dip' | 'label';
+  description: string | null;
+  colour: string | null;
+  position: CanonicalPosition[];
+  spec_url: string | null;
+  supplier_notes: string | null;
+  created_at: string | null;
+  instances: FamilyInstance[];
+  styles_count: number;
+  po_numbers: string[];
+  out_of_step: boolean;
+}
+
+export interface ComponentFamily {
+  name: string;
+  sample_type: 'strike_off' | 'lab_dip' | 'label';
+  entries: FamilyEntry[];
+  out_of_step_count: number;
 }
 
 export interface CanonicalInstance {
