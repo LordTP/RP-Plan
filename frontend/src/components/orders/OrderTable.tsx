@@ -1,8 +1,10 @@
 'use client';
 
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2 } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2, X, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { BulkFieldEditor } from './BulkFieldEditor';
+import { BulkCommentModal } from './BulkCommentModal';
 import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, approvalsApi, getErrorMessage, ColumnSetting } from '@/lib/api';
 import { useSizeGuide } from '@/lib/useSizeGuide';
@@ -122,6 +124,8 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Order[] | null>(null);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkCommentOpen, setBulkCommentOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; orderId: number } | null>(null);
   // The row you last clicked into. Stays marked while the cell editor's
   // blurred backdrop is up, and afterwards — on a 200-row table, saving an
@@ -391,6 +395,29 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   // OrderTable stays mounted, tableRef's scrollTop is preserved, the user
   // stays where they were. Falls back to reload only if the parent didn't
   // provide the callback.
+  /** Export exactly the ticked rows. Client-side so it can never disagree
+      with what the user selected, and needs no new endpoint. */
+  const exportSelected = useCallback(() => {
+    const rows = orders.filter(o => selectedIds.has(o.id));
+    if (rows.length === 0) return;
+    const cols = visibleColumns;
+    const esc = (v: any) => {
+      const t = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const csv = [
+      cols.map(c => esc(c.label)).join(','),
+      ...rows.map(r => cols.map(c => esc(formatCellValue((r as any)[c.key], c))).join(',')),
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders-${rows.length}-styles-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${rows.length} ${rows.length === 1 ? 'style' : 'styles'}`);
+  }, [orders, selectedIds, visibleColumns]);
+
   const handleBulkSaveRefresh = useCallback(() => {
     toast.success('Bulk update successful');
     if (onBulkSaveRefresh) {
@@ -983,6 +1010,24 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
           </span>
           <span className="text-white/30">·</span>
           <button
+            onClick={() => setBulkEditOpen(true)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-primary-500 hover:bg-primary-600 transition-colors"
+          >
+            Edit field
+          </button>
+          <button
+            onClick={() => setBulkCommentOpen(true)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            Comment
+          </button>
+          <button
+            onClick={exportSelected}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 transition-colors"
+          >
+            Export
+          </button>
+          <button
             onClick={() => setDeleteConfirm(orders.filter(o => selectedIds.has(o.id)))}
             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500 hover:bg-red-600 flex items-center gap-1.5 transition-colors"
           >
@@ -995,6 +1040,27 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
             Cancel
           </button>
         </div>
+      )}
+
+      {bulkEditOpen && (
+        <BulkFieldEditor
+          orderIds={Array.from(selectedIds)}
+          onDeselect={(id) => setSelectedIds(prev => {
+            const n = new Set(prev);
+            n.delete(id);
+            return n;
+          })}
+          onClose={() => setBulkEditOpen(false)}
+          onApplied={() => { setSelectedIds(new Set()); onBulkSaveRefresh?.(); }}
+        />
+      )}
+
+      {bulkCommentOpen && (
+        <BulkCommentModal
+          orders={orders.filter(o => selectedIds.has(o.id))}
+          onClose={() => setBulkCommentOpen(false)}
+          onDone={() => { setSelectedIds(new Set()); setBulkCommentOpen(false); }}
+        />
       )}
 
       {/* Right-click context menu */}
@@ -1033,7 +1099,11 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
             try {
               const res = await ordersApi.bulkDelete(ids);
               setSelectedIds(new Set());
-              toast.success(`Deleted ${res.deleted_count} ${res.deleted_count === 1 ? 'row' : 'rows'}`);
+              const pos = Array.from(new Set(deleteConfirm.map(o => o.po_number)));
+              toast.success(
+                `Deleted ${res.deleted_count} ${res.deleted_count === 1 ? 'style' : 'styles'}` +
+                (pos.length === 1 ? ` from PO ${pos[0]}` : ` across ${pos.length} orders`)
+              );
               // Filter deleted rows out of the store so they disappear
               // from the parent's list immediately.
               const idSet = new Set(ids);
@@ -1048,55 +1118,202 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   );
 }
 
+/**
+ * Bulk delete confirmation — two steps, and it counts in the language of the
+ * business rather than the database.
+ *
+ * A PO *is* the order; the rows under it are styles. The previous version
+ * called every row an "order", so ticking four styles on one PO announced
+ * "Delete 4 orders?" — four times the apparent damage, on the one dialog
+ * where a misread is unrecoverable. It now says what it is: N styles, and
+ * whether they sit on one PO or several, broken down per PO.
+ *
+ * Step one shows exactly what goes and at what scale; step two makes them
+ * type the style count, because that is the number people skim. Backdrop
+ * clicks do not close it — an accidental click outside a destructive dialog
+ * should never decide the outcome either way.
+ */
 function DeleteConfirmModal({ orders, onCancel, onConfirm }: {
   orders: Order[];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [typed, setTyped] = useState('');
+
+  // Group by PO so "is this one order or several?" is answered by the shape
+  // of the list, not by arithmetic the user has to do.
+  const byPO = useMemo(() => {
+    const m = new Map<string, { po: string; customer?: string | null; factory?: string | null; rows: Order[] }>();
+    for (const o of orders) {
+      const k = o.po_number || '—';
+      const g = m.get(k);
+      if (g) g.rows.push(o);
+      else m.set(k, { po: k, customer: o.customer, factory: o.factory, rows: [o] });
+    }
+    return Array.from(m.values()).sort((a, b) => b.rows.length - a.rows.length);
+  }, [orders]);
+
+  const styleCount = orders.length;
+  const poCount = byPO.length;
+  const units = orders.reduce((n, o) => n + (Number(o.total_quantity) || 0), 0);
+  const expected = String(styleCount);
+  const matches = typed.trim() === expected;
+
+  const noun = styleCount === 1 ? 'style' : 'styles';
+  const headline = poCount === 1
+    ? `Delete ${styleCount} ${noun} from PO ${byPO[0].po}?`
+    : `Delete ${styleCount} ${noun} across ${poCount} orders?`;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onCancel]);
+
+  const Stat = ({ n, label }: { n: string | number; label: string }) => (
+    <div>
+      <div className="text-[17px] font-bold text-gray-900 tabular-nums leading-none">{n}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mt-1">{label}</div>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6" onClick={onCancel}>
-      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl ring-1 ring-gray-100 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-            <span className="text-red-600 font-bold text-lg">!</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-6">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden">
+        <div className="px-5 pt-4 pb-3.5 flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
           </div>
-          <div>
-            <h3 className="text-base font-bold text-gray-900">Delete {orders.length} order{orders.length === 1 ? '' : 's'}?</h3>
-            <p className="text-xs text-red-600 font-medium">This cannot be undone.</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-bold text-gray-900 leading-tight">
+              {step === 1 ? headline : 'Confirm the number'}
+            </h3>
+            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
+              Permanent. Comments, components and sample history go with {styleCount === 1 ? 'it' : 'them'}.
+            </p>
           </div>
-        </div>
-        <div className="px-5 py-3 max-h-64 overflow-y-auto text-xs">
-          <ul className="divide-y divide-gray-100">
-            {orders.slice(0, 40).map(o => (
-              <li key={o.id} className="py-1.5 flex items-center gap-3">
-                <span className="font-mono font-semibold text-gray-900 w-16 flex-shrink-0">{o.po_number}</span>
-                <span className="font-mono text-gray-700 truncate">{o.style_code || `#${o.id}`}</span>
-                <span className="text-gray-400 truncate ml-auto max-w-[160px]">{o.customer}</span>
-              </li>
-            ))}
-            {orders.length > 40 && (
-              <li className="py-2 text-center text-gray-400 italic">…and {orders.length - 40} more</li>
-            )}
-          </ul>
-        </div>
-        <div className="px-5 py-3 bg-gray-50/40 border-t border-gray-100 flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
             disabled={busy}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+            className="p-1 -mr-1 -mt-0.5 text-gray-300 hover:text-gray-700 rounded disabled:opacity-40"
+            title="Cancel"
           >
-            Cancel
-          </button>
-          <button
-            onClick={async () => { setBusy(true); await onConfirm(); }}
-            disabled={busy}
-            className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
-          >
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-            Delete {orders.length} order{orders.length === 1 ? '' : 's'}
+            <X className="w-4 h-4" />
           </button>
         </div>
+
+        <div className="px-5 py-3 bg-gray-50 border-y border-gray-100 flex items-center gap-8">
+          <Stat n={styleCount} label={noun} />
+          <Stat n={poCount} label={poCount === 1 ? 'order' : 'orders'} />
+          {units > 0 && <Stat n={units.toLocaleString()} label="units" />}
+        </div>
+
+        {step === 1 ? (
+          <>
+            <div className="max-h-[280px] overflow-y-auto">
+              {byPO.map(g => (
+                <div key={g.po}>
+                  <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-5 py-2 border-b border-gray-100
+                                  flex items-center gap-2">
+                    <span className="font-mono text-[12px] font-bold text-gray-900">{g.po}</span>
+                    <span className="text-[11px] text-gray-400 truncate">
+                      {[g.customer, g.factory].filter(Boolean).join(' · ')}
+                    </span>
+                    <span className="ml-auto text-[11px] font-semibold text-red-600 whitespace-nowrap">
+                      {g.rows.length} {g.rows.length === 1 ? 'style' : 'styles'}
+                    </span>
+                  </div>
+                  <ul>
+                    {g.rows.slice(0, 25).map(o => (
+                      <li key={o.id} className="px-5 py-1.5 flex items-center gap-3 text-[12px] border-b border-gray-50">
+                        <span className="font-mono text-gray-800 truncate">{o.style_code || `#${o.id}`}</span>
+                        <span className="text-gray-400 truncate ml-auto max-w-[190px]">
+                          {[o.description, o.colour].filter(Boolean).join(' · ')}
+                        </span>
+                      </li>
+                    ))}
+                    {g.rows.length > 25 && (
+                      <li className="px-5 py-1.5 text-[11px] text-gray-400 italic border-b border-gray-50">
+                        …and {g.rows.length - 25} more on this PO
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-3 bg-gray-50/60 border-t border-gray-100 flex items-center justify-end gap-2">
+              <button
+                onClick={onCancel}
+                className="px-3.5 py-2 text-[13px] font-medium text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="px-5 py-4">
+              <p className="text-[13px] text-gray-700 leading-relaxed mb-3.5">
+                You are about to permanently delete{' '}
+                <b className="text-gray-900">{styleCount} {noun}</b>
+                {poCount === 1
+                  ? <> from <b className="text-gray-900 font-mono">PO {byPO[0].po}</b></>
+                  : <> across <b className="text-gray-900">{poCount} orders</b></>}.
+              </p>
+              <label className="block">
+                <span className="block text-[12px] font-semibold text-gray-600 mb-1.5">
+                  Type <b className="font-mono text-gray-900">{expected}</b> to confirm
+                </span>
+                <input
+                  autoFocus
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && matches && !busy) { setBusy(true); onConfirm(); } }}
+                  placeholder={expected}
+                  className="w-24 px-3 py-2 font-mono text-[14px] text-center border border-gray-300 rounded-lg
+                             focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </label>
+            </div>
+            <div className="px-5 py-3 bg-gray-50/60 border-t border-gray-100 flex items-center justify-between">
+              <button
+                onClick={() => { setStep(1); setTyped(''); }}
+                disabled={busy}
+                className="px-2 py-2 text-[13px] font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onCancel}
+                  disabled={busy}
+                  className="px-3.5 py-2 text-[13px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => { setBusy(true); await onConfirm(); }}
+                  disabled={busy || !matches}
+                  title={matches ? undefined : `Type ${expected} to enable this`}
+                  className="px-4 py-2 text-[13px] font-semibold text-white bg-red-600 rounded-lg
+                             hover:bg-red-700 disabled:opacity-40 disabled:hover:bg-red-600
+                             inline-flex items-center gap-2"
+                >
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Delete {styleCount} {noun}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

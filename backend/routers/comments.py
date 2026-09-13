@@ -369,19 +369,33 @@ async def bulk_add_comment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Add a comment to all orders with the same PO number. @mentions send a
-    SINGLE consolidated email per mentioned user summarising every style."""
+    """Add a comment to a set of orders. @mentions send a SINGLE consolidated
+    email per mentioned user summarising every style.
+
+    Takes either `order_ids` (an explicit selection, which is what the orders
+    table's bulk bar sends) or `po_number` (every style on that PO). order_ids
+    wins when both are present — an explicit selection is never a request to
+    also comment on rows the user did not tick.
+    """
     po_number = data.get("po_number")
+    order_ids = data.get("order_ids") or []
     comment_text = data.get("comment_text")
     mentioned_user_ids = data.get("mentioned_user_ids") or []
 
-    if not po_number or not comment_text:
-        raise HTTPException(status_code=400, detail="po_number and comment_text are required")
+    if not comment_text or not str(comment_text).strip():
+        raise HTTPException(status_code=400, detail="comment_text is required")
+    if not order_ids and not po_number:
+        raise HTTPException(status_code=400, detail="Pass either order_ids or po_number")
 
-    orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
+    if order_ids:
+        if len(order_ids) > 500:
+            raise HTTPException(status_code=400, detail="Too many rows selected — cap is 500")
+        orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids)).all()
+    else:
+        orders = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).all()
 
     if not orders:
-        raise HTTPException(status_code=404, detail="No orders found with this PO number")
+        raise HTTPException(status_code=404, detail="None of those orders exist")
 
     for order in orders:
         assert_supplier_can_access(order, current_user, detail="Not authorized to comment on these orders")
