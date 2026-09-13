@@ -1862,14 +1862,14 @@ function DetailPanel({
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* Segmented Details/Comments toggle */}
-            <div className="inline-flex rounded-md border border-gray-300 bg-gray-50 p-0.5">
+            <div className="inline-flex rounded-lg bg-gray-100 p-0.5">
               <button
                 onClick={() => { setModalTab('details'); modalContentRef.current?.scrollTo(0, 0); }}
                 className={cn(
-                  'px-3 py-1 text-xs font-semibold rounded transition-colors',
+                  'px-3 py-1 text-[11.5px] font-semibold rounded-md transition-colors',
                   modalTab === 'details'
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800'
                 )}
               >
                 Details
@@ -1877,10 +1877,10 @@ function DetailPanel({
               <button
                 onClick={() => { setModalTab('comments'); modalContentRef.current?.scrollTo(0, 0); }}
                 className={cn(
-                  'px-3 py-1 text-xs font-semibold rounded transition-colors flex items-center gap-1.5',
+                  'px-3 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex items-center gap-1.5',
                   modalTab === 'comments'
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800'
                 )}
               >
                 <MessageSquare className="w-3 h-3" />
@@ -1888,7 +1888,7 @@ function DetailPanel({
                 {(order.unread_comment_count || 0) > 0 && (
                   <span className={cn(
                     'px-1 py-0 text-[9px] font-bold rounded-full leading-tight',
-                    modalTab === 'comments' ? 'bg-white text-primary-600' : 'bg-red-500 text-white'
+                    modalTab === 'comments' ? 'bg-primary-100 text-primary-700' : 'bg-red-500 text-white'
                   )}>
                     {order.unread_comment_count}
                   </span>
@@ -1898,7 +1898,7 @@ function DetailPanel({
             {/* Page between styles without closing the drawer — the main
                 win of the drawer over the old centred modal. */}
             {(onPrev || onNext) && (
-              <div className="inline-flex rounded-md border border-gray-300 bg-white overflow-hidden">
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <button
                   onClick={() => onPrev?.()}
                   disabled={!onPrev}
@@ -2128,7 +2128,13 @@ function DetailBody({
     <>
       {/* Hero stat strip — always visible, "what do I need to know at a glance". */}
       <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-200 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, showCostTile || showValueTile, showExFacTile, hasCol('eta_to_customer'), showSamplingTile].filter(Boolean).length}, minmax(0, 1fr))` }}>
-        <HeroTile label="Total Qty" value={formatQty(order.total_quantity)} />
+        <HeroTile
+          label="Total Qty"
+          value={formatQty(order.total_quantity)}
+          sub={sizes.length > 0
+            ? `${sizes.length} size${sizes.length === 1 ? '' : 's'} · ${sizes[0].label} to ${sizes[sizes.length - 1].label}`
+            : undefined}
+        />
         {showValueTile ? (
           <HeroTile
             label="Order Value"
@@ -2280,25 +2286,19 @@ function DetailBody({
               )}
                 </div>
 
-              {/* Photo / shipment / ex-fac from PP — date-only, so they pair
-                  up rather than each taking a full card. */}
+              {/* Photo, shipment and ex-fac-from-PP are a date each — three
+                  separate cards for one field apiece is three headings' worth
+                  of chrome around three dates. One card, three rows. */}
               {(hasCol('photo_sample_received') || hasCol('shipment_sample_received') || hasCol('ex_factory_from_pp_approval')) && (
-                <div className="grid grid-cols-3 gap-2 mt-4">
-                  {hasCol('photo_sample_received') && (
-                    <SampleCard label="Photo Sample">
-                      <DetailRow label="Received" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} fieldKey="photo_sample_received" onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />
-                    </SampleCard>
-                  )}
-                  {hasCol('shipment_sample_received') && (
-                    <SampleCard label="Shipment Sample">
-                      <DetailRow label="Received" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} fieldKey="shipment_sample_received" onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />
-                    </SampleCard>
-                  )}
-                  {hasCol('ex_factory_from_pp_approval') && (
-                    <SampleCard label="Ex-Fac from PP Approval">
-                      <DetailRow label="Date" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} fieldKey="ex_factory_from_pp_approval" onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />
-                    </SampleCard>
-                  )}
+                <div className="rounded-lg border border-gray-200 bg-white overflow-hidden mt-2.5">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                    <span className="text-[10.5px] uppercase tracking-wider font-bold text-gray-700">Other dates</span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {hasCol('photo_sample_received') && <DetailRow label="Photo sample received" value={formatDate(order.photo_sample_received)} type="date" rawValue={order.photo_sample_received} editable={canEdit('photo_sample_received')} fieldKey="photo_sample_received" onSave={(v) => onSave?.(order.id, 'photo_sample_received', v)} />}
+                    {hasCol('shipment_sample_received') && <DetailRow label="Shipment sample received" value={formatDate(order.shipment_sample_received)} type="date" rawValue={order.shipment_sample_received} editable={canEdit('shipment_sample_received')} fieldKey="shipment_sample_received" onSave={(v) => onSave?.(order.id, 'shipment_sample_received', v)} />}
+                    {hasCol('ex_factory_from_pp_approval') && <DetailRow label="Ex-factory from PP approval" value={formatDate(order.ex_factory_from_pp_approval)} type="date" rawValue={order.ex_factory_from_pp_approval} editable={canEdit('ex_factory_from_pp_approval')} fieldKey="ex_factory_from_pp_approval" onSave={(v) => onSave?.(order.id, 'ex_factory_from_pp_approval', v)} />}
+                  </div>
                 </div>
               )}
               </div>
@@ -2409,7 +2409,7 @@ function DetailBody({
                 {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} editable={canEdit('specs_sent_to_factory')} fieldKey="specs_sent_to_factory" onSave={(v) => onSave?.(order.id, 'specs_sent_to_factory', v)} />}
                 {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} fieldKey="barcodes_sent_to_factory" onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
                 {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} note={order.date_notes?.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} fieldKey="original_po_ex_factory" onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
-                {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} fieldKey="factory_confirmed_ex_factory" onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} editable={canEdit('factory_confirmed_ex_factory')} fieldKey="factory_confirmed_ex_factory" onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
                 {hasCol('revised_po_ex_factory') && (
                   <TimelineItem
                     label="Revised Ex-Factory"

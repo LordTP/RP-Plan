@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   AlertCircle,
   CheckCircle,
@@ -25,18 +25,21 @@ import {
   Database,
   Download,
   ChevronRight,
+  AlertTriangle,
+  RotateCcw,
+  Minus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
-import { usersApi, factoriesApi, settingsApi, ColumnSetting, sizeGuideApi, type SizeGuideRow, type NotificationRule } from '@/lib/api';
+import api, { usersApi, factoriesApi, settingsApi, ColumnSetting, sizeGuideApi, type SizeGuideRow, type NotificationRule } from '@/lib/api';
 import { refreshSizeGuide } from '@/lib/useSizeGuide';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
 import { COLUMNS } from '@/types';
 
-type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes' | 'backup';
+type Tab = 'account' | 'users' | 'columns' | 'fields' | 'notifications' | 'sizes' | 'backup' | 'warnings';
 
 export default function SettingsPage() {
   return (
@@ -154,52 +157,103 @@ function SettingsContent() {
 
   const isAdmin = user?.role === 'admin';
 
-  const tabs: { key: Tab; label: string; icon: React.ElementType; show: boolean }[] = [
-    { key: 'account', label: 'My Account', icon: UserIcon, show: true },
-    { key: 'users', label: 'Users', icon: Users, show: isFullInternal },
-    { key: 'columns', label: 'Supplier Columns', icon: SettingsIcon, show: isFullInternal },
-    { key: 'sizes', label: 'Size Guide', icon: Ruler, show: isFullInternal },
-    { key: 'notifications', label: 'Notifications', icon: Bell, show: isAdmin },
-    { key: 'backup', label: 'Backup', icon: Database, show: isAdmin },
-    { key: 'fields', label: 'Field Reference', icon: CheckCircle, show: true },
+  // Grouped, because seven flat items give no sense of what's yours, what's
+  // your team's, and what changes how the app behaves for everyone. The
+  // grouping is also the safety cue: "System" is where a wrong move is felt by
+  // other people.
+  const groups: {
+    heading: string;
+    items: { key: Tab; label: string; hint: string; icon: React.ElementType; show: boolean }[];
+  }[] = [
+    {
+      heading: 'You',
+      items: [
+        { key: 'account', label: 'My account', hint: 'Profile and what you can do', icon: UserIcon, show: true },
+      ],
+    },
+    {
+      heading: 'Team',
+      items: [
+        { key: 'users', label: 'Users', hint: 'Accounts, roles and access', icon: Users, show: isFullInternal },
+        { key: 'columns', label: 'Supplier columns', hint: 'What factories can see', icon: SettingsIcon, show: isFullInternal },
+      ],
+    },
+    {
+      heading: 'How the app behaves',
+      items: [
+        { key: 'warnings', label: 'Warning thresholds', hint: 'How long before we chase', icon: AlertTriangle, show: isAdmin },
+        { key: 'notifications', label: 'Notifications', hint: 'Email automations', icon: Bell, show: isAdmin },
+        { key: 'sizes', label: 'Size guide', hint: 'Size ranges per gender', icon: Ruler, show: isFullInternal },
+      ],
+    },
+    {
+      heading: 'Reference',
+      items: [
+        { key: 'fields', label: 'Field reference', hint: 'What every column means', icon: CheckCircle, show: true },
+        { key: 'backup', label: 'Backup', hint: 'Download a copy of the data', icon: Database, show: isAdmin },
+      ],
+    },
   ];
+
+  const activeMeta = groups.flatMap(g => g.items).find(i => i.key === activeTab);
 
   return (
     <AppShell title="Settings">
-      <div>
-        {/* Header */}
+      <div className="max-w-[1180px]">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account, users, and role permissions</p>
+          <p className="text-sm text-gray-500 mt-1">Accounts, access, and the rules the app runs on</p>
         </div>
 
-        <div className="grid grid-cols-[220px_1fr] gap-6">
-          {/* Sidebar Tabs */}
+        <div className="grid grid-cols-[232px_1fr] gap-8 items-start">
           <aside className="sticky top-[72px] self-start">
-            <nav className="space-y-1">
-              {tabs.filter(t => t.show).map(t => {
-                const Icon = t.icon;
+            <nav className="space-y-5">
+              {groups.map(group => {
+                const visible = group.items.filter(i => i.show);
+                if (visible.length === 0) return null;
                 return (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key)}
-                    className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                      activeTab === t.key
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {t.label}
-                  </button>
+                  <div key={group.heading}>
+                    <div className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                      {group.heading}
+                    </div>
+                    <div className="space-y-0.5">
+                      {visible.map(t => {
+                        const Icon = t.icon;
+                        const on = activeTab === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            onClick={() => setActiveTab(t.key)}
+                            className={cn(
+                              'w-full flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors',
+                              on ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+                            )}
+                          >
+                            <Icon className={cn('w-4 h-4 mt-0.5 flex-shrink-0', on ? 'text-primary-600' : 'text-gray-400')} />
+                            <span className="min-w-0">
+                              <span className="block text-[13px] font-semibold leading-tight">{t.label}</span>
+                              <span className={cn('block text-[11px] leading-tight mt-0.5', on ? 'text-primary-600/80' : 'text-gray-400')}>
+                                {t.hint}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </nav>
           </aside>
 
-          {/* Content */}
           <main className="min-w-0">
+            {activeMeta && (
+              <div className="mb-4 pb-3 border-b border-gray-200">
+                <h2 className="text-[17px] font-bold text-gray-900 leading-tight">{activeMeta.label}</h2>
+                <p className="text-[12.5px] text-gray-500 mt-0.5">{activeMeta.hint}</p>
+              </div>
+            )}
+
             {activeTab === 'account' && <AccountTab user={user} isDesigner={isDesigner} isInternal={isInternal} isFullInternal={isFullInternal} />}
 
             {activeTab === 'users' && isFullInternal && (
@@ -234,6 +288,8 @@ function SettingsContent() {
             {activeTab === 'notifications' && isAdmin && <NotificationsTab />}
 
             {activeTab === 'backup' && isAdmin && <BackupTab />}
+
+            {activeTab === 'warnings' && isAdmin && <WarningThresholdsTab />}
 
             {activeTab === 'fields' && <FieldReferenceTab />}
           </main>
@@ -2189,6 +2245,210 @@ function NotificationsTab() {
           <strong>Heads up:</strong> The master switch is a hard stop. Per-user email preferences
           will live on individual user profiles later.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Warning thresholds
+//
+// The numbers behind the warnings centre — how long Source Lab waits before
+// something is worth chasing. They were literals in dashboard_warnings.py, so
+// changing them meant a deploy, but they're operational policy set by people
+// who don't deploy.
+//
+// The list is driven entirely by the backend registry: labels, descriptions,
+// units and bounds all arrive with the data, so a new threshold appears here
+// with no change to this file.
+// ─────────────────────────────────────────────────────────────────────────
+
+interface Threshold {
+  key: string;
+  label: string;
+  description: string;
+  unit: string;
+  group: string;
+  default: number;
+  min: number;
+  max: number;
+  value: number;
+}
+
+function WarningThresholdsTab() {
+  const [rows, setRows] = useState<Threshold[]>([]);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/settings/warning-thresholds');
+      setRows(res.data.thresholds);
+      setDraft({});
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to load thresholds');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const valueOf = (t: Threshold) => (draft[t.key] ?? t.value);
+  const dirty = Object.keys(draft).filter(k => {
+    const row = rows.find(r => r.key === k);
+    return row && draft[k] !== row.value;
+  });
+
+  const set = (t: Threshold, v: number) => {
+    const clamped = Math.max(t.min, Math.min(t.max, v));
+    setDraft(d => ({ ...d, [t.key]: clamped }));
+  };
+
+  async function save() {
+    if (dirty.length === 0) return;
+    setSaving(true);
+    try {
+      const body: Record<string, number> = {};
+      for (const k of dirty) body[k] = draft[k];
+      await api.put('/api/settings/warning-thresholds', body);
+      toast.success(`Saved ${dirty.length} threshold${dirty.length === 1 ? '' : 's'}`);
+      await load();
+    } catch (err: any) {
+      // The backend rejects the whole request on a bad value rather than
+      // saving half, so nothing has changed and the draft is still correct.
+      toast.error(err?.response?.data?.detail || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+  }
+
+  const groups = Array.from(new Set(rows.map(r => r.group)));
+
+  return (
+    <div className="pb-24">
+      <div className="rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 mb-5 flex items-start gap-2.5">
+        <AlertTriangle className="w-4 h-4 text-primary-600 mt-0.5 flex-shrink-0" />
+        <p className="text-[12.5px] text-primary-900 leading-relaxed">
+          These decide when an order appears in the warnings centre. Raising a number means waiting
+          longer before chasing; lowering it means chasing sooner and seeing more warnings.
+          Nothing here changes the data — only what gets flagged.
+        </p>
+      </div>
+
+      {groups.map(group => (
+        <section key={group} className="mb-6">
+          <div className="flex items-center gap-2.5 mb-2">
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-gray-500">{group}</h3>
+            <span className="flex-1 h-px bg-gray-200" />
+          </div>
+          <div className="space-y-2">
+            {rows.filter(r => r.group === group).map(t => {
+              const val = valueOf(t);
+              const changed = val !== t.value;
+              const isDefault = val === t.default;
+              return (
+                <div
+                  key={t.key}
+                  className={cn(
+                    'rounded-xl border bg-white px-4 py-3 flex items-start gap-4 transition-colors',
+                    changed ? 'border-primary-300 ring-2 ring-primary-100' : 'border-gray-200',
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-semibold text-gray-900">{t.label}</span>
+                      {changed && (
+                        <span className="text-[9.5px] font-bold uppercase tracking-wide text-primary-700 bg-primary-100 rounded-full px-2 py-0.5">
+                          unsaved
+                        </span>
+                      )}
+                      {!isDefault && !changed && (
+                        <span className="text-[9.5px] font-semibold uppercase tracking-wide text-gray-400">
+                          default {t.default}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-gray-500 mt-0.5 leading-snug">{t.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {!isDefault && (
+                      <button
+                        onClick={() => set(t, t.default)}
+                        title={`Reset to ${t.default}`}
+                        className="p-1.5 rounded-md text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {/* A stepper, not a free text box. Every value here is a
+                        small whole number of days, and nudging one is the
+                        common edit — typing is the exception, so it's still
+                        allowed but doesn't set the shape of the control. */}
+                    <div className="flex items-center rounded-lg border border-gray-300 overflow-hidden bg-white">
+                      <button
+                        onClick={() => set(t, val - 1)}
+                        disabled={val <= t.min}
+                        className="px-2 py-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <input
+                        value={val}
+                        onChange={(e) => {
+                          const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10);
+                          if (!Number.isNaN(n)) set(t, n);
+                        }}
+                        className="w-12 text-center text-[14px] font-bold tabular-nums text-gray-900 border-x border-gray-200 py-1.5 focus:outline-none focus:bg-primary-50"
+                      />
+                      <button
+                        onClick={() => set(t, val + 1)}
+                        disabled={val >= t.max}
+                        className="px-2 py-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-gray-500 w-[76px] leading-tight">{t.unit}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      {/* Floating save bar — the same pattern as the orders bulk bar, so a
+          pending change is impossible to walk away from without noticing. */}
+      <div
+        className={cn(
+          'fixed left-1/2 -translate-x-1/2 bottom-6 z-40 transition-all duration-200',
+          dirty.length > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none',
+        )}
+      >
+        <div className="bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 flex items-center gap-3 text-xs">
+          <span className="font-semibold text-gray-900 whitespace-nowrap">
+            {dirty.length} change{dirty.length === 1 ? '' : 's'}
+          </span>
+          <span className="w-px h-5 bg-gray-200" />
+          <button onClick={() => setDraft({})} className="text-gray-500 hover:text-gray-900 px-1">
+            Discard
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );
