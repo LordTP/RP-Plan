@@ -1097,9 +1097,12 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                 dotColor={statusDotHex(status)}
                 count={poCount}
                 secondary={
-                  isSupplier
-                    ? `${units.toLocaleString()} units`
-                    : `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                  // Costing is out of the app, so formatCurrency(value) was
+                  // rendering "$0.00" on every tile for internal users. The
+                  // detail panel already gates on SHOW_COSTING; this didn't.
+                  SHOW_COSTING && !isSupplier
+                    ? `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                    : `${units.toLocaleString()} units`
                 }
                 active={statusFilter === status && !lateOnly}
                 onClick={() => {

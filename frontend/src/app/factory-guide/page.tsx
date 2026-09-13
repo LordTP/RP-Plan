@@ -89,14 +89,21 @@ function FactoryGuideContent() {
               When you sign in, you'll see <strong>your factory's purchase orders</strong> on the Product page — we filter automatically so you only ever see your own work.
             </p>
             <p>
-              The page is split into two parts: a <strong>tracker bar</strong> across the top showing the status of your date-change requests, and the <strong>list of purchase orders</strong> grouped by PO number underneath.
+              Top to bottom: a <strong>tracker bar</strong> showing the state of your date-change
+              requests, a <strong>search box</strong> with Refresh / Export / Table View beside it,
+              <strong> status tiles</strong> that double as filters, a row of{' '}
+              <strong>filter chips</strong>, and then your orders <strong>grouped by PO</strong>.
             </p>
-            <MockShot caption="Factory · Product — tracker bar across the top, then your PO list">
+            <MockShot caption="Factory · Product — tracker bar, status tiles, then your POs grouped">
               <ProductPageMock />
             </MockShot>
             <Tips>
-              <Tip icon={Search}>Use the search bar to find a specific <strong>PO number</strong>, <strong>style code</strong>, <strong>customer</strong>, or <strong>factory</strong>. Filter chips below let you narrow by status.</Tip>
-              <Tip icon={ChevronRight}>Each row in the list is one PO. Click the row to <strong>expand it</strong> and see the styles inside.</Tip>
+              <Tip icon={Search}>Search matches <strong>PO number</strong>, <strong>customer</strong>, <strong>style</strong> or <strong>factory</strong>.</Tip>
+              <Tip icon={Tag}>The status tiles are filters. Click one to show only those orders, click it again to clear.</Tip>
+              <Tip icon={Tag}>Chips narrow further — <strong>Customer</strong>, <strong>Ex-factory</strong>, and <strong>Missing dates</strong> for anything with a gap.</Tip>
+              <Tip icon={ChevronRight}>Each row is one PO. Click it to <strong>expand</strong> and see the styles inside — or <strong>Expand all</strong> on the right.</Tip>
+              <Tip icon={Tag}><strong>Open / All / Shipped</strong> on the right switches which orders are listed at all.</Tip>
+              <Tip icon={FileSpreadsheet}><strong>Table View</strong> swaps to the flat spreadsheet layout if you prefer one row per style.</Tip>
             </Tips>
           </Step>
 
@@ -789,127 +796,126 @@ function POCardCollapsedMock({ po, customer, factory, styles, units, exFac, stat
 }
 
 /** Full V2 product page mockup — tracker bar + search row + PO list. */
-function ProductPageMock() {
+/* Both drawn from the live supplier view (FactoryV2View). The previous pair
+   showed a Pending/Approved/Rejected chip bar over "Sampling / Production" PO
+   cards — a design that no longer exists on either the default or the table
+   view, so the labels had been corrected on a picture of the wrong screen. */
+
+const V2_POS: { po: string; customer: string; styles: number; qty: string; exfac: string }[] = [
+  { po: 'DEMO-5301', customer: 'TRUEPATH RETAIL', styles: 4, qty: '1,254', exfac: '07 Oct 2026' },
+  { po: 'DEMO-5302', customer: 'NORTHGATE SPORT', styles: 2, qty: '380', exfac: '13 Oct 2026' },
+  { po: 'DEMO-5303', customer: 'BQ DIRECT', styles: 5, qty: '768', exfac: '19 Oct 2026' },
+  { po: '5252', customer: 'LEVY MERCHANDISING', styles: 4, qty: '936', exfac: '30 Oct 2026' },
+];
+
+function V2Chrome({ children, expandLabel }: { children: React.ReactNode; expandLabel: string }) {
   return (
-    <div className="p-4 space-y-3">
-      {/* Tracker */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
-          <div className="px-2.5 py-1.5 bg-orange-50 border-b border-orange-100 flex items-center gap-1.5">
-            <Clock className="w-2.5 h-2.5 text-orange-600" />
-            <span className="text-[9px] font-medium text-orange-800">Pending</span>
-            <span className="ml-auto text-[9px] bg-orange-200 text-orange-800 px-1 py-0.5 rounded-full font-semibold">2</span>
+    <div className="p-3 bg-gray-50">
+      {/* Supplier-only date-change tracker, above everything else */}
+      <div className="grid grid-cols-3 gap-1.5 mb-2">
+        {[['Pending', '2', 'amber'], ['Approved', '3', 'green'], ['Rejected', '1', 'red']].map(([l, n, tone]) => (
+          <div key={l} className={cn('rounded-md border px-2 py-1 flex items-center gap-1.5',
+            tone === 'amber' ? 'border-amber-200 bg-amber-50' : tone === 'green' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50')}>
+            <span className={cn('text-[9px] font-semibold',
+              tone === 'amber' ? 'text-amber-700' : tone === 'green' ? 'text-green-700' : 'text-red-700')}>{l}</span>
+            <span className="ml-auto text-[9px] font-bold text-gray-700">{n}</span>
           </div>
+        ))}
+      </div>
+      {/* Search + actions */}
+      <div className="flex items-center gap-1.5 mb-2">
+        <div className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[9px] text-gray-400">
+          Search PO, customer, style, factory…
         </div>
-        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
-          <div className="px-2.5 py-1.5 bg-green-50 border-b border-green-100 flex items-center gap-1.5">
-            <CheckCircle className="w-2.5 h-2.5 text-green-600" />
-            <span className="text-[9px] font-medium text-green-800">Approved</span>
-            <span className="ml-auto text-[9px] bg-green-200 text-green-800 px-1 py-0.5 rounded-full font-semibold">3</span>
-          </div>
+        {['Refresh', 'Export', 'Table View'].map(x => (
+          <span key={x} className="px-1.5 py-1 rounded-md border border-gray-200 bg-white text-[9px] font-semibold text-gray-600">{x}</span>
+        ))}
+      </div>
+      {/* Status tiles — filters */}
+      <div className="grid grid-cols-2 gap-1.5 mb-2">
+        <div className="rounded-md border border-primary-400 ring-1 ring-primary-200 bg-white px-2 py-1.5">
+          <p className="text-[7.5px] font-bold tracking-wide text-gray-500">OPEN ORDERS</p>
+          <p className="text-sm font-extrabold text-gray-900">13</p>
+          <p className="text-[7.5px] text-gray-400">13 shown</p>
         </div>
-        <div className="bg-white rounded-lg ring-1 ring-gray-100 overflow-hidden">
-          <div className="px-2.5 py-1.5 bg-red-50 border-b border-red-100 flex items-center gap-1.5">
-            <XCircle className="w-2.5 h-2.5 text-red-600" />
-            <span className="text-[9px] font-medium text-red-800">Rejected</span>
-            <span className="ml-auto text-[9px] bg-red-200 text-red-800 px-1 py-0.5 rounded-full font-semibold">1</span>
-          </div>
+        <div className="rounded-md border border-gray-200 bg-white px-2 py-1.5">
+          <p className="text-[7.5px] font-bold tracking-wide text-gray-500">· UNKNOWN</p>
+          <p className="text-sm font-extrabold text-gray-900">13</p>
+          <p className="text-[7.5px] text-gray-400">11,280 units</p>
         </div>
       </div>
-      {/* Search row */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="w-3 h-3 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-          <div className="pl-7 pr-3 py-1.5 text-[11px] bg-white border border-gray-200 rounded-lg text-gray-400">Search PO, customer, style, factory…</div>
-        </div>
-        <button className="p-1.5 bg-white border border-gray-200 rounded-lg">
-          <RefreshCw className="w-3 h-3 text-gray-500" />
-        </button>
-        <div className="ml-auto flex items-center gap-1">
-          <span className="px-2 py-1 rounded-full bg-violet-100 text-violet-700 text-[9px] font-bold">All 12</span>
-          <span className="px-2 py-1 rounded-full bg-white border border-gray-200 text-[9px] text-gray-600">Sampling</span>
-          <span className="px-2 py-1 rounded-full bg-white border border-gray-200 text-[9px] text-gray-600">Production</span>
-        </div>
+      {/* Chips */}
+      <div className="flex items-center gap-1.5 mb-2">
+        {['Customer ⌄', 'Ex-factory ⌄', 'Missing dates'].map(x => (
+          <span key={x} className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-[9px] font-semibold text-gray-600">{x}</span>
+        ))}
+        <span className="ml-auto px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Group by PO</span>
+        <span className="text-[9px] font-semibold text-gray-500">{expandLabel}</span>
+        <span className="px-1.5 py-0.5 rounded-full bg-primary-50 text-primary-700 text-[9px] font-semibold">Open</span>
+        <span className="text-[9px] text-gray-400">All</span>
+        <span className="text-[9px] text-gray-400">Shipped</span>
       </div>
-      {/* PO list — mix of collapsed and one expanded teaser */}
-      <div className="space-y-2">
-        <POCardCollapsedMock po="PO 5050" customer="Acme Apparel" factory="Shanghai Boomscarf" styles={4} units="2,400" exFac="12 May" status="Sampling" tone="amber" />
-        <POCardCollapsedMock po="PO 4992" customer="Acme Apparel" factory="YKK Vietnam" styles={3} units="1,800" exFac="21 May" status="Sampling" tone="amber" />
-        <POCardCollapsedMock po="PO 4980" customer="Other Customer" factory="Wuxi Print" styles={9} units="4,400" exFac="3 Jun" status="Production" tone="green" />
-        <POCardCollapsedMock po="PO 4965" customer="Other Customer" factory="Hangzhou Knit" styles={8} units="1,600" exFac="15 May" status="Production" tone="green" />
+      {/* Table */}
+      <div className="rounded-md border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center gap-2 px-2 py-1 bg-gray-50 border-b border-gray-100 text-[8px] font-semibold text-gray-500">
+          <span className="w-[86px]">Style</span><span className="flex-1">Description</span>
+          <span className="w-[64px]">Colour</span><span className="w-[52px]">Status</span>
+          <span className="w-[64px]">Ex-factory</span><span className="w-[30px] text-right">Qty</span>
+        </div>
+        {children}
       </div>
     </div>
   );
 }
 
-/** PO card expanded — showing the inner style rows. */
+function PORow({ po, customer, styles, qty, exfac, open }: {
+  po: string; customer: string; styles: number; qty: string; exfac: string; open?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 border-b border-gray-50 text-[9px]">
+      <span className="w-[86px] flex items-center gap-1">
+        <span className="text-gray-400">{open ? '⌄' : '›'}</span>
+        <span className="font-mono font-bold text-gray-900">{po}</span>
+      </span>
+      <span className="flex-1 text-gray-700">{customer} <span className="text-gray-400">· PRIME-23</span></span>
+      <span className="w-[64px] text-gray-500">{styles} styles</span>
+      <span className="w-[52px]"><span className="px-1 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span></span>
+      <span className="w-[64px] text-gray-600">{exfac}</span>
+      <span className="w-[30px] text-right font-semibold text-gray-900">{qty}</span>
+    </div>
+  );
+}
+
+function ProductPageMock() {
+  return (
+    <V2Chrome expandLabel="Expand all">
+      {V2_POS.map(r => <PORow key={r.po} {...r} />)}
+    </V2Chrome>
+  );
+}
+
 function ExpandedPOMock() {
-  const rows = [
-    { style: 'SS26-CREW-NVY', desc: 'Heavy crew rib', colour: 'Navy', qty: '600', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
-    { style: 'SS26-CREW-CHA', desc: 'Heavy crew rib', colour: 'Charcoal', qty: '600', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
-    { style: 'SS26-CREW-OAT', desc: 'Heavy crew rib', colour: 'Oat', qty: '500', exFac: '12 May', status: 'Production', tone: 'green' as const },
-    { style: 'SS26-HOOD-BLK', desc: 'Pullover hood', colour: 'Black', qty: '700', exFac: '12 May', status: 'Sampling', tone: 'amber' as const },
+  const styles: [string, string, string, string][] = [
+    ['S005010A-0121-NRO', 'SS27 SHORT', 'WHITE', '393'],
+    ['S005011A-0121-NRO', 'SS27 TEE', 'HIGH RISK RED', '334'],
+    ['S005012A-0121-NRO', 'SS27 HOODIE', 'BOTTLE GREEN', '358'],
+    ['S005013A-0121-NRO', 'SS27 TEE', 'BLACK', '169'],
   ];
   return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl border border-primary-200 shadow-sm overflow-hidden">
-        {/* Expanded header */}
-        <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] font-bold">PO 5050</span>
-              <span className="text-[10px] text-gray-400">·</span>
-              <span className="text-[11px] text-gray-500">Acme Apparel</span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] text-gray-400">Shanghai Boomscarf</span>
-              <span className="text-[10px] text-gray-300">·</span>
-              <span className="text-[10px] text-gray-400">4 styles</span>
-            </div>
-          </div>
-          <div className="text-right flex-shrink-0">
-            <p className="text-[11px] font-semibold text-gray-900">2,400</p>
-            <p className="text-[9px] text-gray-400">units</p>
-          </div>
-          <div className="text-right flex-shrink-0">
-            <p className="text-[10px] font-medium text-gray-700">12 May</p>
-            <p className="text-[9px] text-gray-400">ex-factory</p>
-          </div>
-          <StatusPill tone="amber">Sampling</StatusPill>
+    <V2Chrome expandLabel="Collapse all">
+      <PORow {...V2_POS[0]} open />
+      {styles.map(([code, desc, colour, qty]) => (
+        <div key={code} className="flex items-center gap-2 px-2 py-1.5 border-b border-gray-50 text-[9px] bg-white">
+          <span className="w-[86px] font-mono text-gray-800 truncate">{code}</span>
+          <span className="flex-1 text-gray-700">{desc}</span>
+          <span className="w-[64px] text-gray-500">{colour}</span>
+          <span className="w-[52px]"><span className="px-1 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span></span>
+          <span className="w-[64px] text-gray-600">07 Oct 2026</span>
+          <span className="w-[30px] text-right font-semibold text-gray-900">{qty}</span>
         </div>
-        {/* Style table header */}
-        <div className="grid grid-cols-[1.5fr_1.5fr_0.7fr_0.6fr_0.7fr_0.8fr_auto] gap-2 px-4 py-2 text-[9px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60 border-b border-gray-100">
-          <div>Style</div>
-          <div>Description</div>
-          <div>Colour</div>
-          <div className="text-right">Qty</div>
-          <div className="text-right">Ex-Factory</div>
-          <div>Status</div>
-          <div></div>
-        </div>
-        {/* Style rows */}
-        {rows.map((r) => (
-          <div key={r.style} className="grid grid-cols-[1.5fr_1.5fr_0.7fr_0.6fr_0.7fr_0.8fr_auto] gap-2 px-4 py-2 items-center border-t border-gray-50">
-            <div className="text-[11px] font-medium truncate">{r.style}</div>
-            <div className="text-[11px] text-gray-600 truncate">{r.desc}</div>
-            <div className="text-[11px] text-gray-600 truncate">{r.colour}</div>
-            <div className="text-[11px] font-medium text-right num">{r.qty}</div>
-            <div className="text-[10px] text-gray-600 text-right num">{r.exFac}</div>
-            <div><StatusPill tone={r.tone}>{r.status}</StatusPill></div>
-            <div className="flex items-center gap-1.5 justify-end">
-              <button className="p-1 hover:bg-primary-50 rounded">
-                <MessageSquare className="w-3 h-3 text-gray-400" />
-              </button>
-              <button className="inline-flex items-center gap-1 px-2 py-1 text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-md text-[10px] font-bold">
-                <Calendar className="w-3 h-3" strokeWidth={2.5} />
-                Date change
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+      ))}
+      {V2_POS.slice(1, 3).map(r => <PORow key={r.po} {...r} />)}
+    </V2Chrome>
   );
 }
 
@@ -1019,7 +1025,7 @@ function CommentsSidebarMock() {
         <div className="flex gap-2">
           <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-[9px] font-bold text-amber-700 flex-shrink-0">CW</div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2"><span className="text-[11px] font-semibold">Cherry Wang</span><span className="text-[9px] text-gray-400">Boomscarf · 1d ago</span></div>
+            <div className="flex items-baseline gap-2"><span className="text-[11px] font-semibold">Cherry Wang</span><span className="text-[9px] text-gray-400">PRIME-23 · 1d ago</span></div>
             <p className="text-[11px] text-gray-700 mt-0.5 leading-relaxed">Hi Tom — fabric mill confirmed delivery on Wed. We'll knit Thu/Fri and courier v2 rib Monday. Aiming arrival London end of next week.</p>
           </div>
         </div>
@@ -1081,7 +1087,7 @@ function SKUPickerMock() {
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
           <div className="w-3 h-3 rounded border-2 border-violet-600 bg-violet-600 flex items-center justify-center"><span className="text-white text-[8px] font-bold">✓</span></div>
           <span className="text-[11px] font-bold">PO 5050</span>
-          <span className="text-[10px] text-gray-500">Acme Apparel · 4 styles · 2,400 units</span>
+          <span className="text-[10px] text-gray-500">LEVY MERCHANDISING · 4 styles · 2,400 units</span>
           <ChevronDown className="w-3 h-3 text-gray-400 ml-auto"/>
         </div>
         <div className="px-3 py-1.5 flex items-center gap-2 border-b border-gray-100">
@@ -1104,7 +1110,7 @@ function SKUPickerMock() {
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
           <div className="w-3 h-3 rounded border-2 border-gray-300"></div>
           <span className="text-[11px] font-bold">PO 4992</span>
-          <span className="text-[10px] text-gray-500">Acme Apparel · 3 styles · 1,800 units</span>
+          <span className="text-[10px] text-gray-500">TRUEPATH RETAIL · 3 styles · 1,800 units</span>
           <ChevronRight className="w-3 h-3 text-gray-400 ml-auto"/>
         </div>
       </div>
