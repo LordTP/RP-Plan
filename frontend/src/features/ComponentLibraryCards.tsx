@@ -229,7 +229,7 @@ function NameCard({ group, active, onClick }: { group: NameGroup; active: boolea
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left rounded-lg border p-2.5 flex flex-col gap-1.5 transition-colors',
+        'w-full text-left rounded-lg border p-2.5 flex flex-col gap-1.5 transition-colors shrink-0',
         active ? 'border-primary-400 bg-primary-50 shadow-[inset_3px_0_0_var(--tw-shadow-color)] shadow-primary-500'
           : alert ? 'border-amber-200 bg-white hover:bg-gray-50'
           : 'border-gray-200 bg-white hover:bg-gray-50',
@@ -331,7 +331,11 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
   }, [entry.instances]);
 
   return (
-    <div className={cn('rounded-lg border overflow-hidden', entry.out_of_step ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200')}>
+    // shrink-0 is load-bearing: this sits in a flex column, and flex children
+    // shrink by default. Without it the single-line "in step" entries got
+    // squeezed to a sliver with their text clipped so the expanded
+    // out-of-step ones could fit the container.
+    <div className={cn('rounded-lg border overflow-hidden shrink-0', entry.out_of_step ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200')}>
       <div className={cn('px-3 py-2 flex items-center gap-2 flex-wrap', entry.out_of_step ? 'bg-amber-50' : 'bg-gray-50')}>
         <span className="font-mono text-[10.5px] font-bold text-gray-400">#{index}</span>
         {entry.colour && (

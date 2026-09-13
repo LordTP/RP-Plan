@@ -98,8 +98,8 @@ function ComponentsContent() {
   // following an order the user can't see.
 
   return (
-    <AppShell title="Components">
-      <div className="w-full px-6 py-5 flex flex-col gap-4 h-[calc(100vh-3.5rem)]">
+    <AppShell title="Components" fullHeight>
+      <div className="w-full flex flex-col gap-4 h-full min-h-0">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-baseline gap-3 min-w-0">
             <h1 className="text-2xl font-bold text-gray-900">Components</h1>
