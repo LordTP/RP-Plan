@@ -2248,20 +2248,33 @@ export function ComponentsSection({
           </button>
         )
       ) : (
-        <div className="space-y-2">
-          {components.map(comp => (
-            <div key={comp.id} className="border border-gray-200 rounded-xl">
-              {/* Component Header */}
+        // A grid of cards, matching the worklist's card language. These were
+        // full-width rows: name on the left, status pushed to the far right,
+        // everything else hidden until expanded. At drawer width that is a lot
+        // of empty middle and a long eye-travel between a component and its
+        // status. Cards put the two together and fit two across.
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+          {components.map(comp => {
+            const prefix = comp.sample_type;
+            const status = (comp as any)[`${prefix}_status`] as string | null;
+            const approved = (comp as any)[`${prefix}_approved`] as string | null;
+            const received = (comp as any)[`${prefix}_received`] as string | null;
+            const pill = statusPillStyle(status);
+            const s = (status || '').trim().toUpperCase();
+            const edge =
+              s === 'APPROVED' ? 'border-emerald-200'
+              : s === 'RECEIVED' ? 'border-blue-200'
+              : s === 'REJECTED' || s === 'LATE' ? 'border-red-200'
+              : s === 'NOT REQUIRED' || !s ? 'border-gray-200'
+              : 'border-amber-200';
+            const open = expandedId === comp.id;
+            return (
+            <div key={comp.id} className={cn('border rounded-xl bg-white overflow-hidden', edge, open && 'lg:col-span-2')}>
               <button
-                onClick={() => setExpandedId(expandedId === comp.id ? null : comp.id)}
-                className={cn(
-                  'w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left rounded-t-xl',
-                  expandedId !== comp.id && 'rounded-b-xl'
-                )}
+                onClick={() => setExpandedId(open ? null : comp.id)}
+                className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', expandedId === comp.id && 'rotate-90')} />
-                  <span className="text-xs font-semibold text-gray-700">{comp.name}</span>
+                <div className="flex items-center gap-2 flex-wrap">
                   <span
                     className={cn(
                       'text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded',
@@ -2272,43 +2285,30 @@ export function ComponentsSection({
                   >
                     {comp.sample_type === 'strike_off' ? 'SO' : comp.sample_type === 'lab_dip' ? 'LD' : 'LB'}
                   </span>
+                  <AttemptBadge
+                    attemptNo={(comp as any)[`${prefix}_attempt_no`]}
+                    rejectionCount={(comp as any)[`${prefix}_rejection_count`]}
+                    size="xs"
+                  />
+                  <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform ml-auto', open && 'rotate-90')} />
                 </div>
-                {/* The actual status, not just done/not-done.
-                    This used to be a tick chip, so the only way to find out
-                    whether something was outstanding, received or rejected was
-                    to expand every component in turn — which is what made the
-                    sampling section unreadable at a glance. The dates come
-                    along too, since "approved" without a date is half an
-                    answer. */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {(() => {
-                    const prefix = comp.sample_type;
-                    const status = (comp as any)[`${prefix}_status`] as string | null;
-                    const approved = (comp as any)[`${prefix}_approved`] as string | null;
-                    const received = (comp as any)[`${prefix}_received`] as string | null;
-                    const pill = statusPillStyle(status);
-                    const when = approved || received;
-                    return (
-                      <>
-                        {when && (
-                          <span className="text-[10px] text-gray-400 tabular-nums hidden sm:inline">
-                            {format(parseISO(String(when).split('T')[0]), 'd MMM')}
-                          </span>
-                        )}
-                        <AttemptBadge
-                          attemptNo={(comp as any)[`${prefix}_attempt_no`]}
-                          rejectionCount={(comp as any)[`${prefix}_rejection_count`]}
-                          size="xs"
-                        />
-                        <span className={cn(
-                          'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
-                          pill.bg, pill.text,
-                        )}>
-                          {pill.label}
-                        </span>
-                      </>
-                    );
-                  })()}
+
+                <div className="text-[13.5px] font-bold text-gray-900 truncate mt-1.5">{comp.name}</div>
+
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={cn(
+                    'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
+                    pill.bg, pill.text,
+                  )}>
+                    {pill.label}
+                  </span>
+                  <span className="text-[10.5px] text-gray-400 tabular-nums truncate">
+                    {approved
+                      ? `approved ${format(parseISO(String(approved).split('T')[0]), 'd MMM')}`
+                      : received
+                        ? `received ${format(parseISO(String(received).split('T')[0]), 'd MMM')}`
+                        : 'no dates yet'}
+                  </span>
                 </div>
               </button>
 
@@ -2392,7 +2392,8 @@ export function ComponentsSection({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
