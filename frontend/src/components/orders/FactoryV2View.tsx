@@ -1657,7 +1657,7 @@ function DetailPanel({
     >
       <div
         className={cn(
-          'absolute top-0 right-0 bottom-0 w-full max-w-[860px] bg-white border-l border-gray-200 shadow-2xl flex flex-col',
+          'absolute top-0 right-0 bottom-0 w-full max-w-[1180px] sm:w-[92vw] bg-white border-l border-gray-200 shadow-2xl flex flex-col',
           'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
           shown ? 'translate-x-0' : 'translate-x-full',
         )}
@@ -1669,10 +1669,13 @@ function DetailPanel({
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
-              {order.po_number}
-              {order.china_orderbook_ref && <span className="text-gray-400 font-normal"> — {order.china_orderbook_ref}</span>}
-              {order.style_code && <span className="text-gray-400 font-normal"> · {order.style_code}</span>}
+            {/* Carries the last-updated stamp the footer used to hold —
+                kept in step with the same change on /orders-v2. */}
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5 flex items-center gap-1.5 flex-wrap">
+              <span>{order.po_number}</span>
+              {order.china_orderbook_ref && <span className="font-normal normal-case">— {order.china_orderbook_ref}</span>}
+              {order.style_code && <span className="font-normal normal-case">· {order.style_code}</span>}
+              <span className="font-normal normal-case text-gray-300">· updated {timeAgo(order.updated_at)}</span>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h3 className="text-base font-bold text-gray-900 truncate">
@@ -2015,12 +2018,6 @@ function DetailPanel({
         </>
       )}
 
-      {/* Footer */}
-      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-end flex-shrink-0">
-        <p className="text-[11px] text-gray-400">
-          Updated {timeAgo(order.updated_at)}
-        </p>
-      </div>
       </div>
 
       {rejectModal && (

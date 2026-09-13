@@ -1764,7 +1764,6 @@ function DetailPanel({
     return col?.editable ?? false;
   };
 
-  const [hasComponents, setHasComponents] = useState(false);
   const [modalTab, setModalTab] = useState<'details' | 'comments'>(initialTab);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const statusStyle = getStatusStyle(order.status);
@@ -1813,7 +1812,7 @@ function DetailPanel({
       />
       <div
         className={cn(
-          'fixed top-0 right-0 bottom-0 w-full max-w-[860px] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col',
+          'fixed top-0 right-0 bottom-0 w-full max-w-[1180px] sm:w-[92vw] bg-white border-l border-gray-200 shadow-2xl z-50 flex flex-col',
           'transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
           shown ? 'translate-x-0' : 'translate-x-full',
         )}
@@ -1824,10 +1823,17 @@ function DetailPanel({
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">
-              {order.po_number}
-              {order.china_orderbook_ref && <span className="text-gray-400 font-normal"> — {order.china_orderbook_ref}</span>}
-              {order.style_code && <span className="text-gray-400 font-normal"> · {order.style_code}</span>}
+            {/* Eyebrow also carries what the footer used to: the last-updated
+                stamp and the keyboard hint. Both are glanceable facts, not
+                worth a band of their own at the bottom of the drawer. */}
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5 flex items-center gap-1.5 flex-wrap">
+              <span>{order.po_number}</span>
+              {order.china_orderbook_ref && <span className="font-normal normal-case">— {order.china_orderbook_ref}</span>}
+              {order.style_code && <span className="font-normal normal-case">· {order.style_code}</span>}
+              <span className="font-normal normal-case text-gray-300">· updated {timeAgo(order.updated_at)}</span>
+              <span className="font-normal normal-case text-gray-300 ml-auto hidden lg:inline">
+                {(onPrev || onNext) ? '↑ ↓ styles · esc close' : 'esc close'}
+              </span>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h3 className="text-base font-bold text-gray-900 truncate">
@@ -1858,7 +1864,7 @@ function DetailPanel({
                 className={cn(
                   'px-3 py-1 text-xs font-semibold rounded transition-colors',
                   modalTab === 'details'
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-primary-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 )}
               >
@@ -1869,7 +1875,7 @@ function DetailPanel({
                 className={cn(
                   'px-3 py-1 text-xs font-semibold rounded transition-colors flex items-center gap-1.5',
                   modalTab === 'comments'
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-primary-600 text-white shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 )}
               >
@@ -1878,7 +1884,7 @@ function DetailPanel({
                 {(order.unread_comment_count || 0) > 0 && (
                   <span className={cn(
                     'px-1 py-0 text-[9px] font-bold rounded-full leading-tight',
-                    modalTab === 'comments' ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
+                    modalTab === 'comments' ? 'bg-white text-primary-600' : 'bg-red-500 text-white'
                   )}>
                     {order.unread_comment_count}
                   </span>
@@ -1940,15 +1946,6 @@ function DetailPanel({
         />
       )}
 
-      {/* Footer */}
-      <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <p className="text-[11px] text-gray-400">
-          {(onPrev || onNext) ? '↑ ↓ to move between styles · Esc to close' : 'Esc to close'}
-        </p>
-        <p className="text-[11px] text-gray-400">
-          Updated {timeAgo(order.updated_at)}
-        </p>
-      </div>
       </div>
     </>
   );
@@ -2147,7 +2144,7 @@ function DetailBody({
   return (
     <>
       {/* Hero stat strip — always visible, "what do I need to know at a glance". */}
-      <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-100 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, showCostTile || showValueTile, showExFacTile, hasCol('eta_to_customer'), showSamplingTile].filter(Boolean).length}, minmax(0, 1fr))` }}>
+      <div className="px-6 py-3 bg-gradient-to-b from-gray-50/80 to-white border-b border-gray-200 grid gap-3 flex-shrink-0" style={{ gridTemplateColumns: `repeat(${[true, showCostTile || showValueTile, showExFacTile, hasCol('eta_to_customer'), showSamplingTile].filter(Boolean).length}, minmax(0, 1fr))` }}>
         <HeroTile label="Total Qty" value={formatQty(order.total_quantity)} />
         {showValueTile ? (
           <HeroTile
