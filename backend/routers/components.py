@@ -1005,6 +1005,7 @@ async def list_component_library(
 async def get_component_library_family(
     name: str = Query(..., description="Canonical name, matched case-insensitively"),
     sample_type: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, description="Same search the list uses — narrows which ENTRIES come back"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1025,10 +1026,15 @@ async def get_component_library_family(
     if not wanted:
         raise HTTPException(status_code=400, detail="name is required")
 
-    q = db.query(Component).filter(func.upper(Component.name) == wanted)
+    # Named canonical_q, not q — `q` is the search parameter above, and reusing
+    # it here shadowed it. The failure was quiet and confusing: `needle = (q or
+    # "").strip()` then ran against a SQLAlchemy Query object, so the error read
+    # "'Query' object has no attribute 'strip'" and looked like FastAPI failing
+    # to inject the parameter rather than a local clobbering it.
+    canonical_q = db.query(Component).filter(func.upper(Component.name) == wanted)
     if sample_type:
-        q = q.filter(Component.sample_type == sample_type)
-    canonicals = q.order_by(Component.created_at.asc(), Component.id.asc()).all()
+        canonical_q = canonical_q.filter(Component.sample_type == sample_type)
+    canonicals = canonical_q.order_by(Component.created_at.asc(), Component.id.asc()).all()
     if not canonicals:
         raise HTTPException(status_code=404, detail="No components with that name")
 
@@ -1062,9 +1068,29 @@ async def get_component_library_family(
             "approved": approved_val.isoformat() if approved_val else None,
         })
 
+    # The list endpoint's search decides which NAMES appear in the rail; the
+    # same search has to decide which entries appear under one. Without it,
+    # searching a PO narrowed the rail to the right components and then showed
+    # all 15 of their entries, including ones on completely unrelated POs.
+    #
+    # It narrows entries, not the styles inside them: once an entry is on
+    # screen its full spread is the point — that's how you see this component
+    # is also on two other POs.
+    needle = (q or "").strip().lower()
+
+    def _entry_matches(c: Component, instances: list) -> bool:
+        if not needle:
+            return True
+        haystacks = [c.name, c.colour, c.description]
+        for i in instances:
+            haystacks += [i["po_number"], i["style_code"], i["customer"], i["description"]]
+        return any(needle in (h or "").lower() for h in haystacks)
+
     entries = []
     for c in canonicals:
         instances = by_canonical.get(c.id, [])
+        if not _entry_matches(c, instances):
+            continue
         # A supplier who can see none of an entry's styles shouldn't see the
         # entry. Internal users keep blank entries — an entry applied to
         # nothing yet is still real and still theirs to edit.

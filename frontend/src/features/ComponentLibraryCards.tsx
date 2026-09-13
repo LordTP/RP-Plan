@@ -201,7 +201,7 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
 
         <div className="min-h-0 overflow-hidden">
           {selected
-            ? <FamilyPanel key={selected.key} group={selected} onOpenEntry={onOpenEntry} />
+            ? <FamilyPanel key={selected.key} group={selected} search={q} onOpenEntry={onOpenEntry} />
             : (
               <div className="h-full rounded-xl border border-gray-200 bg-white flex items-center justify-center text-sm text-gray-400">
                 Pick a component to see its entries.
@@ -260,7 +260,9 @@ function NameCard({ group, active, onClick }: { group: NameGroup; active: boolea
   );
 }
 
-function FamilyPanel({ group, onOpenEntry }: { group: NameGroup; onOpenEntry: (id: number) => void }) {
+function FamilyPanel({ group, search, onOpenEntry }: {
+  group: NameGroup; search: string; onOpenEntry: (id: number) => void;
+}) {
   const [family, setFamily] = useState<ComponentFamily | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -269,7 +271,7 @@ function FamilyPanel({ group, onOpenEntry }: { group: NameGroup; onOpenEntry: (i
     (async () => {
       setLoading(true);
       try {
-        const d = await componentsApi.getLibraryFamily(group.name, group.sampleType);
+        const d = await componentsApi.getLibraryFamily(group.name, group.sampleType, search);
         if (!cancel) setFamily(d);
       } catch (err: any) {
         if (!cancel) toast.error(err?.response?.data?.detail || 'Failed to load entries');
@@ -278,7 +280,7 @@ function FamilyPanel({ group, onOpenEntry }: { group: NameGroup; onOpenEntry: (i
       }
     })();
     return () => { cancel = true; };
-  }, [group.name, group.sampleType]);
+  }, [group.name, group.sampleType, search]);
 
   return (
     <div className="h-full rounded-xl border border-gray-200 bg-white flex flex-col min-h-0">
@@ -336,17 +338,40 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
     // squeezed to a sliver with their text clipped so the expanded
     // out-of-step ones could fit the container.
     <div className={cn('rounded-lg border overflow-hidden shrink-0', entry.out_of_step ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200')}>
-      <div className={cn('px-3 py-2 flex items-center gap-2 flex-wrap', entry.out_of_step ? 'bg-amber-50' : 'bg-gray-50')}>
+      <div
+        onClick={onOpen}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+        className={cn(
+          'px-3 py-2 flex items-center gap-2 flex-wrap cursor-pointer transition-colors',
+          entry.out_of_step ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50 hover:bg-gray-100',
+        )}
+      >
         <span className="font-mono text-[10.5px] font-bold text-gray-400">#{index}</span>
         {entry.colour && (
           <span className="text-[10.5px] font-semibold text-gray-700 bg-white border border-gray-200 rounded px-1.5 py-0.5">
             {entry.colour}
           </span>
         )}
-        <span className="text-[11px] text-gray-500 tabular-nums">
+        <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
           <b className="text-gray-700">{entry.styles_count}</b> {entry.styles_count === 1 ? 'style' : 'styles'}
-          {entry.po_numbers.length > 0 && <> · <b className="text-gray-700">{entry.po_numbers.length}</b> {entry.po_numbers.length === 1 ? 'PO' : 'POs'}</>}
         </span>
+        {/* The actual PO numbers, not a count — "3 POs" told you there were
+            three without saying which, which is the thing you're looking for
+            when you're trying to place a component. */}
+        {entry.po_numbers.length > 0 && (
+          <span className="flex items-center gap-1 flex-wrap min-w-0">
+            {entry.po_numbers.slice(0, 4).map((po) => (
+              <span key={po} className="font-mono text-[10px] font-semibold text-gray-600 bg-white border border-gray-200 rounded px-1.5 py-0.5">
+                {po}
+              </span>
+            ))}
+            {entry.po_numbers.length > 4 && (
+              <span className="text-[10px] text-gray-400">+{entry.po_numbers.length - 4}</span>
+            )}
+          </span>
+        )}
         {entry.out_of_step ? (
           <span className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-bold text-white bg-amber-600 rounded-full px-2 py-0.5">
             <AlertTriangle className="w-2.5 h-2.5" /> styles out of step
@@ -357,12 +382,6 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
             {uniform ? `all ${uniform.toLowerCase()}` : 'not started'}
           </span>
         )}
-        <button
-          onClick={onOpen}
-          className="text-[10px] font-semibold text-primary-600 hover:text-primary-700 whitespace-nowrap"
-        >
-          Open
-        </button>
       </div>
 
       {/* Only an entry that disagrees with itself is worth expanding — the

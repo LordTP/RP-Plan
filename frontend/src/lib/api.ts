@@ -393,9 +393,9 @@ export const componentsApi = {
 
   /** Every entry sharing a name, each with its instances — one request
    *  instead of one per canonical, which for "Rib Fabric" was 19. */
-  getLibraryFamily: async (name: string, sampleType?: string): Promise<ComponentFamily> => {
+  getLibraryFamily: async (name: string, sampleType?: string, q?: string): Promise<ComponentFamily> => {
     const response = await api.get('/api/components/library/by-name', {
-      params: { name, sample_type: sampleType },
+      params: { name, sample_type: sampleType, q: q || undefined },
     });
     return response.data;
   },
