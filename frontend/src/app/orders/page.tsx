@@ -294,9 +294,14 @@ function OrdersContent() {
     toast.success('Orders refreshed');
   };
 
-  const handleOrderUpdate = (order: Order) => {
+  // Must be memoised. It is passed to OrderTable as onOrderUpdate, which sits
+  // in handleSave's dependency list, which is the onSave prop every cell
+  // compares by identity. An inline function here gave handleSave a new
+  // identity on every render of this page, so the cell memo never held and all
+  // ~15,000 cells re-rendered on every interaction.
+  const handleOrderUpdate = useCallback((order: Order) => {
     updateOrderInList(order);
-  };
+  }, [updateOrderInList]);
 
   const handleFilterChange = (key: keyof OrderFilters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));

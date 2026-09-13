@@ -52,6 +52,16 @@ const PREFIX_LABEL: Record<string, string> = {
   pps: 'PPS',
 };
 
+/**
+ * Does this column ever show an attempt badge? Only four of the ~70 columns do.
+ * OrderTable uses this to skip the flex wrappers that exist solely to sit the
+ * badge next to the cell — on every other column they were two dead nodes per
+ * cell, which across a full book is thousands of nodes of pure layout cost.
+ */
+export function columnHasAttemptBadge(columnKey: string): boolean {
+  return columnKey in COL_TO_PREFIX;
+}
+
 export function AttemptBadgeWithTooltip({ order, columnKey, className }: Props) {
   const prefix = COL_TO_PREFIX[columnKey];
   if (!prefix) return null;

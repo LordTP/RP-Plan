@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, Rows3, Loader2, X, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { columnHasAttemptBadge } from '../samples/AttemptBadgeWithTooltip';
 import { BulkFieldEditor } from './BulkFieldEditor';
 import { BulkCommentModal } from './BulkCommentModal';
 import { useStore } from '@/store/useStore';
@@ -224,6 +225,61 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     }
   }, [isSupplier, isFactoryView]);
 
+  // ── Row virtualisation ────────────────────────────────────────────────
+  // The table is ~70 columns wide and infinite scroll appends without ever
+  // removing, so the DOM grew without bound: 52 rows was already 12k nodes,
+  // and a 10,000-row book would be 700,000 cells. Style recalc scales with
+  // node count, which is why interactions measured 1.8s of Rendering against
+  // 150ms of scripting — the browser was restyling the whole book to
+  // highlight one row.
+  //
+  // Only the visible window is rendered now, with spacer rows holding the
+  // scroll height. DOM size becomes a function of viewport height rather than
+  // row count, so 200 rows and 100,000 rows cost the same to render. Rows are
+  // a uniform 36px (no wrapping — every cell truncates), which is what makes
+  // fixed-height windowing safe here.
+  const ROW_H = 36;
+  const OVERSCAN = 10;
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => {
+      // Coalesce to one update per frame — scroll fires far faster than React
+      // can usefully re-render, and without this the window recomputes dozens
+      // of times per frame.
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; setScrollTop(el.scrollTop); });
+    };
+    setViewportH(el.clientHeight);
+    const ro = new ResizeObserver(() => setViewportH(el.clientHeight));
+    ro.observe(el);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const { windowFirst, windowRows, padTop, padBottom } = useMemo(() => {
+    const total = orders.length;
+    // Before the container has measured, render a sensible first screen rather
+    // than nothing — otherwise the table flashes empty on mount.
+    const h = viewportH || 900;
+    const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+    const last = Math.min(total, Math.ceil((scrollTop + h) / ROW_H) + OVERSCAN);
+    return {
+      windowFirst: first,
+      windowRows: orders.slice(first, last),
+      padTop: first * ROW_H,
+      padBottom: Math.max(0, (total - last) * ROW_H),
+    };
+  }, [orders, scrollTop, viewportH]);
+
   // Infinite scroll: observer must be rooted on the inner scroll container
   // (overflow-auto on tableRef) — not the viewport — otherwise the sentinel
   // never enters intersection range as the user scrolls within the table,
@@ -398,7 +454,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
   /** Export exactly the ticked rows. Client-side so it can never disagree
       with what the user selected, and needs no new endpoint. */
   const exportSelected = useCallback(() => {
-    const rows = orders.filter(o => selectedIds.has(o.id));
+    const rows = ordersRef.current.filter(o => selectedIds.has(o.id));
     if (rows.length === 0) return;
     const cols = visibleColumns;
     const esc = (v: any) => {
@@ -416,7 +472,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     a.click();
     URL.revokeObjectURL(url);
     toast.success(`Exported ${rows.length} ${rows.length === 1 ? 'style' : 'styles'}`);
-  }, [orders, selectedIds, visibleColumns]);
+  }, [selectedIds, visibleColumns]);
 
   const handleBulkSaveRefresh = useCallback(() => {
     toast.success('Bulk update successful');
@@ -427,6 +483,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     }
   }, [onBulkSaveRefresh]);
 
+  // `orders` is replaced wholesale on every save, filter and page change.
+  // handleSave only needs it to look one row up at call time, so holding it in
+  // a ref keeps the callback's identity stable — without this, onSave changed
+  // after every save, the cell memo comparator failed on it, and the entire
+  // table re-rendered instead of the one cell that changed.
+  const ordersRef = useRef(orders);
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+
   const handleSave = useCallback(async (orderId: number, field: string, value: any, changeReason?: string) => {
     // Intercept REJECTED on a sample status field — open the reject modal so
     // we capture a structured reason/note, same flow as the V2 detail panel.
@@ -434,7 +498,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
     // can't know which component they meant to reject.
     const sampleType = SAMPLE_STATUS_FIELD_TO_TYPE[field];
     if (value === 'REJECTED' && sampleType) {
-      const order = orders.find(o => o.id === orderId);
+      const order = ordersRef.current.find(o => o.id === orderId);
       if (order && (order.components?.length ?? 0) > 0) {
         toast.error('This order has components — open it in V2 detail to reject a specific component\'s sample');
         throw new Error('redirect_to_v2');
@@ -491,7 +555,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
       toast.error(message);
       throw error;
     }
-  }, [orders, updateOrderInList, onOrderUpdate, user]);
+  }, [updateOrderInList, onOrderUpdate, user]);
 
   const handleStatusChange = async (order: Order, newStatus: string) => {
     // Intercept "Shipped" status - require tracking reference via modal
@@ -740,7 +804,21 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                 </td>
               </tr>
             ) : (
-              orders.map((order, rowIndex) => {
+              <>
+              {/* Spacers stand in for the rows outside the window so the
+                  scrollbar, the scroll height and the infinite-scroll sentinel
+                  all behave exactly as if every row were present. */}
+              {padTop > 0 && (
+                <tr aria-hidden>
+                  {/* Height must live on a cell — an empty <tr> collapses to zero
+                      in table layout, which silently breaks the scroll range. */}
+                  <td colSpan={visibleColumns.length + 1 + (canBulkDelete ? 1 : 0)}
+                      style={{ height: padTop, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {windowRows.map((order, windowIndex) => {
+                // Absolute index — shift-click range selection depends on it.
+                const rowIndex = windowFirst + windowIndex;
                 const orderChangedFields = changedFields?.[String(order.id)] || [];
                 const isSelected = selectedIds.has(order.id);
                 const isActiveRow = activeRowId === order.id;
@@ -940,6 +1018,7 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                           <AttemptBadgeWithTooltip order={order} columnKey={column.key as string} />
                         </div>
                       ) : (
+                        columnHasAttemptBadge(column.key as string) ? (
                         <div className="flex items-center gap-1">
                           <div className="flex-1 min-w-0">
                             <EditableCell
@@ -957,6 +1036,24 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
                           </div>
                           <AttemptBadgeWithTooltip order={order} columnKey={column.key as string} className="mr-1 flex-shrink-0" />
                         </div>
+                        ) : (
+                          // 66 of ~70 columns never show a badge. Rendering the
+                          // cell straight into the <td> drops two flex wrappers
+                          // per cell — the single biggest chunk of DOM in the
+                          // table, and style recalc scales with node count.
+                          <EditableCell
+                            value={order[column.key as keyof Order]}
+                            column={column}
+                            order={order}
+                            isEditable={column.editable}
+                            isSupplierEditable={isSupplierEditable(column.key, order)}
+                            userRole={user?.role || 'supplier'}
+                            onSave={handleSave}
+                            onBulkSave={handleBulkSaveRefresh}
+                            isChanged={changedFields?.[String(order.id)]?.includes(column.key) || false}
+                            pendingChange={pendingChanges[order.id]?.[column.key]}
+                          />
+                        )
                       )}
                     </td>
                     );
@@ -964,7 +1061,14 @@ export function OrderTable({ orders, isDashboard = false, onOrderUpdate, highlig
 
                 </tr>
                 );
-              })
+              })}
+              {padBottom > 0 && (
+                <tr aria-hidden>
+                  <td colSpan={visibleColumns.length + 1 + (canBulkDelete ? 1 : 0)}
+                      style={{ height: padBottom, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              </>
             )}
           </tbody>
         </table>
