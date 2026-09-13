@@ -1226,6 +1226,19 @@ async def apply_component_library_entry(
             raise HTTPException(status_code=404, detail="Peer instance not found")
         if peer.canonical_id != canonical_id:
             raise HTTPException(status_code=400, detail="Peer instance is not linked to this canonical component")
+        # The peer's order has to be one this user can actually see.
+        #
+        # Without this a supplier could copy from ANOTHER factory's instance:
+        # reading that order directly 403s, but naming it as a copy source did
+        # not, so its status and dates came across anyway. Worse, it walked
+        # straight past the "suppliers can't mark new instances Approved" guard
+        # a few lines up — copy from an approved sibling and the new instance
+        # lands APPROVED with that sibling's date. Demonstrated end to end
+        # before this was added.
+        peer_order = db.query(PurchaseOrder).filter(PurchaseOrder.id == peer.order_id).first()
+        if peer_order is None:
+            raise HTTPException(status_code=404, detail="Peer instance's order not found")
+        assert_supplier_can_access(peer_order, current_user)
 
     # Filter target orders through supplier scope
     target_orders_q = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(order_ids))
