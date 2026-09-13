@@ -87,6 +87,13 @@ export function ColumnFilterDropdown({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, column, tab]);
 
+  const filteredValues = useMemo(() => {
+    if (!data) return [] as string[];
+    const q = search.trim().toLowerCase();
+    if (!q) return data.values;
+    return data.values.filter((v) => v.toLowerCase().includes(q));
+  }, [data, search]);
+
   // Close on outside click / Escape; Enter applies the current selection.
   useEffect(() => {
     if (!open) return;
@@ -98,7 +105,22 @@ export function ColumnFilterDropdown({
         // rest of the page (e.g. another dropdown could be open too).
         if (popupRef.current?.contains(document.activeElement) || document.activeElement === document.body) {
           e.preventDefault();
-          onApply(Array.from(draft));
+          const searching = search.trim() !== '';
+
+          // Type-and-Enter: narrowing the list to what you want and pressing
+          // Enter should filter to it. Previously Enter applied the draft as
+          // it stood, so typing "12" and hitting Enter applied an empty
+          // selection — which clears the filter, the opposite of the intent.
+          if (searching) {
+            // Nothing matched: do nothing rather than clear the column.
+            if (filteredValues.length === 0) return;
+            const next = new Set(draft);
+            for (const v of filteredValues) next.add(v);
+            setDraft(next);
+            onApply(Array.from(next));
+          } else {
+            onApply(Array.from(draft));
+          }
           setOpen(false);
         }
       }
@@ -117,14 +139,7 @@ export function ColumnFilterDropdown({
     // draft + onApply are captured freshly each time we re-open because
     // the effect re-runs on any of these changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, draft, onApply]);
-
-  const filteredValues = useMemo(() => {
-    if (!data) return [] as string[];
-    const q = search.trim().toLowerCase();
-    if (!q) return data.values;
-    return data.values.filter((v) => v.toLowerCase().includes(q));
-  }, [data, search]);
+  }, [open, draft, onApply, search, filteredValues]);
 
   const allVisibleSelected = useMemo(() => {
     if (!data || filteredValues.length === 0) return false;
@@ -233,6 +248,14 @@ export function ColumnFilterDropdown({
                     onChange={toggleAllVisible}
                   />
                   <span>{allVisibleSelected ? 'Deselect all' : 'Select all'} ({filteredValues.length})</span>
+                  {/* Enter is the fast path once you've typed — say so, or
+                      nobody finds it. */}
+                  {search.trim() !== '' && filteredValues.length > 0 && (
+                    <span className="ml-auto flex items-center gap-1 text-[10px] text-gray-400 font-normal">
+                      <kbd className="px-1 py-px border border-gray-200 rounded bg-gray-50 font-sans">↵</kbd>
+                      apply
+                    </span>
+                  )}
                 </label>
                 <div className="border-t border-gray-50 my-1" />
 
