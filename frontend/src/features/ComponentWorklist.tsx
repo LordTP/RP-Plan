@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { relativeTimeShort } from '@/lib/sampleStatus';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { BulkEditModal, type BulkEditInstance } from '@/components/orders/BulkEditModal';
-import { StatusTile, TogglePill, SortableTh, StatusBar, BulkBar } from '@/components/orders/v2-list-primitives';
+import { StatusTile, TogglePill, Segmented, SortableTh, StatusBar, BulkBar } from '@/components/orders/v2-list-primitives';
 import {
   type Instance, type TypeFilter,
   activeSampleFor, attemptFor, isNeedsAttention, isInFlight, isStale, isExFacUrgent, ageDays,
@@ -138,6 +138,10 @@ export function ComponentWorklist({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [hideShipped, setHideShipped] = useState(true);
   const [grouped, setGrouped] = useState(true);
+  // Cards by default. The worklist is scanned for what needs chasing, and a
+  // card gives the status rollup and the idle clock room to be read at a
+  // glance; the table stays for when you want to sort a column.
+  const [layout, setLayout] = useState<'cards' | 'table'>('cards');
   const [tile, setTile] = useState<Tile>('all');
   const [sortKey, setSortKey] = useState<SortKey>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -305,6 +309,11 @@ export function ComponentWorklist({
             />
           ))}
         </div>
+        <Segmented<'cards' | 'table'>
+          options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]}
+          value={layout}
+          onChange={setLayout}
+        />
         <TogglePill
           on={grouped}
           label="Group by add"
@@ -319,6 +328,17 @@ export function ComponentWorklist({
         />
       </div>
 
+      {layout === 'cards' ? (
+        <WorkCardGrid
+          loading={loading}
+          groups={grouped ? groups : flatRows.map((i) => buildGroups([i])[0])}
+          totalInFlight={counts.all}
+          selected={selected}
+          onToggleMany={setMany}
+          onEditInstance={onEditInstance}
+          onOpenStyle={onOpenStyle}
+        />
+      ) : (
       <div className="flex-1 min-h-0 rounded-t-xl border border-b-0 border-gray-200 bg-white overflow-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-[2] bg-gray-50 border-b border-gray-200">
@@ -398,8 +418,9 @@ export function ComponentWorklist({
           </tbody>
         </table>
       </div>
+      )}
 
-      <div className="-mt-3">
+      <div className={cn(layout === 'cards' ? 'mt-0' : '-mt-3')}>
         <StatusBar
           segments={[
             grouped
@@ -657,5 +678,199 @@ function StyleRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Card layout
+//
+// Same groups the table renders, laid out as cards. A card can give the
+// status rollup and the idle clock room to be read at a glance, which is what
+// this page is actually for — the table is better when you want to sort a
+// column, so both stay.
+// ─────────────────────────────────────────────────────────────────────────
+
+function WorkCardGrid({
+  loading, groups, totalInFlight, selected, onToggleMany, onEditInstance, onOpenStyle,
+}: {
+  loading: boolean;
+  groups: WorkGroup[];
+  totalInFlight: number;
+  selected: Set<number>;
+  onToggleMany: (ids: number[], on: boolean) => void;
+  onEditInstance: (order: Order, component: OrderComponent) => void;
+  onOpenStyle: (orderId: number) => void;
+}) {
+  if (loading && groups.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-400">
+        <Loader2 className="w-4 h-4 animate-spin" />
+      </div>
+    );
+  }
+  if (groups.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <Package className="w-6 h-6 text-gray-300 mb-2" />
+        <p className="text-xs text-gray-400">
+          {totalInFlight === 0
+            ? 'Nothing in flight. Every sample is approved, not required or shipped.'
+            : 'No samples match these filters.'}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pb-2">
+        {groups.map((g) => (
+          <WorkCard
+            key={g.key}
+            group={g}
+            selected={selected}
+            onToggleMany={onToggleMany}
+            onEditInstance={onEditInstance}
+            onOpenStyle={onOpenStyle}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WorkCard({
+  group, selected, onToggleMany, onEditInstance, onOpenStyle,
+}: {
+  group: WorkGroup;
+  selected: Set<number>;
+  onToggleMany: (ids: number[], on: boolean) => void;
+  onEditInstance: (order: Order, component: OrderComponent) => void;
+  onOpenStyle: (orderId: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ids = group.instances.map((i) => i.component.id);
+  const allOn = ids.every((id) => selected.has(id));
+  const someOn = !allOn && ids.some((id) => selected.has(id));
+  const n = group.instances.length;
+  const attention = group.attention > 0;
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl border bg-white flex flex-col overflow-hidden transition-colors',
+        allOn || someOn ? 'border-primary-400 ring-2 ring-primary-100'
+          : attention ? 'border-red-200' : 'border-gray-200',
+      )}
+    >
+      <div className="px-3 py-2.5 flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={allOn}
+          ref={(el) => { if (el) el.indeterminate = someOn; }}
+          onChange={() => onToggleMany(ids, !allOn)}
+          className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
+              {sampleTypeLabel(group.sampleType)}
+            </span>
+            {attention && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white bg-red-500">
+                {group.attention} need{group.attention === 1 ? 's' : ''} attention
+              </span>
+            )}
+          </div>
+          <div className="text-[14px] font-bold text-gray-900 truncate mt-1">{group.name}</div>
+          <div className="text-[11px] text-gray-500 tabular-nums mt-0.5 truncate">
+            <b className="text-gray-700">{n}</b> {n === 1 ? 'style' : 'styles'}
+            {' · '}
+            {group.poNumbers.length === 1 ? `PO ${group.poNumbers[0]}` : `${group.poNumbers.length} POs`}
+            {group.customers.length === 1 && <> · {group.customers[0]}</>}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3 pb-2 flex items-center gap-1 flex-wrap">
+        {group.statusCounts.slice(0, 3).map(([st, c]) => {
+          const pill = statusPillStyle(st);
+          return (
+            <span key={st} className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
+              {c > 1 && <span className="tabular-nums">{c} </span>}{pill.label}
+            </span>
+          );
+        })}
+        {group.statusCounts.length > 3 && (
+          <span className="text-[10px] text-gray-400">+{group.statusCounts.length - 3}</span>
+        )}
+      </div>
+
+      <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/60 flex items-center gap-3 text-[11px] tabular-nums mt-auto">
+        <span className={cn(group.worstIdle >= 14 ? 'text-amber-700 font-semibold' : 'text-gray-500')}>
+          idle {group.worstIdle}d
+        </span>
+        <span className="text-gray-500 truncate">
+          ex-fac {group.earliestExFac ? relativeTimeShort(group.earliestExFac) : '—'}
+        </span>
+        {n > 1 && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-semibold text-primary-600 hover:text-primary-700"
+          >
+            {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            {open ? 'Hide' : 'Styles'}
+          </button>
+        )}
+        {n === 1 && (
+          <button
+            onClick={() => onEditInstance(group.instances[0].order, group.instances[0].component)}
+            className="ml-auto text-[10px] font-semibold text-primary-600 hover:text-primary-700"
+          >
+            Open
+          </button>
+        )}
+      </div>
+
+      {open && n > 1 && (
+        <div className="border-t border-gray-100 max-h-52 overflow-y-auto">
+          {group.instances.map((inst) => {
+            const pill = statusPillStyle(activeSampleFor(inst.component).status);
+            const checked = selected.has(inst.component.id);
+            return (
+              <div
+                key={inst.component.id}
+                onClick={() => onEditInstance(inst.order, inst.component)}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 text-[11.5px] border-t border-gray-50 cursor-pointer',
+                  checked ? 'bg-primary-50/60' : 'hover:bg-gray-50',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => onToggleMany([inst.component.id], !checked)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
+                />
+                <span className="font-mono tabular-nums text-gray-700 truncate flex-shrink-0 max-w-[130px]">
+                  {inst.order.style_code || `#${inst.order.id}`}
+                </span>
+                <span className="text-gray-500 truncate flex-1">{inst.order.description || '—'}</span>
+                <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap flex-shrink-0', pill.bg, pill.text)}>
+                  {pill.label}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpenStyle(inst.order.id); }}
+                  title="Open the full style"
+                  className="p-0.5 rounded text-gray-300 hover:text-primary-600 flex-shrink-0"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
