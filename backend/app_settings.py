@@ -34,6 +34,111 @@ EMAIL_AUTOMATIONS: List[EmailAutomation] = [
 ]
 
 
+class WarningThreshold(TypedDict):
+    key: str
+    label: str
+    description: str
+    unit: str
+    default: int
+    min: int
+    max: int
+    group: str
+
+
+# Registry of the chase thresholds behind the warnings centre.
+#
+# These were literals scattered through dashboard_warnings.py — "days_since >= 3",
+# "if days_since < 15" — so changing how long Source Lab waits before chasing
+# meant a code change and a deploy. They're operational policy, not logic, and
+# the people who set that policy aren't the people who deploy.
+#
+# `default` is the value the code used before this registry existed, so an
+# untouched install behaves exactly as it did.
+WARNING_THRESHOLDS: List[WarningThreshold] = [
+    {
+        'key': 'warn_tech_packs_days', 'group': 'Getting started',
+        'label': 'Tech packs chase', 'unit': 'business days',
+        'description': 'How long after an order goes to the factory before a missing tech pack is flagged.',
+        'default': 3, 'min': 1, 'max': 30,
+    },
+    {
+        'key': 'warn_specs_days', 'group': 'Getting started',
+        'label': 'Specs chase', 'unit': 'business days',
+        'description': 'How long after an order goes to the factory before missing specs are flagged.',
+        'default': 3, 'min': 1, 'max': 30,
+    },
+    {
+        'key': 'warn_fit_sample_days', 'group': 'Waiting on the factory',
+        'label': 'Fit sample overdue', 'unit': 'business days',
+        'description': 'How long after tech packs are sent before a fit sample that has not arrived is flagged.',
+        'default': 15, 'min': 1, 'max': 90,
+    },
+    {
+        'key': 'warn_lab_dip_days', 'group': 'Waiting on the factory',
+        'label': 'Lab dip overdue', 'unit': 'business days',
+        'description': 'How long after tech packs are sent before a lab dip that has not arrived is flagged.',
+        'default': 15, 'min': 1, 'max': 90,
+    },
+    {
+        'key': 'warn_strike_off_days', 'group': 'Waiting on the factory',
+        'label': 'Strike off overdue', 'unit': 'business days',
+        'description': 'How long after tech packs are sent before a strike off that has not arrived is flagged.',
+        'default': 20, 'min': 1, 'max': 90,
+    },
+    {
+        'key': 'warn_strike_off_slow_days', 'group': 'Waiting on the factory',
+        'label': 'Strike off overdue — slow items', 'unit': 'business days',
+        'description': 'The longer allowance for badges, woven labels and woven tape, which take longer to produce than a print.',
+        'default': 25, 'min': 1, 'max': 90,
+    },
+    {
+        'key': 'warn_lab_dip_approval_days', 'group': 'Waiting on Source Lab',
+        'label': 'Lab dip awaiting approval', 'unit': 'business days',
+        'description': 'How long a received lab dip can sit un-approved before it is flagged. This one is on us, not the factory.',
+        'default': 5, 'min': 1, 'max': 30,
+    },
+    {
+        'key': 'warn_strike_off_approval_days', 'group': 'Waiting on Source Lab',
+        'label': 'Strike off awaiting approval', 'unit': 'business days',
+        'description': 'How long a received strike off can sit un-approved before it is flagged.',
+        'default': 5, 'min': 1, 'max': 30,
+    },
+    {
+        'key': 'warn_pps_received_days', 'group': 'Pre-production',
+        'label': 'PPS overdue', 'unit': 'calendar days',
+        'description': 'How long after the last lab dip or strike off approval before a missing PPS is flagged. Calendar days, not business days — this one spans production time.',
+        'default': 40, 'min': 1, 'max': 180,
+    },
+    {
+        'key': 'warn_pps_approval_days', 'group': 'Pre-production',
+        'label': 'PPS awaiting customer approval', 'unit': 'business days',
+        'description': 'How long after a PPS goes to the customer before chasing their sign-off.',
+        'default': 7, 'min': 1, 'max': 60,
+    },
+]
+
+WARNING_THRESHOLD_BY_KEY: Dict[str, WarningThreshold] = {t['key']: t for t in WARNING_THRESHOLDS}
+
+
+def get_threshold(db: Session, key: str) -> int:
+    """A threshold's current value, falling back to its registered default.
+
+    Deliberately tolerant: a malformed stored value returns the default rather
+    than raising, because a bad row here would otherwise break the whole
+    warnings centre rather than one warning.
+    """
+    spec = WARNING_THRESHOLD_BY_KEY.get(key)
+    if spec is None:
+        raise KeyError(f'Unknown warning threshold: {key}')
+    raw = get_setting(db, key)
+    if raw is None or not str(raw).strip():
+        return spec['default']
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return spec['default']
+
+
 def automation_setting_key(automation_key: str) -> str:
     """The app_setting key where this automation's on/off state lives."""
     return f'{automation_key}_enabled'
@@ -46,6 +151,10 @@ DEFAULTS: Dict[str, str] = {
 # Seed a default entry for each registered automation (default OFF — opt-in).
 for _a in EMAIL_AUTOMATIONS:
     DEFAULTS[automation_setting_key(_a['key'])] = 'false'
+# ...and for each warning threshold, so an untouched install reads exactly the
+# numbers that were hardcoded before.
+for _t in WARNING_THRESHOLDS:
+    DEFAULTS[_t['key']] = str(_t['default'])
 
 # Keys that must never be returned in plaintext via GET /api/settings/app.
 SECRET_KEYS = {KEY_RESEND_API_KEY}

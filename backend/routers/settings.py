@@ -106,6 +106,75 @@ async def get_email_automations(
     return {'automations': out}
 
 
+@router.get("/api/settings/warning-thresholds")
+async def get_warning_thresholds(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """The chase thresholds behind the warnings centre, with their metadata.
+
+    Returns the registry rather than a bare key/value map so the settings page
+    doesn't have to keep its own copy of the labels, descriptions, units and
+    bounds — a new threshold added to WARNING_THRESHOLDS appears in the UI with
+    no frontend change.
+    """
+    return {
+        'thresholds': [
+            {
+                'key': t['key'],
+                'label': t['label'],
+                'description': t['description'],
+                'unit': t['unit'],
+                'group': t['group'],
+                'default': t['default'],
+                'min': t['min'],
+                'max': t['max'],
+                'value': app_settings.get_threshold(db, t['key']),
+            }
+            for t in app_settings.WARNING_THRESHOLDS
+        ]
+    }
+
+
+@router.put("/api/settings/warning-thresholds")
+async def update_warning_thresholds(
+    data: dict,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Update one or more thresholds. Body: {key: int}.
+
+    Validated against each threshold's own min/max rather than a blanket range:
+    5 business days is sensible for "approve a lab dip" and absurd for "PPS
+    overdue", so a single bound would have to be so wide it wasn't a check.
+    Rejects the whole request on a bad value rather than saving the good ones,
+    so a partial save can't leave the warnings centre in a state nobody chose.
+    """
+    errors = []
+    parsed = {}
+    for key, raw in data.items():
+        spec = app_settings.WARNING_THRESHOLD_BY_KEY.get(key)
+        if spec is None:
+            errors.append(f"Unknown threshold '{key}'")
+            continue
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            errors.append(f"{spec['label']}: '{raw}' is not a whole number")
+            continue
+        if val < spec['min'] or val > spec['max']:
+            errors.append(f"{spec['label']}: must be between {spec['min']} and {spec['max']} {spec['unit']}")
+            continue
+        parsed[key] = val
+
+    if errors:
+        raise HTTPException(status_code=400, detail='; '.join(errors))
+
+    for key, val in parsed.items():
+        app_settings.set_setting(db, key, str(val))
+    return {'success': True, 'updated': sorted(parsed.keys())}
+
+
 @router.put("/api/settings/app")
 async def update_app_settings(
     data: dict,

@@ -8,6 +8,7 @@ from database import get_db
 from models import User, PurchaseOrder, OrderComponent
 from auth import get_current_user
 from sample_helpers import is_sample_done, business_days_between
+import app_settings
 
 router = APIRouter()
 
@@ -18,6 +19,11 @@ async def get_dashboard_warnings(
     db: Session = Depends(get_db)
 ):
     """Warnings/flags for orders needing attention — grouped by PO"""
+    # Thresholds are admin-editable (Settings -> Warnings). Read once per
+    # request rather than per order, and fall back to the registered defaults,
+    # which are the numbers that used to be hardcoded here.
+    T = {t['key']: app_settings.get_threshold(db, t['key'])
+         for t in app_settings.WARNING_THRESHOLDS}
     now = datetime.utcnow()
 
     # Drop orders that are no longer in play:
@@ -50,9 +56,21 @@ async def get_dashboard_warnings(
         ),
         # PPS-done filter: order falls off the warnings centre once PPS
         # is APPROVED / NOT REQUIRED or an approval date has been set.
-        ~or_(
-            PurchaseOrder.pps_status.in_(pps_done_statuses),
-            PurchaseOrder.pps_approved.isnot(None),
+        #
+        # The IS NULL arm is load-bearing, and its absence was a live bug: the
+        # same three-valued logic described above bites here too. For a row
+        # with pps_status NULL, `NULL IN (...)` is NULL, `pps_approved IS NOT
+        # NULL` is False, `or_(NULL, False)` is NULL, and `~NULL` is NULL — so
+        # the row was filtered OUT. Every order that had not reached PPS yet,
+        # which is most of them, vanished from the warnings centre entirely.
+        # Measured on a 52-order set: 52 dropped, leaving it permanently empty.
+        or_(
+            PurchaseOrder.pps_status.is_(None),
+            PurchaseOrder.pps_status == '',
+            ~or_(
+                PurchaseOrder.pps_status.in_(pps_done_statuses),
+                PurchaseOrder.pps_approved.isnot(None),
+            ),
         ),
     ).all()
 
@@ -72,7 +90,7 @@ async def get_dashboard_warnings(
         rep = orders[0]  # Representative row (same across PO)
         if rep.order_sent_to_factory_date and not rep.tech_packs_sent_to_factory:
             days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= 3:
+            if days_since >= T['warn_tech_packs_days']:
                 tech_packs_needed.append({
                     "po_number": po_num,
                     "customer": rep.customer,
@@ -87,7 +105,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "tech_packs_needed",
             "title": "Tech Packs Need Sending",
-            "description": "Orders sent to factory 3+ business days ago without tech packs",
+            "description": f"Orders sent to factory {T['warn_tech_packs_days']}+ business days ago without tech packs",
             "severity": "amber",
             "count": len(tech_packs_needed),
             "items": tech_packs_needed,
@@ -99,7 +117,7 @@ async def get_dashboard_warnings(
         rep = orders[0]
         if rep.order_sent_to_factory_date and not rep.specs_sent_to_factory:
             days_since = business_days_between(rep.order_sent_to_factory_date, now)
-            if days_since >= 3:
+            if days_since >= T['warn_specs_days']:
                 specs_needed.append({
                     "po_number": po_num,
                     "customer": rep.customer,
@@ -114,7 +132,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "specs_needed",
             "title": "Specs Need Sending",
-            "description": "Orders sent to factory 3+ business days ago without specs",
+            "description": f"Orders sent to factory {T['warn_specs_days']}+ business days ago without specs",
             "severity": "amber",
             "count": len(specs_needed),
             "items": specs_needed,
@@ -131,7 +149,7 @@ async def get_dashboard_warnings(
         if (o.fit_sample_required or '').strip().upper() == 'N':
             continue
         days_since = business_days_between(o.tech_packs_sent_to_factory, now)
-        if days_since < 15:
+        if days_since < T['warn_fit_sample_days']:
             continue
         if is_sample_done(o.fit_sample_status, o.fit_sample_approved):
             continue
@@ -150,7 +168,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "fit_sample_overdue",
             "title": "Fit Sample Overdue",
-            "description": "3+ business weeks since tech packs sent, no fit sample received",
+            "description": f"{T['warn_fit_sample_days']}+ business days since tech packs sent, no fit sample received",
             "severity": "amber",
             "count": len(fit_sample_overdue),
             "items": fit_sample_overdue,
@@ -166,7 +184,7 @@ async def get_dashboard_warnings(
         if not o.tech_packs_sent_to_factory:
             continue
         days_since = business_days_between(o.tech_packs_sent_to_factory, now)
-        if days_since < 15:
+        if days_since < T['warn_lab_dip_days']:
             continue
 
         components = db.query(OrderComponent).filter(
@@ -193,7 +211,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "lab_dip_overdue",
             "title": "Lab Dip Overdue",
-            "description": "3+ business weeks since tech packs sent, no lab dip received",
+            "description": f"{T['warn_lab_dip_days']}+ business days since tech packs sent, no lab dip received",
             "severity": "amber",
             "count": len(lab_dip_overdue),
             "items": lab_dip_overdue,
@@ -214,7 +232,7 @@ async def get_dashboard_warnings(
                 continue
             if comp.lab_dip_received and not comp.lab_dip_approved:
                 days_since = business_days_between(comp.lab_dip_received, now)
-                if days_since >= 5:
+                if days_since >= T['warn_lab_dip_approval_days']:
                     lab_dip_approval.append({
                         "order_id": o.id,
                         "po_number": o.po_number,
@@ -230,7 +248,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "lab_dip_approval",
             "title": "Lab Dip Needs Approval",
-            "description": "Received 5+ business days ago, not yet approved",
+            "description": f"Received {T['warn_lab_dip_approval_days']}+ business days ago, not yet approved",
             "severity": "amber",
             "count": len(lab_dip_approval),
             "items": lab_dip_approval,
@@ -241,11 +259,11 @@ async def get_dashboard_warnings(
     # If component name contains 'badge' / 'woven label' / 'woven tape', use 5 weeks (25 business days)
     def strike_off_threshold(name) -> int:
         if not name:
-            return 20
+            return T['warn_strike_off_days']
         n = name.lower()
         if 'badge' in n or 'woven label' in n or 'woven tape' in n:
-            return 25
-        return 20
+            return T['warn_strike_off_slow_days']
+        return T['warn_strike_off_days']
 
     # Only sample_type='strike_off' components can produce a strike off
     # warning — same rationale as the lab dip warnings.
@@ -282,7 +300,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "strike_off_overdue",
             "title": "Strike Off Overdue",
-            "description": "4+ business weeks since tech packs sent (5 for badges/woven), no strike off received",
+            "description": f"{T['warn_strike_off_days']}+ business days since tech packs sent ({T['warn_strike_off_slow_days']} for badges/woven), no strike off received",
             "severity": "amber",
             "count": len(strike_off_overdue),
             "items": strike_off_overdue,
@@ -302,7 +320,7 @@ async def get_dashboard_warnings(
                 continue
             if comp.strike_off_received and not comp.strike_off_approved:
                 days_since = business_days_between(comp.strike_off_received, now)
-                if days_since >= 5:
+                if days_since >= T['warn_strike_off_approval_days']:
                     strike_off_approval.append({
                         "order_id": o.id,
                         "po_number": o.po_number,
@@ -318,7 +336,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "strike_off_approval",
             "title": "Strike Off Needs Approval",
-            "description": "Received 5+ business days ago, not yet approved",
+            "description": f"Received {T['warn_strike_off_approval_days']}+ business days ago, not yet approved",
             "severity": "amber",
             "count": len(strike_off_approval),
             "items": strike_off_approval,
@@ -352,7 +370,7 @@ async def get_dashboard_warnings(
         # Calendar days, not business days — Mimi's request: "5/6 weeks
         # including weekends" maps to 40 calendar days from the approval.
         days_since = (now - latest_approval).days
-        if days_since < 40:
+        if days_since < T['warn_pps_received_days']:
             continue
 
         if is_sample_done(o.pps_status, o.pps_approved):
@@ -372,7 +390,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "pps_received_overdue",
             "title": "PPS Overdue",
-            "description": "40+ days from the latest Lab Dip / Strike Off approval, no PPS received",
+            "description": f"{T['warn_pps_received_days']}+ days from the latest Lab Dip / Strike Off approval, no PPS received",
             "severity": "amber",
             "count": len(pps_received_overdue),
             "items": pps_received_overdue,
@@ -386,7 +404,7 @@ async def get_dashboard_warnings(
             continue
         if o.pps_sent_to_customer and not o.pps_approved:
             days_since = business_days_between(o.pps_sent_to_customer, now)
-            if days_since >= 7:
+            if days_since >= T['warn_pps_approval_days']:
                 pps_approval.append({
                     "order_id": o.id,
                     "po_number": o.po_number,
@@ -401,7 +419,7 @@ async def get_dashboard_warnings(
         warnings.append({
             "key": "pps_approval",
             "title": "PPS Needs Approval",
-            "description": "Sent to customer 7+ business days ago, not yet approved",
+            "description": f"Sent to customer {T['warn_pps_approval_days']}+ business days ago, not yet approved",
             "severity": "amber",
             "count": len(pps_approval),
             "items": pps_approval,
