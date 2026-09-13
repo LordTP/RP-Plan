@@ -985,6 +985,39 @@ export const statsApi = {
 };
 
 // Analytics endpoints
+export type BoardGateState = 'done' | 'flight' | 'late' | 'crit' | 'idle' | 'na';
+export interface BoardGate { state: BoardGateState; days: number | null; }
+export interface BoardStyle {
+  order_id: number;
+  po_number: string;
+  style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  customer: string | null;
+  factory: string | null;
+  gates: Record<string, BoardGate>;
+  ex_factory: string | null;
+  days_to_ex_factory: number | null;
+  risk: number;
+}
+export interface BoardResponse {
+  gates: { key: string; label: string }[];
+  styles: BoardStyle[];
+  total_styles: number;
+  totals: Record<string, { label: string; done: number; late: number }>;
+  bottleneck: null | {
+    gate: string; label: string; count: number;
+    worst_days: number; factories: string[];
+  };
+}
+
+export const dashboardBoardApi = {
+  get: async (limit: number = 40): Promise<BoardResponse> => {
+    const response = await api.get('/api/dashboard/board', { params: { limit } });
+    return response.data;
+  },
+};
+
 export const analyticsApi = {
   getOverview: async (months: number = 6) => {
     const response = await api.get('/api/analytics/overview', { params: { months } });

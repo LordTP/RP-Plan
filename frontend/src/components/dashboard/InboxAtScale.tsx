@@ -21,7 +21,7 @@ import { approvalsApi, type PendingApprovalGroup, type PendingChange } from '@/l
  * stays calm at rest.
  */
 
-type GroupMode = 'po' | 'supplier' | 'flat';
+type GroupMode = 'type' | 'po' | 'supplier' | 'flat';
 type FilterKey = 'all' | 'date' | 'sample' | 'other';
 
 interface ChangeWithCtx extends PendingChange {
@@ -47,7 +47,7 @@ interface Props {
 }
 
 export function InboxAtScale({ pendingApprovals, onApproved, onPOClick }: Props) {
-  const [groupMode, setGroupMode] = useState<GroupMode>('po');
+  const [groupMode, setGroupMode] = useState<GroupMode>('type');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set());
@@ -86,6 +86,27 @@ export function InboxAtScale({ pendingApprovals, onApproved, onPOClick }: Props)
 
   // Build the group views for the chosen mode
   const groupViews = useMemo<GroupView[]>(() => {
+    // Default. Approving a date change and approving a strike off are
+    // different decisions made with different information, so they get
+    // their own sections rather than sharing one list behind a filter
+    // nobody remembered to click.
+    if (groupMode === 'type') {
+      const buckets: { key: FilterKey; primary: string; secondary: string }[] = [
+        { key: 'date',   primary: 'Date changes',      secondary: 'Dates the factory wants to move' },
+        { key: 'sample', primary: 'Samples to approve', secondary: 'Received and waiting on us' },
+        { key: 'other',  primary: 'Everything else',    secondary: 'Quantities, sizes and the rest' },
+      ];
+      return buckets
+        .map(b => ({
+          key: b.key,
+          primary: b.primary,
+          secondary: b.secondary,
+          changes: filteredChanges
+            .filter(c => classifyField(c.field_name) === b.key)
+            .sort((a, b2) => (a.submitted_at || '').localeCompare(b2.submitted_at || '')),
+        }))
+        .filter(g => g.changes.length > 0);
+    }
     if (groupMode === 'flat') {
       return [{
         key: 'flat',
@@ -231,19 +252,22 @@ export function InboxAtScale({ pendingApprovals, onApproved, onPOClick }: Props)
       {/* Header — section title + group-by toggle */}
       <header className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
         <div className="flex items-baseline gap-3">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Inbox</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Needs your decision</h3>
           <span className="text-xs text-gray-400">{flatChanges.length} pending</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-gray-400 mr-1">Group:</span>
+          <GroupToggle active={groupMode === 'type'} onClick={() => setGroupMode('type')}>Type</GroupToggle>
           <GroupToggle active={groupMode === 'po'} onClick={() => setGroupMode('po')}>PO</GroupToggle>
           <GroupToggle active={groupMode === 'supplier'} onClick={() => setGroupMode('supplier')}>Supplier</GroupToggle>
           <GroupToggle active={groupMode === 'flat'} onClick={() => setGroupMode('flat')}>Flat</GroupToggle>
         </div>
       </header>
 
-      {/* Filter pills */}
-      <div className="flex items-center gap-1 mb-3 text-[11px]">
+      {/* Filter pills — redundant while grouping by type, since every type is
+          already on screen as its own section. */}
+      <div className={cn('items-center gap-1 mb-3 text-[11px]',
+                         groupMode === 'type' ? 'hidden' : 'flex')}>
         <FilterPill active={filter === 'all'} onClick={() => setFilter('all')}>
           All <span className="opacity-60 font-normal">{counts.all}</span>
         </FilterPill>

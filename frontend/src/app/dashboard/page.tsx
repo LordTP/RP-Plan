@@ -18,13 +18,14 @@ import {
   type RejectedChange,
 } from '@/lib/api';
 import { WarningsCentre } from '@/components/dashboard/WarningsCentre';
-import { formatCurrency, formatNumber, formatDate, cn } from '@/lib/utils';
+import { formatNumber, formatDate, cn } from '@/lib/utils';
 import { InboxAtScale } from '@/components/dashboard/InboxAtScale';
 import { RecentActivityFeed, groupBulkActivity } from '@/components/dashboard/RecentActivityFeed';
+import { CriticalPathBoard } from '@/components/dashboard/CriticalPathBoard';
 
 /**
  * /dashboard — flat, scale-friendly layout.
- *   [ KPI strip — Total / In Production / Shipped / Open Value / Overdue ]
+ *   [ KPI strip — Total / In Production / Shipped / Delivered / Overdue ]
  *   [ Inbox (7/12) ............. Activity (5/12) ]
  *   [ Warnings Centre (below the fold when populated) ]
  *
@@ -173,10 +174,10 @@ function DashboardContent() {
         <KPI label="Total"          value={formatNumber(stats?.total_orders || 0)}              onClick={() => handleStatusClick()} border />
         <KPI label="In Production"  value={formatNumber(stats?.orders_in_production || 0)}      onClick={() => handleStatusClick('In Production')} border />
         <KPI label="Shipped"        value={formatNumber(stats?.orders_shipped || 0)}            onClick={() => handleStatusClick('Shipped')} border />
-        {isInternal
-          ? <KPI label="Open Value" value={formatCurrency(stats?.total_open_value || 0)} border />
-          : <KPI label="Delivered"  value={formatNumber(stats?.orders_delivered || 0)}          onClick={() => handleStatusClick('Delivered')} border />
-        }
+        {/* Was "Open Value". Costing came out of the app, so it rendered a
+            permanent $0.00 — the one dead number on the dashboard. Everyone
+            gets Delivered instead. */}
+        <KPI label="Delivered"      value={formatNumber(stats?.orders_delivered || 0)}          onClick={() => handleStatusClick('Delivered')} border />
         <KPI label="Overdue"        value={formatNumber(stats?.overdue_orders || 0)}            onClick={() => handleStatusClick('Delayed')} tone="red" />
       </div>
 
@@ -267,51 +268,56 @@ function DashboardContent() {
         </section>
       )}
 
-      {/* Inbox + Activity */}
-      <div className="grid grid-cols-12 gap-10">
-        <div className="col-span-12 lg:col-span-7">
-          <InboxAtScale
-            pendingApprovals={pendingApprovals}
-            onApproved={reloadInbox}
-            onPOClick={handlePOClick}
-          />
+      {/* Critical-path board — internal only. Suppliers see their own PO set
+          on the factory pages and have no use for a cross-factory board. */}
+      {isInternal && (
+        <div className="mb-6">
+          <CriticalPathBoard onStyleClick={handlePOClick} />
+        </div>
+      )}
+
+      {/* Inbox + Activity — locked to the same height and scrolling internally,
+          so the page below never reflows as the inbox empties or the feed grows. */}
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-12 lg:col-span-7 flex flex-col h-[600px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
+            <InboxAtScale
+              pendingApprovals={pendingApprovals}
+              onApproved={reloadInbox}
+              onPOClick={handlePOClick}
+            />
+          </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-5">
-          <header className="flex items-baseline justify-between mb-3 pb-2 border-b border-gray-200">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Activity</h3>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-[10px] text-gray-400">Live</span>
-            </div>
+        <div className="col-span-12 lg:col-span-5 flex flex-col h-[600px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <header className="flex-none flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-100">
+            <h3 className="text-[12.5px] font-bold text-gray-900">Activity</h3>
+            <span className="flex-1" />
+            <span className="text-[11px] text-gray-400">Last 7 days</span>
           </header>
-          <RecentActivityFeed
-            groups={groupBulkActivity(recentActivity)}
-            onPOClick={handlePOClick}
-            hasMore={hasMoreActivity}
-            loadingMore={loadingMoreActivity}
-            onLoadMore={async () => {
-              setLoadingMoreActivity(true);
-              try {
-                const result = await statsApi.getRecentActivity(50, recentActivity.length);
-                setRecentActivity(prev => [...prev, ...result.events]);
-                setHasMoreActivity(result.has_more);
-              } catch { /* ignore */ }
-              finally { setLoadingMoreActivity(false); }
-            }}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <RecentActivityFeed
+              groups={groupBulkActivity(recentActivity)}
+              onPOClick={handlePOClick}
+              hasMore={hasMoreActivity}
+              loadingMore={loadingMoreActivity}
+              onLoadMore={async () => {
+                setLoadingMoreActivity(true);
+                try {
+                  const result = await statsApi.getRecentActivity(50, recentActivity.length);
+                  setRecentActivity(prev => [...prev, ...result.events]);
+                  setHasMoreActivity(result.has_more);
+                } catch { /* ignore */ }
+                finally { setLoadingMoreActivity(false); }
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Warnings Centre — full-width below the fold */}
+      {/* Warnings Centre — full width, its own working surface */}
       {warnings.length > 0 && (
-        <div className="mt-10">
-          <header className="flex items-baseline justify-between mb-3 pb-2 border-b border-gray-200">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Warnings</h3>
-            <span className="text-xs text-gray-400">
-              {warnings.reduce((s, w) => s + (w.count || 0), 0)} flagged across {warnings.length} categories
-            </span>
-          </header>
+        <div className="mt-6">
           <WarningsCentre warnings={warnings} />
         </div>
       )}

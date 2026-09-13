@@ -22,6 +22,20 @@ const WARNING_SEVERITY_STYLES: Record<string, { bg: string; text: string; border
   blue:  { bg: 'bg-blue-50',  text: 'text-blue-700',  border: 'border-blue-200',  dot: 'bg-blue-500' },
 };
 
+
+/**
+ * Which side owes the work. Severity grouped almost nothing in practice —
+ * nearly every warning is amber — whereas this is the split people actually
+ * act on, and it is the same one the Warning thresholds settings page uses.
+ */
+const WAITING_ON_SOURCE_LAB = new Set([
+  'tech_packs_needed',
+  'specs_needed',
+  'lab_dip_approval',
+  'strike_off_approval',
+  'pps_approval',
+]);
+
 export function WarningsCentre({ warnings }: { warnings: any[] }) {
   const [selected, setSelected] = useState<string>(warnings[0]?.key || '');
   const [search, setSearch] = useState('');
@@ -50,9 +64,8 @@ export function WarningsCentre({ warnings }: { warnings: any[] }) {
   }, [filteredWarnings, selected]);
 
   const totalCount = filteredWarnings.reduce((s, w) => s + w.count, 0);
-  const redWarnings = filteredWarnings.filter(w => w.severity === 'red');
-  const amberWarnings = filteredWarnings.filter(w => w.severity === 'amber');
-  const blueWarnings = filteredWarnings.filter(w => w.severity === 'blue');
+  const ourCourt = filteredWarnings.filter(w => WAITING_ON_SOURCE_LAB.has(w.key));
+  const theirCourt = filteredWarnings.filter(w => !WAITING_ON_SOURCE_LAB.has(w.key));
 
   const renderTab = (w: any) => {
     const style = WARNING_SEVERITY_STYLES[w.severity] || WARNING_SEVERITY_STYLES.amber;
@@ -66,7 +79,7 @@ export function WarningsCentre({ warnings }: { warnings: any[] }) {
           isActive ? `${style.bg} ${style.text}` : 'text-gray-700 hover:bg-gray-100/80'
         )}
       >
-        <AlertTriangle className={cn('w-3.5 h-3.5 flex-shrink-0', isActive ? style.text : 'text-gray-400')} />
+        <span className={cn('w-[7px] h-[7px] rounded-full flex-shrink-0', style.dot)} />
         <span className="flex-1 text-xs font-medium truncate">{w.title}</span>
         <span className={cn(
           'text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center',
@@ -125,30 +138,22 @@ export function WarningsCentre({ warnings }: { warnings: any[] }) {
       </div>
 
       <div className="grid grid-cols-[320px_1fr] h-[440px]">
-        {/* Left: tabs grouped by severity */}
+        {/* Left: categories grouped by who owes the work */}
         <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 overflow-y-auto">
-          {redWarnings.length > 0 && (
+          {theirCourt.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Urgent
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 px-2">
+                Waiting on the factory
               </p>
-              <div className="space-y-0.5">{redWarnings.map(renderTab)}</div>
+              <div className="space-y-0.5">{theirCourt.map(renderTab)}</div>
             </div>
           )}
-          {amberWarnings.length > 0 && (
+          {ourCourt.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Needs Attention
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 px-2">
+                Waiting on Source Lab
               </p>
-              <div className="space-y-0.5">{amberWarnings.map(renderTab)}</div>
-            </div>
-          )}
-          {blueWarnings.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1.5 px-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Reminder
-              </p>
-              <div className="space-y-0.5">{blueWarnings.map(renderTab)}</div>
+              <div className="space-y-0.5">{ourCourt.map(renderTab)}</div>
             </div>
           )}
         </div>

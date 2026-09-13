@@ -71,6 +71,7 @@ from routers import qa as qa_router
 from routers import size_guide as size_guide_router
 from routers import notifications as notifications_router
 from routers import closures as closures_router
+from routers import dashboard_board as dashboard_board_router
 app.include_router(users_router.router)
 app.include_router(components_router.router)
 app.include_router(tracking_router.router)
@@ -87,6 +88,7 @@ app.include_router(qa_router.router)
 app.include_router(size_guide_router.router)
 app.include_router(notifications_router.router)
 app.include_router(closures_router.router)
+app.include_router(dashboard_board_router.router)
 
 # CORS middleware - configurable via environment variable
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
