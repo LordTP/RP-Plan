@@ -1983,6 +1983,20 @@ function DetailBody({
   // Share is against the SIZED total, not order.total_quantity — the two can
   // disagree when a size sits outside the style's guide, and percentages that
   // don't add up to 100 read as a bug.
+  // Days to the date the whole journey hangs off, so the step that matters
+  // says how far out it is rather than just when.
+  const exFacSub = (() => {
+    const raw = order.revised_po_ex_factory;
+    if (!raw) return null;
+    try {
+      const d = parseISO(String(raw).split('T')[0]);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+      const when = days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'today' : `${days} days away`;
+      return order.factory_confirmed_ex_factory ? `factory confirmed · ${when}` : when;
+    } catch { return null; }
+  })();
+
   const totalSized = sizes.reduce((n, s) => n + (s.value || 0), 0);
   const biggestSize = sizes.find(s => (s.value || 0) === maxSize && maxSize > 0)?.label || null;
 
@@ -2165,7 +2179,13 @@ function DetailBody({
           on, so it takes the wider side; the identity fields and the journey
           read fine narrow. */}
       <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
-      <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] items-start">
+      {/* No items-start: with it each column sizes to its own content, so the
+          left column's border-r stopped where its content did and the right
+          column carried on below with nothing marking it as a column at all.
+          Stretching both makes the rule run the full height. The right column
+          also takes a faint ground so it reads as a panel rather than as
+          content that happens to be over there. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr]">
       <div className="min-w-0 xl:border-r xl:border-gray-200">
 
         {/* Wide column — the work: samples, then the size run. */}
@@ -2337,19 +2357,18 @@ function DetailBody({
             )}
         </section>
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 xl:bg-gray-50/60">
         {/* Narrow column — the facts: who/what, then the dates. */}
         {/* ─── Product section ─── */}
         <section ref={productRef} className="px-6 pt-6 pb-3">
-          <SectionHeader accent="blue" label="Product" />
-          {/* Single column. This was grid-cols-2 back when the size breakdown
-              sat beside the identity card; with the size run moved under
-              Sampling, the leftover two-column grid left this card rendering
-              at HALF the column width, so every value wrapped over two or
-              three lines. */}
+          <SectionHeader accent="blue" label="Order" />
+          {/* No card, no rule between every row. The right column is reference
+              material you scan, and boxing each row in its own divider made ten
+              facts look like ten separate things to deal with. The column
+              already has its own ground and a border separating it from the
+              work on the left; anything more is chrome on chrome. */}
           <div>
-            {/* Product details card */}
-            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+            <div className="[&>*]:border-0 [&>*]:px-0 [&>*]:py-[3px]">
               {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} fieldKey="description" onSave={(v) => onSave?.(order.id, 'description', v)} />}
               {hasCol('customer') && <DetailRow label="Customer" value={order.customer} editable={canEdit('customer')} fieldKey="customer" onSave={(v) => onSave?.(order.id, 'customer', v)} />}
               {hasCol('customer_po_number') && <DetailRow label="Customer PO#" value={order.customer_po_number} editable={canEdit('customer_po_number')} fieldKey="customer_po_number" onSave={(v) => onSave?.(order.id, 'customer_po_number', v)} />}
@@ -2380,18 +2399,7 @@ function DetailBody({
         <section ref={timelineRef} className="px-6 pt-6 pb-6">
           <SectionHeader accent="violet" label="Journey" />
 
-          {(hasCol('fcl_lcl') || hasCol('vessel_name') || hasCol('tracking_reference')
-            || order.customer_po_open_month || order.expected_dispatch_arrive_uk_month) && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {hasCol('fcl_lcl') && <JourneyFact label="FCL / LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} fieldKey="fcl_lcl" onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-              {hasCol('vessel_name') && <JourneyFact label="Vessel" value={order.vessel_name} editable={canEdit('vessel_name')} fieldKey="vessel_name" onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-              {(order.tracking_reference || hasCol('tracking_reference')) && <JourneyFact label="Tracking ref" value={order.tracking_reference} mono editable={canEdit('tracking_reference')} fieldKey="tracking_reference" onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}
-              {order.customer_po_open_month && <JourneyFact label="PO open month" value={order.customer_po_open_month} />}
-              {order.expected_dispatch_arrive_uk_month && <JourneyFact label="Expected UK" value={order.expected_dispatch_arrive_uk_month} />}
-            </div>
-          )}
-
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div>
             <div className="relative">
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
               <div className="space-y-0">
@@ -2402,12 +2410,36 @@ function DetailBody({
                 {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} editable={canEdit('barcodes_sent_to_factory')} fieldKey="barcodes_sent_to_factory" onSave={(v) => onSave?.(order.id, 'barcodes_sent_to_factory', v)} />}
                 {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} note={order.date_notes?.original_po_ex_factory} editable={canEdit('original_po_ex_factory')} fieldKey="original_po_ex_factory" onSave={(v) => onSave?.(order.id, 'original_po_ex_factory', v)} />}
                 {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} fieldKey="factory_confirmed_ex_factory" onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
-                {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} note={order.date_notes?.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} fieldKey="revised_po_ex_factory" onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
-                {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} fieldKey="vessel_etd" onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
+                {hasCol('revised_po_ex_factory') && (
+                  <TimelineItem
+                    label="Revised Ex-Factory"
+                    date={order.revised_po_ex_factory}
+                    note={order.date_notes?.revised_po_ex_factory}
+                    highlight
+                    editable={canEdit('revised_po_ex_factory')}
+                    fieldKey="revised_po_ex_factory"
+                    onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)}
+                    sub={exFacSub}
+                  />
+                )}
+                {hasCol('vessel_etd') && (
+                  <TimelineItem
+                    label="Vessel ETD"
+                    date={order.vessel_etd}
+                    editable={canEdit('vessel_etd')}
+                    fieldKey="vessel_etd"
+                    onSave={(v) => onSave?.(order.id, 'vessel_etd', v)}
+                    sub={[
+                      order.fcl_lcl || 'FCL/LCL not set',
+                      order.vessel_name || 'no vessel',
+                      order.tracking_reference || 'no tracking ref',
+                    ].join(' · ')}
+                  />
+                )}
                 {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} fieldKey="vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
                 {hasCol('revised_vessel_eta_to_port') && <TimelineItem label="Revised Vessel ETA" date={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} fieldKey="revised_vessel_eta_to_port" onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-                {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} />}
-                {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} />}
+                {hasCol('eta_to_uk') && <TimelineItem label="ETA UK" date={order.eta_to_uk} sub="calculated from revised ex-factory" />}
+                {hasCol('eta_to_customer') && <TimelineItem label="ETA Customer" date={order.eta_to_customer} sub="calculated from revised ex-factory" />}
                 {hasCol('estimated_del_to_customer') && <TimelineItem label="Est Del to Customer" date={order.estimated_del_to_customer} />}
                 {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} note={order.date_notes?.original_del_date_to_customer} editable={canEdit('original_del_date_to_customer')} fieldKey="original_del_date_to_customer" onSave={(v) => onSave?.(order.id, 'original_del_date_to_customer', v)} />}
               </div>
@@ -2646,7 +2678,7 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   );
 }
 
-function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey }: {
+function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey, sub }: {
   label: string;
   date: string | null | undefined;
   /** Free-text override (e.g. "ASAP") — displayed in place of the date
@@ -2656,26 +2688,52 @@ function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey
   editable?: boolean;
   onSave?: (value: string) => void;
   fieldKey?: string;
+  /** A quiet line under the step — what the date was derived from, or the
+   *  attributes of that leg. The vessel details used to be their own strip of
+   *  tiles above the timeline; they describe the sailing, so they belong on
+   *  the sailing, not floating above the whole journey. */
+  sub?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const hasDate = !!date || !!note;
   const bulkCtx = useBulkScope();
   const isBulkable = !!fieldKey && !!bulkCtx;
 
+  // Past / future / unset, so scanning the journey tells you where the order
+  // actually is. Every dot used to look the same whether the date had been and
+  // gone or was months out, which made the timeline a list of dates in a
+  // column rather than a timeline.
+  //
+  // A free-text note ("ASAP") counts as set but can't be placed in time, so it
+  // reads as passed rather than pretending to a position it doesn't have.
+  const past = (() => {
+    if (!date) return !!note;
+    try {
+      const d = parseISO(String(date).split('T')[0]);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      return d.getTime() <= today.getTime();
+    } catch { return false; }
+  })();
+
+  const dotClass = !hasDate
+    ? 'bg-white border-gray-200'
+    : highlight
+      ? 'bg-amber-500 border-amber-500 ring-4 ring-amber-100'
+      : past
+        ? 'bg-emerald-500 border-emerald-500'
+        : 'bg-white border-primary-300';
+
   return (
+    <div className="relative">
     <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
-      <div className={cn(
-        'w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10',
-        hasDate
-          ? highlight
-            ? 'bg-primary-500 border-primary-500'
-            : 'bg-white border-primary-300'
-          : 'bg-white border-gray-200'
-      )}>
-        {hasDate && !highlight && <div className="w-full h-full rounded-full bg-primary-100" />}
+      <div className={cn('w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10', dotClass)}>
+        {hasDate && !highlight && !past && <div className="w-full h-full rounded-full bg-primary-50" />}
       </div>
       <div className="flex-1 flex items-center justify-between min-w-0">
-        <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
+        <span className={cn(
+          'text-xs',
+          !hasDate ? 'text-gray-400' : highlight ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium',
+        )}>{label}</span>
         {editing && isBulkable && fieldKey ? (
           <InlineBulkScopeEditor
             fieldKey={fieldKey}
@@ -2707,6 +2765,10 @@ function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey
         )}
       </div>
     </div>
+      {sub && (
+        <div className="pl-[27px] -mt-1 pb-1 text-[10.5px] text-gray-400 leading-snug">{sub}</div>
+      )}
+    </div>
   );
 }
 
@@ -2715,28 +2777,21 @@ function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey
  *  rows among a dozen dates. They describe the shipping leg rather than being
  *  steps in it, so they read better as a strip above the timeline than as
  *  entries within it. */
-function JourneyFact({
-  label, value, mono, editable, fieldKey, onSave,
-}: {
+function JourneyFact({ label, value, mono }: {
   label: string;
   value: string | null | undefined;
   mono?: boolean;
-  editable?: boolean;
-  fieldKey?: string;
-  onSave?: (v: string) => void;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 min-w-0">
-      <div className="text-[9px] uppercase tracking-widest text-gray-400 font-bold leading-none">{label}</div>
-      <div className="mt-1 min-w-0">
-        {editable && fieldKey && onSave ? (
-          <DetailRow label="" value={value} editable fieldKey={fieldKey} onSave={onSave} />
-        ) : (
-          <span className={cn('text-[12px] font-semibold text-gray-800 truncate block', mono && 'font-mono text-[11px]')}>
-            {value || '—'}
-          </span>
-        )}
-      </div>
-    </div>
+    <span className="inline-flex items-baseline gap-1.5 min-w-0">
+      <span className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">{label}</span>
+      <span className={cn(
+        'text-[11.5px] truncate',
+        value ? 'font-semibold text-gray-800' : 'text-gray-300',
+        mono && value && 'font-mono',
+      )}>
+        {value || 'not set'}
+      </span>
+    </span>
   );
 }
