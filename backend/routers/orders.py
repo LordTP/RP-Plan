@@ -775,17 +775,6 @@ async def update_order(
                 apply_date_field(order, key, value)
                 new_date = getattr(order, key)
                 new_note = (order.date_notes or {}).get(key)
-                # Throwaway logging for the reported "set new revised ex-factory,
-                # toast saved but value doesn't persist" bug. Captures the full
-                # incoming/parsed/final state so the next repro is diagnosable
-                # from container logs. Safe to remove once the report is closed.
-                if key == 'revised_po_ex_factory':
-                    print(
-                        f"[revised_po_ex_factory] po_id={order.id} user={current_user.username}"
-                        f" incoming={value!r} old_date={old_date} old_note={old_note!r}"
-                        f" new_date={new_date} new_note={new_note!r}",
-                        flush=True,
-                    )
                 if (old_date != new_date) or (old_note != new_note):
                     role_val = str(current_user.role.value if hasattr(current_user.role, 'value') else current_user.role).lower()
                     change_source = "Sourcelab" if role_val != 'supplier' else "Supplier"
@@ -923,14 +912,6 @@ async def update_order(
         and not order.revised_po_ex_factory
         and order.factory_confirmed_ex_factory
     ):
-        # Throwaway log — see the DATE_NOTE_FIELDS block for revised_po_ex_factory
-        # above. Confirms auto-default didn't fire on a payload that included
-        # the field (which would be the silent-revert bug).
-        print(
-            f"[revised_po_ex_factory] po_id={order.id} auto-default fired"
-            f" (payload didn't include field) -> {order.factory_confirmed_ex_factory}",
-            flush=True,
-        )
         order.revised_po_ex_factory = order.factory_confirmed_ex_factory
 
     # Auto-calculate ETA dates when revised_po_ex_factory changes

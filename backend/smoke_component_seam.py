@@ -359,6 +359,35 @@ r = requests.get(f'{B}/api/orders/list/distinct-values', headers=HA,
                  params={'column': 'fit_sample_status'})
 check('fit sample stays order-level', r.status_code == 200, f'HTTP {r.status_code}')
 
+# Labels live ONLY on OrderComponent — label_status/received/approved have no
+# twin on PurchaseOrder, unlike fit/strike/lab. A label submission without a
+# component_id used to fall through to the order row and setattr onto an
+# unmapped attribute: HTTP 200, persisted nowhere, read back as None forever.
+from models import PurchaseOrder as _PO, OrderComponent as _OC
+check('PurchaseOrder has no label_ columns', not hasattr(_PO, 'label_status'),
+      'label_* must stay component-only')
+check('OrderComponent has label_ columns', hasattr(_OC, 'label_status'))
+
+# A real reason code, or reason validation fires first and the check passes
+# for the wrong reason without ever reaching the target guard.
+r = requests.post(f'{B}/api/submissions/reject', headers=HA, json={
+    'order_id': _fix_order_id, 'component_id': None,
+    'sample_type': 'label', 'reason': 'COLOUR',
+})
+_detail = (r.json().get('detail') if r.headers.get('content-type', '').startswith('application/json') else r.text) or ''
+check('label reject without component_id is refused', r.status_code == 400,
+      f'HTTP {r.status_code} {str(_detail)[:70]}')
+check('...and refused for the right reason', 'component_id is required' in str(_detail),
+      f'detail={str(_detail)[:70]}')
+
+# The order-level fallback must still work for the samples that do have twins.
+r = requests.post(f'{B}/api/submissions/reject', headers=HA, json={
+    'order_id': _fix_order_id, 'component_id': None,
+    'sample_type': 'strike', 'reason': 'COLOUR',
+})
+check('strike reject without component_id still allowed', r.status_code != 400,
+      f'HTTP {r.status_code}')
+
 _clear_fixtures()
 
 # ── Summary ───────────────────────────────────────────────────────────

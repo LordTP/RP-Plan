@@ -81,9 +81,19 @@ def _validate_target(db: Session, order_id: int, component_id: Optional[int], sa
     component = None
     if field_map['target'] == 'component':
         if component_id is None:
+            # Labels are the exception to the fallback below: label_status /
+            # label_received / label_approved exist ONLY on OrderComponent,
+            # while fit/strike/lab have twins on PurchaseOrder. Without this
+            # guard a label submission with no component_id fell through to
+            # the order row and setattr'd onto an unmapped attribute —
+            # accepted with a 200, persisted nowhere, and read back as None
+            # forever. Silent data loss, so refuse it outright.
+            if sample_type == 'label':
+                raise HTTPException(
+                    400,
+                    "Labels always sit on a component — component_id is required.")
             # Fit/Strike/Lab on orders without components live on the order row itself.
             # Allow this but we'll operate on PurchaseOrder's equivalent columns instead.
-            pass
         else:
             component = db.query(OrderComponent).filter(
                 OrderComponent.id == component_id,
@@ -100,8 +110,12 @@ def _validate_target(db: Session, order_id: int, component_id: Optional[int], sa
 
 def _column_names(sample_type: str) -> dict:
     """Map sample_type to the (status, received, approved) column name strings.
-    For component-level samples on orders without components, the order has the
-    same column names, so this works for both targets."""
+
+    Fit / Strike / Lab have identically-named columns on both PurchaseOrder and
+    OrderComponent, so the same names work whichever target a submission lands
+    on. Label does NOT — label_* exists only on OrderComponent, which is why
+    _load_target refuses a label submission without a component_id rather than
+    falling back to the order."""
     fm = SAMPLE_FIELD_MAP[sample_type]
     return {'status': fm['status'], 'received': fm['received'], 'approved': fm['approved']}
 
