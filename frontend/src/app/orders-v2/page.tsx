@@ -2224,29 +2224,41 @@ function DetailBody({
                 </>
               )}
 
-              {/* Fit Sample — always at order/style level. */}
+              {/* Fit and PPS share one grid so they pair rather than stacking
+                  full width. The wrapper sits outside both conditions — opened
+                  inside one and closed inside the other, it spans two separate
+                  JSX expressions, which doesn't parse. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1">
               {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
-                <div className="mt-4">
-                  <SampleStatusCard label="Fit Sample" scope="order-level" status={order.fit_sample_status}>
+                  <SampleStatusCard
+                    label="Fit Sample"
+                    scope="order-level"
+                    status={order.fit_sample_status}
+                    empty={!order.fit_sample_status && !order.fit_sample_received && !order.fit_sample_approved && !order.fit_sample_required}
+                  >
                     {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} fieldKey="fit_sample_required" onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
                     {hasCol('fit_sample_status') && <DetailRow label="Status" value={order.fit_sample_status} editable={canEdit('fit_sample_status')} options={FIT_SAMPLE_STATUS_OPTIONS} fieldKey="fit_sample_status" onSave={(v) => handleSampleStatusSave('fit_sample_status', v)} />}
                     {hasCol('fit_sample_received') && <DetailRow label="Received" value={formatDate(order.fit_sample_received)} type="date" rawValue={order.fit_sample_received} editable={canEdit('fit_sample_received')} fieldKey="fit_sample_received" onSave={(v) => onSave?.(order.id, 'fit_sample_received', v)} />}
                     {hasCol('fit_sample_approved') && <DetailRow label="Approved" value={formatDate(order.fit_sample_approved)} type="date" rawValue={order.fit_sample_approved} editable={canEdit('fit_sample_approved')} fieldKey="fit_sample_approved" onSave={(v) => onSave?.(order.id, 'fit_sample_approved', v)} />}
                   </SampleStatusCard>
-                </div>
               )}
 
-              {/* PPS — always order-level. */}
+              {/* PPS — always order-level. Shares the grid opened above so the
+                  two order-level samples pair rather than stacking full width. */}
               {(hasCol('pps_status') || hasCol('pps_received')) && (
-                <div className="mt-3">
-                  <SampleStatusCard label="Pre-Production Sample" scope="order-level" status={order.pps_status}>
+                  <SampleStatusCard
+                    label="Pre-Production Sample"
+                    scope="order-level"
+                    status={order.pps_status}
+                    empty={!order.pps_status && !order.pps_received && !order.pps_sent_to_customer && !order.pps_approved}
+                  >
                     {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} fieldKey="pps_status" onSave={(v) => handleSampleStatusSave('pps_status', v)} />}
                     {hasCol('pps_received') && <DetailRow label="Received" value={formatDate(order.pps_received)} type="date" rawValue={order.pps_received} editable={canEdit('pps_received')} fieldKey="pps_received" onSave={(v) => onSave?.(order.id, 'pps_received', v)} />}
                     {hasCol('pps_sent_to_customer') && <DetailRow label="Sent to Cust" value={formatDate(order.pps_sent_to_customer)} type="date" rawValue={order.pps_sent_to_customer} editable={canEdit('pps_sent_to_customer')} fieldKey="pps_sent_to_customer" onSave={(v) => onSave?.(order.id, 'pps_sent_to_customer', v)} />}
                     {hasCol('pps_approved') && <DetailRow label="Approved" value={formatDate(order.pps_approved)} type="date" rawValue={order.pps_approved} editable={canEdit('pps_approved')} fieldKey="pps_approved" onSave={(v) => onSave?.(order.id, 'pps_approved', v)} />}
                   </SampleStatusCard>
-                </div>
               )}
+                </div>
 
               {/* Photo / shipment / ex-fac from PP — date-only, so they pair
                   up rather than each taking a full card. */}
@@ -2330,7 +2342,12 @@ function DetailBody({
         {/* ─── Product section ─── */}
         <section ref={productRef} className="px-6 pt-6 pb-3">
           <SectionHeader accent="blue" label="Product" />
-          <div className="grid grid-cols-2 gap-4">
+          {/* Single column. This was grid-cols-2 back when the size breakdown
+              sat beside the identity card; with the size run moved under
+              Sampling, the leftover two-column grid left this card rendering
+              at HALF the column width, so every value wrapped over two or
+              three lines. */}
+          <div>
             {/* Product details card */}
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
               {hasCol('description') && <DetailRow label="Description" value={order.description} editable={canEdit('description')} fieldKey="description" onSave={(v) => onSave?.(order.id, 'description', v)} />}
@@ -2365,7 +2382,7 @@ function DetailBody({
 
           {(hasCol('fcl_lcl') || hasCol('vessel_name') || hasCol('tracking_reference')
             || order.customer_po_open_month || order.expected_dispatch_arrive_uk_month) && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+            <div className="grid grid-cols-2 gap-2 mb-3">
               {hasCol('fcl_lcl') && <JourneyFact label="FCL / LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} fieldKey="fcl_lcl" onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
               {hasCol('vessel_name') && <JourneyFact label="Vessel" value={order.vessel_name} editable={canEdit('vessel_name')} fieldKey="vessel_name" onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
               {(order.tracking_reference || hasCol('tracking_reference')) && <JourneyFact label="Tracking ref" value={order.tracking_reference} mono editable={canEdit('tracking_reference')} fieldKey="tracking_reference" onSave={(v) => onSave?.(order.id, 'tracking_reference', v)} />}

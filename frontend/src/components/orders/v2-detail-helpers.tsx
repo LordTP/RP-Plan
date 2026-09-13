@@ -372,7 +372,7 @@ export function SectionDivider() {
  * The dates keep their DetailRows underneath, so editing is unchanged.
  */
 export function SampleStatusCard({
-  label, status, scope, attempt, children,
+  label, status, scope, attempt, empty, children,
 }: {
   label: string;
   status: string | null | undefined;
@@ -380,8 +380,14 @@ export function SampleStatusCard({
    *  separate heading floating above the card. */
   scope?: string;
   attempt?: React.ReactNode;
+  /** Nothing recorded yet — no status, no dates. Collapses the rows behind a
+   *  disclosure, because a sample nobody has touched was rendering four rows
+   *  of "—". Two of those side by side is eight lines saying nothing, which
+   *  dwarfed the component cards above them. */
+  empty?: boolean;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   const s = (status || '').trim().toUpperCase();
   const tone =
     s === 'APPROVED' ? { edge: 'border-emerald-200', head: 'bg-emerald-50/70', pill: 'bg-emerald-100 text-emerald-800' }
@@ -401,9 +407,18 @@ export function SampleStatusCard({
           {s || 'not set'}
         </span>
       </div>
-      <div className="divide-y divide-gray-100">
-        {children}
-      </div>
+      {empty && !open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full px-3 py-2 text-left text-[11px] text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Nothing recorded — click to set dates
+        </button>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
