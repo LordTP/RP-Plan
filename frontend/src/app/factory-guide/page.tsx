@@ -910,7 +910,9 @@ function ProductPageMock() {
   );
 }
 
-/* The style detail panel, drawn from the live slide-out. */
+/* The style detail panel. Drawn as what it is — a panel sliding OVER the list
+   from the right, not a full-width page. The first attempt rendered it edge to
+   edge with everything crammed together, which read as a different screen. */
 function StyleDetailMock() {
   const kpis: [string, string, string | null][] = [
     ['TOTAL QTY', '393', null],
@@ -921,82 +923,91 @@ function StyleDetailMock() {
   const product: [string, string, boolean?][] = [
     ['Description', 'SS27 SHORT'],
     ['Customer', 'TRUEPATH RETAIL'],
-    ['Order Reference', '\u2014'],
     ['Colour', 'WHITE'],
     ['Gender', '\u2014', true],
     ['Season', 'SS27'],
   ];
-  const comps: [string, 'strike_off' | 'lab_dip' | 'label'][] = [
+  const comps: [string, 'strike_off' | 'lab_dip'][] = [
     ['AOP PRINT', 'strike_off'], ['AOP PRINT', 'strike_off'],
     ['RIB FABRIC', 'strike_off'], ['HIGH RISK RED', 'lab_dip'],
   ];
   return (
-    <div className="bg-white">
-      {/* header */}
-      <div className="px-3 pt-2.5 pb-2 border-b border-gray-100">
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-[8.5px] text-gray-400">DEMO-5301 · S005010A-0121-NRO · updated 6 hours ago</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-[13px] font-extrabold text-gray-900">SS27 SHORT</p>
-              <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span>
-              <span className="text-[9px] text-gray-500">· WHITE</span>
-            </div>
-          </div>
-          <span className="px-1.5 py-1 rounded-md border border-gray-200 text-[9px] font-semibold text-gray-600">Comments</span>
-          <span className="px-1 py-1 rounded-md border border-gray-200 text-[9px] text-gray-400">⌃ ⌄</span>
-          <span className="text-[10px] text-gray-400">✕</span>
-        </div>
-      </div>
-      {/* KPI tiles */}
-      <div className="grid grid-cols-4 gap-1.5 p-2 bg-gray-50/70">
-        {kpis.map(([l, v, sub], i) => (
-          <div key={l} className={cn('rounded-md border bg-white px-2 py-1.5',
-            i === 3 ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200')}>
-            <p className="text-[7px] font-bold tracking-wide text-gray-500">{l}</p>
-            <p className="text-[11px] font-extrabold text-gray-900 leading-tight">{v}</p>
-            {sub && <p className="text-[7px] text-gray-400">{sub}</p>}
-          </div>
-        ))}
-      </div>
-      {/* jump to */}
-      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-gray-100">
-        <span className="text-[7.5px] font-bold text-gray-400">JUMP TO</span>
-        <span className="px-1.5 py-0.5 rounded bg-primary-600 text-white text-[8.5px] font-semibold">Product</span>
-        <span className="text-[8.5px] text-gray-600">Sampling</span>
-        <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7.5px] font-bold">2 pending</span>
-        <span className="text-[8.5px] text-gray-600">Shipping</span>
-        <span className="text-[8.5px] text-gray-600">Timeline</span>
-      </div>
-      {/* product */}
-      <div className="p-2">
-        <p className="text-[8px] font-bold text-gray-700 border-l-2 border-primary-500 pl-1.5 mb-1">PRODUCT</p>
-        <div className="rounded-md border border-gray-200 overflow-hidden">
-          {product.map(([k, v, editable]) => (
-            <div key={k} className="flex items-center px-2 py-1 border-b border-gray-50 last:border-0">
-              <span className="text-[9px] text-gray-600 flex-1">{k}{editable && <span className="text-gray-300"> ✎</span>}</span>
-              <span className="text-[9px] font-semibold text-gray-900">{v}</span>
+    <div className="relative bg-gray-50" style={{ minHeight: 430 }}>
+      {/* the list, still there behind the panel */}
+      <div className="absolute inset-0 p-3">
+        <div className="h-6 w-56 rounded bg-white border border-gray-200 mb-2" />
+        <div className="space-y-1">
+          {['DEMO-5301', 'S005010A-0121-NRO', 'S005011A-0121-NRO', 'S005012A-0121-NRO', 'DEMO-5302', 'DEMO-5303'].map((r, i) => (
+            <div key={r} className={cn('h-5 rounded border border-gray-100 bg-white flex items-center px-2',
+              i === 1 && 'ring-1 ring-primary-200')}>
+              <span className="font-mono text-[8px] text-gray-500">{r}</span>
             </div>
           ))}
         </div>
-        {/* sampling */}
-        <div className="flex items-center gap-1.5 mt-2 mb-1">
-          <p className="text-[8px] font-bold text-gray-700 border-l-2 border-amber-500 pl-1.5">SAMPLING</p>
-          <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 PENDING</span>
-          <span className="ml-1 text-[8px] text-gray-500">COMPONENTS</span>
-          <span className="px-1 rounded-full bg-gray-100 text-gray-600 text-[7px] font-bold">6</span>
+      </div>
+
+      {/* the panel itself */}
+      <div className="absolute inset-y-0 right-0 w-[78%] bg-white shadow-2xl border-l border-gray-200 overflow-hidden">
+        <div className="px-3 pt-2.5 pb-2 border-b border-gray-100">
+          <p className="text-[8px] text-gray-400">DEMO-5301 · S005010A-0121-NRO · updated 6 hours ago</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <p className="text-[13px] font-extrabold text-gray-900">SS27 SHORT</p>
+            <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span>
+            <span className="text-[9px] text-gray-500">· WHITE</span>
+            <span className="ml-auto px-1.5 py-1 rounded-md border border-gray-200 text-[8.5px] font-semibold text-gray-600">Comments</span>
+            <span className="text-[9px] text-gray-300">⌃ ⌄ ✕</span>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {comps.map(([name, type], i) => (
-            <div key={i} className="rounded-md border border-green-200 bg-white px-2 py-1.5">
-              <div className="flex items-center gap-1"><TypeBadge type={type} /><span className="ml-auto text-[9px] text-gray-300">›</span></div>
-              <p className="text-[9.5px] font-bold text-gray-900 mt-0.5">{name}</p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="px-1 py-0.5 rounded bg-green-100 text-green-700 text-[7.5px] font-bold">APPROVED</span>
-                <span className="text-[7.5px] text-gray-400">approved 3 Sep</span>
+
+        <div className="grid grid-cols-4 gap-2 px-3 py-2.5 bg-gray-50/70">
+          {kpis.map(([l, v, sub], i) => (
+            <div key={l} className={cn('rounded-lg border bg-white px-2 py-2',
+              i === 3 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200')}>
+              <p className="text-[7px] font-bold tracking-wide text-gray-500">{l}</p>
+              <p className="text-[12px] font-extrabold text-gray-900 leading-snug">{v}</p>
+              {sub && <p className="text-[7px] text-gray-400">{sub}</p>}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1.5 px-3 py-2 border-y border-gray-100">
+          <span className="text-[7.5px] font-bold tracking-wider text-gray-400">JUMP TO</span>
+          <span className="px-2 py-0.5 rounded-full bg-primary-600 text-white text-[8.5px] font-semibold">Product</span>
+          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Sampling</span>
+          <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 pending</span>
+          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Shipping</span>
+          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Timeline</span>
+        </div>
+
+        <div className="px-3 py-2.5">
+          <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-primary-500 pl-1.5 mb-1.5">PRODUCT</p>
+          <div className="rounded-lg border border-gray-200 overflow-hidden mb-3">
+            {product.map(([k, v, editable]) => (
+              <div key={k} className="flex items-center px-2.5 py-1.5 border-b border-gray-50 last:border-0">
+                <span className="text-[9px] text-gray-600 flex-1">{k}{editable && <span className="text-gray-300"> ✎</span>}</span>
+                <span className="text-[9px] font-semibold text-gray-900">{v}</span>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-amber-500 pl-1.5">SAMPLING</p>
+            <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 PENDING</span>
+            <span className="ml-1 text-[8px] text-gray-500">COMPONENTS</span>
+            <span className="px-1 rounded-full bg-gray-100 text-gray-600 text-[7px] font-bold">6</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {comps.map(([name, type], i) => (
+              <div key={i} className="rounded-lg border border-green-200 bg-white px-2.5 py-2">
+                <div className="flex items-center"><TypeBadge type={type} /><span className="ml-auto text-[9px] text-gray-300">›</span></div>
+                <p className="text-[9.5px] font-bold text-gray-900 mt-1">{name}</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="px-1 py-0.5 rounded bg-green-100 text-green-700 text-[7px] font-bold">APPROVED</span>
+                  <span className="text-[7px] text-gray-400">approved 3 Sep</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

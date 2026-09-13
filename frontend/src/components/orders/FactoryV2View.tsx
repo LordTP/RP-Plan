@@ -39,7 +39,7 @@ import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE, SHOW_COSTING } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, TimelineItem, JourneyFact } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -1497,15 +1497,14 @@ function DetailPanel({
   // Section refs + active-section state powering the sticky pill nav.
   const productRef = useRef<HTMLElement>(null);
   const samplingRef = useRef<HTMLElement>(null);
-  const shippingRef = useRef<HTMLElement>(null);
   const timelineRef = useRef<HTMLElement>(null);
-  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'shipping' | 'timeline'>('product');
-  const sectionRefs = { product: productRef, sampling: samplingRef, shipping: shippingRef, timeline: timelineRef } as const;
+  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'timeline'>('product');
+  const sectionRefs = { product: productRef, sampling: samplingRef, timeline: timelineRef } as const;
 
   // Use getBoundingClientRect rather than offsetTop — sections aren't
   // guaranteed to use the scroller as their offsetParent (it has no
   // explicit position), so offsetTop walks past it and gives garbage.
-  const scrollToSection = (key: 'product' | 'sampling' | 'shipping' | 'timeline') => {
+  const scrollToSection = (key: 'product' | 'sampling' | 'timeline') => {
     const el = sectionRefs[key].current;
     const scroller = modalContentRef.current;
     if (!el || !scroller) return;
@@ -1526,7 +1525,7 @@ function DetailPanel({
       }
       const scrollerTop = scroller.getBoundingClientRect().top;
       const threshold = scrollerTop + 60;
-      const order: ('product' | 'sampling' | 'shipping' | 'timeline')[] = ['product', 'sampling', 'shipping', 'timeline'];
+      const order: ('product' | 'sampling' | 'timeline')[] = ['product', 'sampling', 'timeline'];
       let current: typeof order[number] = 'product';
       for (const key of order) {
         const el = sectionRefs[key].current;
@@ -1814,60 +1813,21 @@ function DetailPanel({
               badgeTone="amber"
               onClick={() => scrollToSection('sampling')}
             />
-            <SectionPill active={activeSection === 'shipping'} label="Shipping" onClick={() => scrollToSection('shipping')} />
-            <SectionPill active={activeSection === 'timeline'} label="Timeline" onClick={() => scrollToSection('timeline')} />
+            {/* Shipping folded into Journey — its dates were already timeline steps. */}
+            <SectionPill active={activeSection === 'timeline'} label="Journey" onClick={() => scrollToSection('timeline')} />
           </div>
 
           {/* Scroll body */}
           <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
 
-            {/* Product */}
-            <section ref={productRef} className="px-6 pt-6 pb-3">
-              <SectionHeader accent="blue" label="Product" />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                  {hasCol('description') && <DetailRow label="Description" value={order.description} />}
-                  {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
-                  {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} />}
-                  {hasCol('colour') && <DetailRow label="Colour" value={order.colour} />}
-                  {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
-                  {hasCol('season') && <DetailRow label="Season" value={order.season} />}
-                  {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
-                  {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
-                  {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
-                </div>
-                {sizes.length > 0 && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
-                      <SizeGuideTooltip gender={order.gender} />
-                    </div>
-                    <div className="space-y-1.5">
-                      {sizes.map(s => (
-                        <div key={s.label} className="flex items-center gap-3">
-                          <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
-                          <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
-                              style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
-                            >
-                              <span className="text-[10px] font-bold text-white">{s.value}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
-                      <span className="text-gray-500">Total units</span>
-                      <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
+            {/* Two columns, matching the Source Lab drawer: the work on the
+                left, the facts on the right. This was a single stack of
+                Product > Sampling > Shipping > Timeline, so the sampling you
+                came to do sat below a screenful of reference data. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr]">
 
-            <SectionDivider />
-
+            {/* Wide column — the work */}
+            <div className="min-w-0 xl:border-r xl:border-gray-200">
             {/* Sampling */}
             {(hasCol('fit_sample_status') || hasCol('strike_off_status') || hasCol('lab_dip_status') || hasCol('pps_status')) && (
               <>
@@ -1957,47 +1917,87 @@ function DetailPanel({
                     </div>
                   )}
                 </section>
-                <SectionDivider />
               </>
             )}
 
-            {/* Shipping */}
-            <section ref={shippingRef} className="px-6 pt-6 pb-3">
-              <SectionHeader accent="teal" label="Shipping" />
+            </div>
+
+            {/* Narrow column — the facts */}
+            <div className="min-w-0">
+            {/* Product */}
+            <section ref={productRef} className="px-6 pt-6 pb-3">
+              <SectionHeader accent="blue" label="Product" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Vessel</div>
-                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                    {hasCol('fcl_lcl') && <DetailRow label="FCL/LCL" value={order.fcl_lcl} editable={canEdit('fcl_lcl')} onSave={(v) => onSave?.(order.id, 'fcl_lcl', v)} />}
-                    {hasCol('vessel_name') && <DetailRow label="Vessel Name" value={order.vessel_name} editable={canEdit('vessel_name')} onSave={(v) => onSave?.(order.id, 'vessel_name', v)} />}
-                    {hasCol('vessel_etd') && <DetailRow label="Vessel ETD" value={formatDate(order.vessel_etd)} type="date" rawValue={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
-                    {hasCol('vessel_eta_to_port') && <DetailRow label="Vessel ETA Port" value={formatDate(order.vessel_eta_to_port)} type="date" rawValue={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
-                    {hasCol('revised_vessel_eta_to_port') && <DetailRow label="Revised Vessel ETA" value={formatDate(order.revised_vessel_eta_to_port)} type="date" rawValue={order.revised_vessel_eta_to_port} editable={canEdit('revised_vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'revised_vessel_eta_to_port', v)} />}
-                    {order.tracking_reference && <DetailRow label="Tracking Ref" value={order.tracking_reference} />}
-                  </div>
+                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+                  {hasCol('description') && <DetailRow label="Description" value={order.description} />}
+                  {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
+                  {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} />}
+                  {hasCol('colour') && <DetailRow label="Colour" value={order.colour} />}
+                  {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
+                  {hasCol('season') && <DetailRow label="Season" value={order.season} />}
+                  {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
+                  {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
+                  {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
                 </div>
-                <div>
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Delivery</div>
-                  <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                    {hasCol('original_del_date_to_customer') && <DetailRow label="Customer Requested" value={order.date_notes?.original_del_date_to_customer || formatDate(order.original_del_date_to_customer)} />}
-                    {hasCol('eta_to_uk') && <DetailRow label="ETA UK" value={formatDate(order.eta_to_uk)} />}
-                    {hasCol('eta_to_customer') && <DetailRow label="ETA Customer" value={formatDate(order.eta_to_customer)} />}
-                    {hasCol('estimated_del_to_customer') && <DetailRow label="Estimated Delivery" value={formatDate(order.estimated_del_to_customer)} />}
-                    {hasCol('customer_po_open_month') && order.customer_po_open_month && <DetailRow label="Open Month" value={order.customer_po_open_month} />}
-                    {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && <DetailRow label="Expected UK Month" value={order.expected_dispatch_arrive_uk_month} />}
+                {sizes.length > 0 && (
+                  <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
+                      <SizeGuideTooltip gender={order.gender} />
+                    </div>
+                    <div className="space-y-1.5">
+                      {sizes.map(s => (
+                        <div key={s.label} className="flex items-center gap-3">
+                          <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
+                          <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
+                              style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
+                            >
+                              <span className="text-[10px] font-bold text-white">{s.value}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
+                      <span className="text-gray-500">Total units</span>
+                      <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </section>
 
             <SectionDivider />
 
-            {/* Timeline */}
+            {/* Journey — was Shipping + Timeline.
+                Every date in the old Shipping section was already a step on
+                this timeline: Vessel ETD, Vessel ETA Port, Revised Vessel ETA,
+                ETA UK, ETA Customer, Est Del and Customer Requested. One set
+                of facts rendered twice, and you scrolled past both. Shipping's
+                dates are gone; the handful of things that were not dates sit
+                above the timeline as a fact strip, next to the leg they
+                describe. Matches the Source Lab drawer. */}
             <section ref={timelineRef} className="px-6 pt-6 pb-6">
-              <SectionHeader accent="violet" label="Timeline" />
+              <SectionHeader accent="violet" label="Journey" />
+              {/* The non-date half of the old Shipping section. */}
+              {(order.fcl_lcl || order.vessel_name || order.tracking_reference) && (
+                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 mb-3 px-1">
+                  {hasCol('fcl_lcl') && <JourneyFact label="FCL/LCL" value={order.fcl_lcl} />}
+                  {hasCol('vessel_name') && <JourneyFact label="Vessel" value={order.vessel_name} />}
+                  {order.tracking_reference && <JourneyFact label="Tracking" value={order.tracking_reference} mono />}
+                  {hasCol('customer_po_open_month') && order.customer_po_open_month && <JourneyFact label="Open Month" value={order.customer_po_open_month} />}
+                  {hasCol('expected_dispatch_arrive_uk_month') && order.expected_dispatch_arrive_uk_month && <JourneyFact label="UK Month" value={order.expected_dispatch_arrive_uk_month} />}
+                </div>
+              )}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="relative">
                   <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
+                  {/* Only Revised Ex-Factory is highlighted. Both it and
+                      Factory Confirmed carried the marker, so two steps claimed
+                      to be "current" — the same bug the Source Lab drawer had.
+                      Revised is the date everything is tracked against. */}
                   <div className="space-y-0">
                     {hasCol('order_received_date') && <TimelineItem label="Order Received" date={order.order_received_date} />}
                     {hasCol('order_sent_to_factory_date') && <TimelineItem label="Sent to Factory" date={order.order_sent_to_factory_date} />}
@@ -2005,7 +2005,7 @@ function DetailPanel({
                     {hasCol('specs_sent_to_factory') && <TimelineItem label="Specs Sent" date={order.specs_sent_to_factory} />}
                     {hasCol('barcodes_sent_to_factory') && <TimelineItem label="Barcodes Sent" date={order.barcodes_sent_to_factory} />}
                     {hasCol('original_po_ex_factory') && <TimelineItem label="Requested Ex-Factory" date={order.original_po_ex_factory} note={order.date_notes?.original_po_ex_factory} />}
-                    {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} highlight editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
+                    {hasCol('factory_confirmed_ex_factory') && <TimelineItem label="Factory Confirmed Ex-Fac" date={order.factory_confirmed_ex_factory} note={order.date_notes?.factory_confirmed_ex_factory} editable={canEdit('factory_confirmed_ex_factory')} onSave={(v) => onSave?.(order.id, 'factory_confirmed_ex_factory', v)} />}
                     {hasCol('revised_po_ex_factory') && <TimelineItem label="Revised Ex-Factory" date={order.revised_po_ex_factory} note={order.date_notes?.revised_po_ex_factory} highlight editable={canEdit('revised_po_ex_factory')} onSave={(v) => onSave?.(order.id, 'revised_po_ex_factory', v)} />}
                     {hasCol('vessel_etd') && <TimelineItem label="Vessel ETD" date={order.vessel_etd} editable={canEdit('vessel_etd')} onSave={(v) => onSave?.(order.id, 'vessel_etd', v)} />}
                     {hasCol('vessel_eta_to_port') && <TimelineItem label="Vessel ETA Port" date={order.vessel_eta_to_port} editable={canEdit('vessel_eta_to_port')} onSave={(v) => onSave?.(order.id, 'vessel_eta_to_port', v)} />}
@@ -2018,6 +2018,9 @@ function DetailPanel({
                 </div>
               </div>
             </section>
+            </div>
+
+            </div>{/* two-column grid */}
           </div>
         </>
       )}
@@ -2690,55 +2693,3 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   );
 }
 
-function TimelineItem({ label, date, note, highlight, editable, onSave }: {
-  label: string;
-  date: string | null | undefined;
-  /** Free-text override (e.g. "ASAP") — displayed in place of the date
-   *  when set. Only relevant for note-eligible fields. */
-  note?: string | null;
-  highlight?: boolean;
-  editable?: boolean;
-  onSave?: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const hasDate = !!date || !!note;
-
-  return (
-    <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
-      <div className={cn(
-        'w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10',
-        hasDate
-          ? highlight
-            ? 'bg-primary-500 border-primary-500'
-            : 'bg-white border-primary-300'
-          : 'bg-white border-gray-200'
-      )}>
-        {hasDate && !highlight && <div className="w-full h-full rounded-full bg-primary-100" />}
-      </div>
-      <div className="flex-1 flex items-center justify-between min-w-0">
-        <span className={cn('text-xs', hasDate ? 'text-gray-700 font-medium' : 'text-gray-400')}>{label}</span>
-        {editing ? (
-          <DatePickerInput
-            value={note || (date ? date.split('T')[0] : '')}
-            onChange={(v) => { onSave?.(v); setEditing(false); }}
-            onBlur={() => setEditing(false)}
-            autoFocus
-            size="sm"
-          />
-        ) : (
-          <span
-            className={cn(
-              'text-xs flex-shrink-0 ml-2',
-              hasDate ? 'text-gray-900 font-medium' : 'text-gray-300',
-              editable && 'cursor-pointer hover:text-primary-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-200/60'
-            )}
-            onClick={() => editable && setEditing(true)}
-            title={editable ? 'Click to edit' : undefined}
-          >
-            {note || formatDate(date)}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}

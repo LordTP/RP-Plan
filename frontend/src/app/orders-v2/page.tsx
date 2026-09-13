@@ -36,7 +36,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope, TimelineItem, JourneyFact } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -2669,123 +2669,5 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
         </span>
       )}
     </div>
-  );
-}
-
-function TimelineItem({ label, date, note, highlight, editable, onSave, fieldKey, sub }: {
-  label: string;
-  date: string | null | undefined;
-  /** Free-text override (e.g. "ASAP") — displayed in place of the date
-   *  when set. Only relevant for note-eligible fields. */
-  note?: string | null;
-  highlight?: boolean;
-  editable?: boolean;
-  onSave?: (value: string) => void;
-  fieldKey?: string;
-  /** A quiet line under the step — what the date was derived from, or the
-   *  attributes of that leg. The vessel details used to be their own strip of
-   *  tiles above the timeline; they describe the sailing, so they belong on
-   *  the sailing, not floating above the whole journey. */
-  sub?: string | null;
-}) {
-  const [editing, setEditing] = useState(false);
-  const hasDate = !!date || !!note;
-  const bulkCtx = useBulkScope();
-  const isBulkable = !!fieldKey && !!bulkCtx;
-
-  // Past / future / unset, so scanning the journey tells you where the order
-  // actually is. Every dot used to look the same whether the date had been and
-  // gone or was months out, which made the timeline a list of dates in a
-  // column rather than a timeline.
-  //
-  // A free-text note ("ASAP") counts as set but can't be placed in time, so it
-  // reads as passed rather than pretending to a position it doesn't have.
-  const past = (() => {
-    if (!date) return !!note;
-    try {
-      const d = parseISO(String(date).split('T')[0]);
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      return d.getTime() <= today.getTime();
-    } catch { return false; }
-  })();
-
-  const dotClass = !hasDate
-    ? 'bg-white border-gray-200'
-    : highlight
-      ? 'bg-amber-500 border-amber-500 ring-4 ring-amber-100'
-      : past
-        ? 'bg-emerald-500 border-emerald-500'
-        : 'bg-white border-primary-300';
-
-  return (
-    <div className="relative">
-    <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
-      <div className={cn('w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10', dotClass)}>
-        {hasDate && !highlight && !past && <div className="w-full h-full rounded-full bg-primary-50" />}
-      </div>
-      <div className="flex-1 flex items-center justify-between min-w-0">
-        <span className={cn(
-          'text-xs',
-          !hasDate ? 'text-gray-400' : highlight ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium',
-        )}>{label}</span>
-        {editing && isBulkable && fieldKey ? (
-          <InlineBulkScopeEditor
-            fieldKey={fieldKey}
-            type="date"
-            initialValue={date ? date.split('T')[0] : ''}
-            onSavedSingle={(v) => { onSave?.(v); setEditing(false); }}
-            onCancel={() => setEditing(false)}
-          />
-        ) : editing ? (
-          <DatePickerInput
-            value={note || (date ? date.split('T')[0] : '')}
-            onChange={(v) => { onSave?.(v); setEditing(false); }}
-            onBlur={() => setEditing(false)}
-            autoFocus
-            size="sm"
-          />
-        ) : (
-          <span
-            className={cn(
-              'text-xs flex-shrink-0 ml-2',
-              hasDate ? 'text-gray-900 font-medium' : 'text-gray-300',
-              editable && 'cursor-pointer hover:text-primary-600'
-            )}
-            onClick={() => editable && setEditing(true)}
-            title={editable ? 'Click to edit' : undefined}
-          >
-            {note || formatDate(date)}
-          </span>
-        )}
-      </div>
-    </div>
-      {sub && (
-        <div className="pl-[27px] -mt-1 pb-1 text-[10.5px] text-gray-400 leading-snug">{sub}</div>
-      )}
-    </div>
-  );
-}
-
-/** A single non-date fact on the Journey — vessel, FCL/LCL, tracking ref.
- *  These came from the old Shipping section, where they sat as label/value
- *  rows among a dozen dates. They describe the shipping leg rather than being
- *  steps in it, so they read better as a strip above the timeline than as
- *  entries within it. */
-function JourneyFact({ label, value, mono }: {
-  label: string;
-  value: string | null | undefined;
-  mono?: boolean;
-}) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5 min-w-0">
-      <span className="text-[9px] uppercase tracking-widest text-gray-400 font-bold">{label}</span>
-      <span className={cn(
-        'text-[11.5px] truncate',
-        value ? 'font-semibold text-gray-800' : 'text-gray-300',
-        mono && value && 'font-mono',
-      )}>
-        {value || 'not set'}
-      </span>
-    </span>
   );
 }
