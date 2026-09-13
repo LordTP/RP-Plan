@@ -1084,10 +1084,14 @@ function OrdersV2Content() {
                 label={status}
                 dotColor={statusDotHex(status)}
                 count={poCount}
+                // Value dropped with the rest of costing — leaving it here
+                // printed "· $0.00" on every tile, which looks broken rather
+                // than empty. SHOW_COSTING gates it so restoring costing
+                // restores this too.
                 secondary={
-                  isDesigner
-                    ? `${units.toLocaleString()} units`
-                    : `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                  SHOW_COSTING && !isDesigner
+                    ? `${units.toLocaleString()} units · ${formatCurrency(value)}`
+                    : `${units.toLocaleString()} units`
                 }
                 active={statusFilter === status && !lateOnly}
                 onClick={() => {
@@ -1103,9 +1107,9 @@ function OrdersV2Content() {
                 tone="danger"
                 count={lateTile.poCount}
                 secondary={
-                  isDesigner
-                    ? `${lateTile.units.toLocaleString()} units`
-                    : `${lateTile.units.toLocaleString()} units · ${formatCurrency(lateTile.value)}`
+                  SHOW_COSTING && !isDesigner
+                    ? `${lateTile.units.toLocaleString()} units · ${formatCurrency(lateTile.value)}`
+                    : `${lateTile.units.toLocaleString()} units`
                 }
                 active={lateOnly}
                 onClick={() => { setLateOnly(v => !v); setStatusFilter('open'); }}
@@ -1265,7 +1269,7 @@ function OrdersV2Content() {
             segments={[
               `${visibleTotals.pos} of ${statusCounts.all || 0} POs`,
               `${visibleTotals.styles} styles · ${visibleTotals.units.toLocaleString()} units`,
-              isDesigner ? null : formatCurrency(visibleTotals.value),
+              SHOW_COSTING && !isDesigner ? formatCurrency(visibleTotals.value) : null,
             ]}
             hint={groupByPO
               ? 'click a PO to expand · click a style to open detail · shift-click to select a range'

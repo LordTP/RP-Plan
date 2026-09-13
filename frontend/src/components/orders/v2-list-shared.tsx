@@ -293,7 +293,6 @@ export function OrderTableV2({
   rowExtra?: (order: Order) => React.ReactNode;
 }) {
   const showValue = SHOW_COSTING && !isSupplier && !isDesigner;
-  const colCount = (showValue ? 9 : 8) + (groupByPO ? 0 : 1);
 
   return (
     <table className="w-full text-sm border-collapse min-w-[1040px]">
@@ -339,7 +338,6 @@ export function OrderTableV2({
                 onToggleGroup={onToggleGroup}
                 isSupplier={isSupplier}
                 isDesigner={isDesigner}
-                colCount={colCount}
                 rowExtra={rowExtra}
               />
             ))
@@ -375,7 +373,6 @@ function POGroupRows({
   onToggleGroup,
   isSupplier,
   isDesigner,
-  colCount,
   rowExtra,
 }: {
   group: POGroup;
@@ -389,7 +386,6 @@ function POGroupRows({
   onToggleGroup: (group: POGroup) => void;
   isSupplier: boolean;
   isDesigner?: boolean;
-  colCount: number;
   rowExtra?: (order: Order) => React.ReactNode;
 }) {
   const statusStyle = getStatusStyle(group.statusSummary);
@@ -412,36 +408,57 @@ function POGroupRows({
             title={`Select all ${group.styles.length} styles on PO ${group.po_number}`}
           />
         </td>
-        <td colSpan={colCount - 1} className="px-3 py-2">
-          <button onClick={onToggle} className="w-full flex items-center gap-3 text-left">
+        {/* One cell per column rather than a single colSpan.
+            The group row used to be one wide cell with the totals shoved to
+            the right by ml-auto, so nothing sat under its own heading —
+            Colour, Status, Ex-factory and Qty all had headers with nothing
+            beneath them, which is what made the grouped view look unformatted.
+            Each value now lands in the column it belongs to. */}
+        <td className="px-3 py-2">
+          <button onClick={onToggle} className="flex items-center gap-2 text-left w-full">
             <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0', expanded && 'rotate-90')} />
             <span className="font-mono font-bold text-gray-900 tabular-nums">{group.po_number}</span>
-            {group.styles[0]?.china_orderbook_ref && (
-              <span className="text-[11px] text-gray-400">— {group.styles[0].china_orderbook_ref}</span>
+          </button>
+        </td>
+        <td className="px-3 py-2 min-w-0">
+          <button onClick={onToggle} className="flex items-center gap-2 text-left w-full min-w-0">
+            <span className="text-[11.5px] text-gray-600 truncate">{group.customer}</span>
+            {!isSupplier && group.factory && (
+              <span className="text-[11px] text-gray-400 truncate flex-shrink-0">· {group.factory}</span>
             )}
-            <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold', statusStyle.bg, statusStyle.text)}>
-              <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
-              {group.statusSummary || 'Unknown'}
-            </span>
-            {hasMultipleStatuses && <span className="text-[10px] text-gray-400 italic">mixed</span>}
+            {group.styles[0]?.china_orderbook_ref && (
+              <span className="text-[11px] text-gray-400 truncate flex-shrink-0">— {group.styles[0].china_orderbook_ref}</span>
+            )}
             {group.unreadComments > 0 && (
-              <span className="inline-flex items-center gap-1 text-primary-500">
+              <span className="inline-flex items-center gap-1 text-primary-500 flex-shrink-0">
                 <MessageSquare className="w-3 h-3 fill-current" />
                 <span className="text-[10px] font-bold">{group.unreadComments}</span>
               </span>
             )}
-            <span className="text-[11px] text-gray-500 truncate">{group.customer}</span>
-            {!isSupplier && group.factory && (
-              <span className="text-[11px] text-gray-400 truncate">· {group.factory}</span>
-            )}
-            <span className="ml-auto flex items-center gap-4 text-[11px] text-gray-500 tabular-nums flex-shrink-0">
-              <span>{group.styles.length} style{group.styles.length === 1 ? '' : 's'}</span>
-              <span>{formatQty(group.totalQty)} units</span>
-              {showValue && <span>{formatCurrency(group.totalValue)}</span>}
-              <span className="text-gray-400">{formatDate(group.latestDate)}</span>
-            </span>
           </button>
         </td>
+        <td className="px-3 py-2 text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
+          {group.styles.length} style{group.styles.length === 1 ? '' : 's'}
+        </td>
+        <td className="px-3 py-2">
+          <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap', statusStyle.bg, statusStyle.text)}>
+            <span className={cn('w-1.5 h-1.5 rounded-full', statusStyle.dot)} />
+            {group.statusSummary || 'Unknown'}
+          </span>
+          {hasMultipleStatuses && <span className="ml-1 text-[10px] text-gray-400 italic">mixed</span>}
+        </td>
+        <td className="px-3 py-2 text-[11.5px] text-gray-500 tabular-nums whitespace-nowrap">
+          {formatDate(group.latestDate)}
+        </td>
+        <td className="px-3 py-2 text-right text-[11.5px] text-gray-600 tabular-nums whitespace-nowrap">
+          {formatQty(group.totalQty)}
+        </td>
+        {showValue && (
+          <td className="px-3 py-2 text-right text-[11.5px] text-gray-600 tabular-nums whitespace-nowrap">
+            {formatCurrency(group.totalValue)}
+          </td>
+        )}
+        <td className="px-3 py-2" />
       </tr>
       {expanded && group.styles.map((style) => (
         <StyleRow

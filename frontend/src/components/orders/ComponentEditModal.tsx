@@ -5,8 +5,9 @@ import { ExternalLink, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { statusPillStyle } from '@/features/component-shared';
 import { DEFAULT_SCOPE, type ApplyScope } from '@/components/samples/ScopePicker';
-import { componentsApi, submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
+import { componentsApi, submissionsApi, type SampleSubmission, type SampleType, type CanonicalDetail } from '@/lib/api';
 import { SAMPLE_STATUS_OPTIONS } from '@/types';
 import type { Order, OrderComponent } from '@/types';
 import { useStore } from '@/store/useStore';
@@ -47,6 +48,10 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   const { user: currentUser } = useStore();
   const isSupplierUser = currentUser?.role === 'supplier';
   const [submissions, setSubmissions] = useState<SampleSubmission[]>([]);
+  // Colour, positions and the spec live on the CANONICAL, not the instance —
+  // the instance only carries its own sample lifecycle. Fetched so the header
+  // can show what the component actually is, not just where it sits.
+  const [canonical, setCanonical] = useState<CanonicalDetail | null>(null);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<{ sampleType: SampleType; currentAttempt: number } | null>(null);
@@ -62,10 +67,36 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
   const [selectedSiblingOrderIds, setSelectedSiblingOrderIds] = useState<Set<number>>(new Set());
   const siblingCount = siblings.length;
 
+  // Which POs this component reaches beyond the one you opened it from.
+  const siblingPoSummary = (() => {
+    const pos = Array.from(new Set(siblings.map((x) => x.po_number).filter(Boolean) as string[]));
+    const others = pos.filter((po) => po !== order.po_number);
+    if (siblingCount === 0) return undefined;
+    if (others.length === 0) return `same PO`;
+    return `${others.length + 1} POs`;
+  })();
+
+  const exFacRaw = order.revised_po_ex_factory || order.original_po_ex_factory;
+  const exFacLabel = exFacRaw
+    ? format(parseISO(String(exFacRaw).split('T')[0]), 'd MMM yyyy')
+    : (order.date_notes?.revised_po_ex_factory || order.date_notes?.original_po_ex_factory || '—');
+
   // Local mirror of the component, updated optimistically on save so the
   // user sees their edit reflect immediately without a parent re-render.
   const [comp, setComp] = useState<OrderComponent>(component);
   useEffect(() => { setComp(component); }, [component]);
+
+  useEffect(() => {
+    let cancel = false;
+    const id = component.canonical_id;
+    if (id == null) { setCanonical(null); return; }
+    componentsApi.getLibraryEntry(id)
+      .then((d) => { if (!cancel) setCanonical(d); })
+      // Non-fatal: the header just shows less. Legacy instances predate
+      // canonicals and legitimately have none.
+      .catch(() => { if (!cancel) setCanonical(null); });
+    return () => { cancel = true; };
+  }, [component.canonical_id]);
 
   // Sibling lookup — prefer canonical (across POs, added-together batch)
   // when the instance has one; fall back to the legacy by-name / same-PO
@@ -186,47 +217,70 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         className="w-full max-w-2xl bg-white rounded-xl shadow-xl ring-1 ring-gray-100 overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3 flex-shrink-0">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
+        {/* Header. Leads with the component, then the style it's on, then
+            the fact that most people open this modal without knowing: it is
+            on other styles too, and anything you change here can reach them. */}
+        <div className="px-5 py-4 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-widest text-primary-600 font-bold">
+                {SAMPLE_AREAS.find((a) => a.prefix === comp.sample_type)?.label || 'Component'}
               </div>
-              <h3 className="text-base font-bold text-gray-900 truncate">{comp.name}</h3>
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                <h3 className="text-[17px] font-bold text-gray-900 leading-tight truncate">{comp.name}</h3>
+                {canonical?.colour && (
+                  <span className="text-[10.5px] font-semibold text-gray-700 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                    {canonical.colour}
+                  </span>
+                )}
+                {(canonical?.position || []).map((pos: string) => (
+                  <span key={pos} className="text-[9.5px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
+                    {pos.replace('CHEST POSITION – ', 'CHEST ').replace(' AS WORN', '')}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="text-[11px] text-gray-500 ml-10">
-              <span className="font-mono font-semibold text-gray-700">{order.po_number}</span>
-              {' · '}
-              <span className="font-mono">{order.style_code}</span>
-              {order.description && <> · <span>{order.description}</span></>}
-              {order.colour && <> · <span>{order.colour}</span></>}
-            </div>
-            <div className="text-[11px] text-gray-400 ml-10 mt-0.5">
-              {order.customer && <span>{order.customer}</span>}
-              {order.factory && <> · <span>{order.factory}</span></>}
-            </div>
-          </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {onOpenFullOrder && (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {onOpenFullOrder && (
+                <button
+                  onClick={() => onOpenFullOrder(order.id)}
+                  className="px-2 py-1 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
+                  title="Open full order detail"
+                >
+                  Open order <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
               <button
-                onClick={() => onOpenFullOrder(order.id)}
-                className="px-2 py-1 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1"
-                title="Open full order detail"
+                onClick={onClose}
+                disabled={!!savingField}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
               >
-                Open order <ExternalLink className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
-            )}
-            <button
-              onClick={onClose}
-              disabled={!!savingField}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            </div>
           </div>
+
+          {/* Where it sits. Four facts, evenly weighted, so none of them has
+              to be hunted for in a run-on line of dot separators. */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+            <HeaderFact label="Style" value={order.style_code || `#${order.id}`} mono />
+            <HeaderFact label="PO" value={order.po_number || '—'} mono sub={order.customer || undefined} />
+            <HeaderFact
+              label="Ex-factory"
+              value={exFacLabel}
+              sub={order.season || undefined}
+            />
+            <HeaderFact
+              label="Also on"
+              value={siblingCount === 0 ? 'this style only' : `${siblingCount} other ${siblingCount === 1 ? 'style' : 'styles'}`}
+              sub={siblingPoSummary}
+              tone={siblingCount > 0 ? 'primary' : undefined}
+            />
+          </div>
+
+          {order.description && (
+            <p className="text-[11.5px] text-gray-500 mt-2 truncate">{order.description}</p>
+          )}
         </div>
 
         {/* Scope toggle — sticky for the whole edit session. */}
@@ -393,24 +447,21 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                   </div>
                 )}
 
-                <div className="px-4 py-3 grid grid-cols-3 gap-3">
+                <div className="px-4 py-3 space-y-3">
                   <FieldBlock label="Status" saving={savingField === `${prefix}_status`}>
                     {isSupplierUser ? (
                       <div className="w-full text-xs px-2 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700">
                         {status || <span className="text-gray-400 italic">— Not set —</span>}
                       </div>
                     ) : (
-                      <select
-                        value={status || ''}
-                        onChange={(e) => onStatusChange(type, prefix, e.target.value)}
+                      <StatusPicker
+                        value={status}
                         disabled={savingField === `${prefix}_status`}
-                        className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
-                      >
-                        <option value="">— Not set —</option>
-                        {SAMPLE_STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
+                        onChange={(v) => onStatusChange(type, prefix, v)}
+                      />
                     )}
                   </FieldBlock>
+                  <div className="grid grid-cols-2 gap-3">
                   <FieldBlock label="Received" saving={savingField === `${prefix}_received`}>
                     {isSupplierUser ? (
                       <div className="w-full text-xs px-2 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700">
@@ -439,6 +490,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                       />
                     )}
                   </FieldBlock>
+                  </div>
                 </div>
 
                 {/* Attempt history */}
@@ -511,6 +563,91 @@ function FieldBlock({ label, saving, children }: { label: string; saving: boolea
         {saving && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
       </label>
       {children}
+    </div>
+  );
+}
+
+/** One fact in the header strip. Four of these beat a run-on line of
+ *  dot-separated values, where everything is the same weight and you have to
+ *  read all of it to find the one thing you wanted. */
+function HeaderFact({
+  label, value, sub, mono, tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  mono?: boolean;
+  tone?: 'primary';
+}) {
+  return (
+    <div className={cn(
+      'rounded-lg border px-2.5 py-1.5 min-w-0',
+      tone === 'primary' ? 'border-primary-200 bg-primary-50/60' : 'border-gray-200 bg-gray-50/60',
+    )}>
+      <div className="text-[9px] uppercase tracking-widest text-gray-400 font-bold leading-none">{label}</div>
+      <div className={cn(
+        'text-[12px] font-semibold truncate mt-1',
+        mono && 'font-mono',
+        tone === 'primary' ? 'text-primary-800' : 'text-gray-800',
+      )}>
+        {value}
+      </div>
+      {sub && <div className="text-[10px] text-gray-400 truncate leading-tight">{sub}</div>}
+    </div>
+  );
+}
+
+/**
+ * Status as pills rather than a native <select>.
+ *
+ * The select showed raw uppercase values in a system dropdown — it read as a
+ * form someone hadn't finished. These carry the same colours the status shows
+ * everywhere else in the app, so the control and the readout agree, and the
+ * current value is visible without opening anything.
+ */
+function StatusPicker({
+  value, disabled, onChange,
+}: {
+  value: string | null;
+  disabled: boolean;
+  onChange: (v: string) => void;
+}) {
+  const current = (value || '').trim().toUpperCase();
+  return (
+    <div className={cn('flex flex-wrap gap-1', disabled && 'opacity-50 pointer-events-none')}>
+      {SAMPLE_STATUS_OPTIONS.map((opt) => {
+        const on = current === opt;
+        const pill = statusPillStyle(opt);
+        // REJECTED is destructive and opens the reason modal, so it reads as
+        // an action rather than just another value to sit on.
+        const danger = opt === 'REJECTED';
+        return (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => onChange(opt)}
+            className={cn(
+              'px-2 py-1 rounded-md text-[10.5px] font-bold uppercase tracking-wide border transition-colors',
+              on
+                ? cn(pill.bg, pill.text, 'border-current/30 ring-2 ring-offset-1 ring-gray-300')
+                : danger
+                  ? 'bg-white border-red-200 text-red-600 hover:bg-red-50'
+                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700',
+            )}
+          >
+            {pill.label}
+          </button>
+        );
+      })}
+      {current && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="px-2 py-1 rounded-md text-[10.5px] font-medium text-gray-400 hover:text-gray-600 underline decoration-dotted"
+        >
+          Clear
+        </button>
+      )}
     </div>
   );
 }
