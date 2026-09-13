@@ -1,10 +1,14 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
+  // One glob over src, deliberately. This used to list pages/, components/
+  // and app/ individually, which silently excluded src/features/ — every
+  // class used ONLY in a features/ file was never generated, so those screens
+  // rendered half-styled: shared utilities worked, anything unique to them
+  // (grid templates, arbitrary widths, text sizes) did not. Listing
+  // directories by hand means any new one is broken until someone notices.
   content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
