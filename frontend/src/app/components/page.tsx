@@ -54,6 +54,10 @@ function ComponentsContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
+  // Styles to pre-tick when the add modal opens. Set when it is launched from
+  // a PO in the "Not started" list, so the person does not re-pick the styles
+  // they just clicked on. Cleared when the modal closes.
+  const [addPreselect, setAddPreselect] = useState<number[]>([]);
   const [editing, setEditing] = useState<{ order: Order; component: OrderComponent } | null>(null);
   const [libraryReloadKey, setLibraryReloadKey] = useState(0);
   const [selectedCanonicalId, setSelectedCanonicalId] = useState<number | null>(null);
@@ -136,6 +140,7 @@ function ComponentsContent() {
             onEditInstance={(order, component) => setEditing({ order, component })}
             onOpenStyle={openStyle}
             onBulkEditDone={() => { loadOrders(); setLibraryReloadKey((k) => k + 1); }}
+            onAddForOrders={(orderIds) => { setAddPreselect(orderIds); setAddOpen(true); }}
           />
         ) : (
           <ComponentLibraryCards
@@ -172,11 +177,13 @@ function ComponentsContent() {
 
         <LibraryFirstAddModal
           open={addOpen}
-          onClose={() => setAddOpen(false)}
+          onClose={() => { setAddOpen(false); setAddPreselect([]); }}
           orders={orders}
           isSupplier={isSupplier}
+          initialOrderIds={addPreselect}
           onDone={(_name, _count, canonicalId) => {
             setAddOpen(false);
+            setAddPreselect([]);
             loadOrders();
             setLibraryReloadKey((k) => k + 1);
             // Land on the fresh entry in the library so the user sees what

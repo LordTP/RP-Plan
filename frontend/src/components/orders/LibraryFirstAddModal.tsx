@@ -17,6 +17,12 @@ interface Props {
   onClose: () => void;
   orders: Order[];
   isSupplier: boolean;
+  /**
+   * Styles to arrive pre-ticked. Set when the modal is opened from a PO that
+   * has no components yet, so the person doesn't re-pick the styles they just
+   * clicked "Add components" on. Cleared with everything else on close.
+   */
+  initialOrderIds?: number[];
   onDone: (canonicalName: string, createdCount: number, canonicalId: number) => void;
 }
 
@@ -72,7 +78,7 @@ const SAMPLE_TYPE_CARDS: {
   },
 ];
 
-export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone }: Props) {
+export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initialOrderIds, onDone }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   // ── Identity ────────────────────────────────────────────────────────
@@ -109,8 +115,14 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, onDone
 
   useEffect(() => {
     if (!open) { setEntered(false); reset(); return; }
+    // Seed the selection AFTER reset has run for this open, or the reset that
+    // fires on close would be the last write and the ticks would vanish.
+    if (initialOrderIds?.length) setSelectedOrderIds(new Set(initialOrderIds));
     const id = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(id);
+    // initialOrderIds is read only at open; re-running on identity change
+    // would wipe ticks the user has since changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, reset]);
 
   // Anything typed or ticked counts as work worth protecting.

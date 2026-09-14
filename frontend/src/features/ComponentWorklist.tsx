@@ -27,6 +27,7 @@ import {
   activeSampleFor, attemptFor, isNeedsAttention, isInFlight, isStale, isExFacUrgent, ageDays,
   statusPillStyle, sampleTypeLabel, sampleTypeChipBg, sampleTypeFullLabel,
 } from './component-shared';
+import { NoComponentsPanel } from '@/features/NoComponentsPanel';
 import type { Order, OrderComponent, ComponentSampleType } from '@/types';
 
 type SortKey = 'age' | 'component' | 'style' | 'po' | 'status' | 'exfac';
@@ -39,6 +40,8 @@ interface Props {
   onEditInstance: (order: Order, component: OrderComponent) => void;
   onOpenStyle: (orderId: number) => void;
   onBulkEditDone: () => void;
+  /** Open the add-component modal with a PO's styles already ticked. */
+  onAddForOrders?: (orderIds: number[], poNumber: string) => void;
 }
 
 const TILES: { key: Tile; label: string; tone: 'primary' | 'danger' }[] = [
@@ -132,7 +135,7 @@ function buildGroups(instances: Instance[]): WorkGroup[] {
 }
 
 export function ComponentWorklist({
-  orders, loading, isSupplier, onEditInstance, onOpenStyle, onBulkEditDone,
+  orders, loading, isSupplier, onEditInstance, onOpenStyle, onBulkEditDone, onAddForOrders,
 }: Props) {
   const [q, setQ] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -162,6 +165,14 @@ export function ComponentWorklist({
     }
     return out;
   }, [orders, hideShipped]);
+
+  // Orders nobody has added components to. They own no samples, so nothing
+  // above can show them — but they are the reason the list looks finished
+  // when it is not.
+  const notStartedCount = useMemo(
+    () => orders.filter((o) => !(o.components || []).length).length,
+    [orders],
+  );
 
   const counts = useMemo(() => ({
     all: inFlight.length,
@@ -333,6 +344,7 @@ export function ComponentWorklist({
           loading={loading}
           groups={grouped ? groups : flatRows.map((i) => buildGroups([i])[0])}
           totalInFlight={counts.all}
+          notStartedCount={notStartedCount}
           selected={selected}
           onToggleMany={setMany}
           onEditInstance={onEditInstance}
@@ -373,7 +385,9 @@ export function ComponentWorklist({
                 <Package className="w-6 h-6 text-gray-300 mx-auto mb-2" />
                 <p className="text-xs text-gray-400">
                   {counts.all === 0
-                    ? 'Nothing in flight. Every sample is approved, not required or shipped.'
+                    ? (notStartedCount > 0
+                        ? `No samples in flight — ${notStartedCount} ${notStartedCount === 1 ? 'style has' : 'styles have'} no components yet. See "Not started" below.`
+                        : 'Nothing in flight. Every sample is approved, not required or shipped.')
                     : 'No samples match these filters.'}
                 </p>
               </td></tr>
@@ -420,6 +434,10 @@ export function ComponentWorklist({
       </div>
       )}
 
+      {/* The footer counts rows and explains how to click them, so with no rows
+          it is a caption for nothing: "0 components · 0 samples · Click a row
+          to expand". Dropped when the list is empty. */}
+      {matching.length > 0 && (
       <div className={cn(layout === 'cards' ? 'mt-0' : '-mt-3')}>
         <StatusBar
           segments={[
@@ -432,6 +450,15 @@ export function ComponentWorklist({
           hint={grouped ? 'Click a row to expand · click a style to edit' : 'Click a row to edit'}
         />
       </div>
+      )}
+
+      {!isSupplier && onAddForOrders && (
+        <NoComponentsPanel
+          orders={orders}
+          onAddForOrders={onAddForOrders}
+          onOpenStyle={onOpenStyle}
+        />
+      )}
 
       {selected.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
@@ -691,11 +718,14 @@ function StyleRow({
 // ─────────────────────────────────────────────────────────────────────────
 
 function WorkCardGrid({
-  loading, groups, totalInFlight, selected, onToggleMany, onEditInstance, onOpenStyle,
+  loading, groups, totalInFlight, notStartedCount, selected, onToggleMany, onEditInstance, onOpenStyle,
 }: {
   loading: boolean;
   groups: WorkGroup[];
   totalInFlight: number;
+  /** Styles with no components — they own no samples, so they cannot appear
+   *  above, and saying "every sample is approved" while they exist is false. */
+  notStartedCount: number;
   selected: Set<number>;
   onToggleMany: (ids: number[], on: boolean) => void;
   onEditInstance: (order: Order, component: OrderComponent) => void;
@@ -709,12 +739,20 @@ function WorkCardGrid({
     );
   }
   if (groups.length === 0) {
+    // With nothing in flight AND work waiting below, this block should state
+    // the fact and get out of the way — centring it in a flex-1 container
+    // pushed "Not started" off the bottom of the screen, which is exactly
+    // backwards on a freshly imported book where everything is not started.
+    const compact = totalInFlight === 0 && notStartedCount > 0;
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
+      <div className={cn('flex flex-col items-center justify-center text-center',
+        compact ? 'py-10' : 'flex-1')}>
         <Package className="w-6 h-6 text-gray-300 mb-2" />
         <p className="text-xs text-gray-400">
           {totalInFlight === 0
-            ? 'Nothing in flight. Every sample is approved, not required or shipped.'
+            ? (notStartedCount > 0
+                ? `No samples in flight — ${notStartedCount} ${notStartedCount === 1 ? 'style has' : 'styles have'} no components yet. See "Not started" below.`
+                : 'Nothing in flight. Every sample is approved, not required or shipped.')
             : 'No samples match these filters.'}
         </p>
       </div>
