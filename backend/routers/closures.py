@@ -6,7 +6,7 @@ why; this module is the admin surface plus the seed of upcoming CNY windows.
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, false
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -150,7 +150,12 @@ async def list_factory_closures(
         q = q.filter(or_(
             FactoryClosure.factory.is_(None),
             FactoryClosure.factory == '',
-            FactoryClosure.factory == (current_user.factory_name or '\x00'),
+            # Same NUL trap as the components library had: a sentinel string
+            # for "match nothing" is refused by PostgreSQL. A supplier with no
+            # factory_name should simply see the global closures, so express
+            # that as a false clause rather than an impossible comparison.
+            FactoryClosure.factory == current_user.factory_name
+            if current_user.factory_name else false(),
         ))
     rows = q.order_by(FactoryClosure.start_date.asc()).all()
     today = datetime.utcnow().date()

@@ -917,8 +917,15 @@ async def list_component_library(
             # and blank, so two REJECTED instances score zero on all three and
             # look identical to two blanks. COALESCE gives NULL a value of its
             # own, because "one approved, one not started" IS out of step.
+            #
+            # The sentinel must be a plain string. This was a NUL character,
+            # which SQLite stores happily and PostgreSQL refuses outright
+            # ("A string literal cannot contain NUL (0x00) characters"), so
+            # every call to this endpoint 500'd on production while passing
+            # locally. Statuses are uppercase words from a fixed list, so
+            # __NULL__ cannot collide with a real one.
             func.count(func.distinct(
-                func.coalesce(func.upper(status_case), '\u0000none')
+                func.coalesce(func.upper(status_case), '__NULL__')
             )).label('distinct_statuses'),
         )
         .outerjoin(OrderComponent, OrderComponent.canonical_id == Component.id)
