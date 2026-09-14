@@ -11,8 +11,9 @@ from datetime import datetime
 from io import BytesIO
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from sqlalchemy.exc import SQLAlchemyError
 
-from models import PurchaseOrder, User, DateChangeHistory, PendingDateChange
+from models import PurchaseOrder, User, DateChangeHistory, PendingDateChange, ORDER_STATUSES
 from date_notes import DATE_NOTE_FIELDS, apply_date_field
 from schemas import ExcelUploadResponse
 
@@ -175,6 +176,23 @@ def format_date(value: Any) -> Optional[str]:
 # IMPORT FUNCTIONS
 # =============================================================================
 
+# An import is a person updating the orderbook, not a data migration. The cap
+# is generous enough for the whole live book and small enough that a runaway
+# file (a sheet with a stray value in row 60,000) is refused instead of being
+# chewed on for minutes inside a 384MB container.
+MAX_IMPORT_ROWS = 5000
+
+# openpyxl expands a workbook enormously in memory. nginx accepts up to 50MB,
+# which this container cannot survive parsing, so the real limit lives here.
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+
+
+def _too_many_rows(sheet, start_row):
+    """Row count if it exceeds the cap, else None."""
+    n = sheet.max_row - start_row + 1
+    return n if n > MAX_IMPORT_ROWS else None
+
+
 def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_batch_id: str = None, conflict_resolutions: List[Dict[str, Any]] = None, new_only: bool = False) -> ExcelUploadResponse:
     """
     Import POs from Excel file into database.
@@ -277,6 +295,21 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
     # Find first data row (skip header rows and size reference rows)
     start_row = _find_data_start_row(sheet, col_map)
 
+    over = _too_many_rows(sheet, start_row)
+    if over:
+        return ExcelUploadResponse(
+            success=False, rows_processed=0, rows_created=0, rows_updated=0,
+            errors=[f"This file has {over:,} data rows, over the {MAX_IMPORT_ROWS:,} row "
+                    f"limit for a single import. Split it into smaller files."])
+
+    # (po_number, style_code) -> the row we first saw it on.
+    #
+    # SessionLocal sets autoflush=False, so a row created earlier in this loop
+    # is still pending and the existence query below CANNOT see it. Without
+    # this, a file listing the same PO+style twice created the style twice,
+    # and every later import then matched one of the two copies arbitrarily.
+    seen_keys = {}
+
     for row_idx in range(start_row, sheet.max_row + 1):
         try:
             # Get PO# and Style Code
@@ -291,6 +324,17 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
             if not style_code or style_code.upper() in ['INPUT', 'NONE', 'STYLE CODE', '']:
                 rows_skipped += 1
                 continue
+
+            key = (po_number, style_code)
+            if key in seen_keys:
+                errors.append(
+                    f"PO# {po_number} / Style {style_code} appears twice in this file "
+                    f"(rows {seen_keys[key]} and {row_idx}). Row {row_idx} was skipped — "
+                    f"remove the duplicate and re-import if row {row_idx} is the correct one."
+                )
+                rows_skipped += 1
+                continue
+            seen_keys[key] = row_idx
 
             rows_processed += 1
 
@@ -432,6 +476,24 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                 note_field_values = {
                     f: po_data.pop(f) for f in list(po_data.keys()) if f in DATE_NOTE_FIELDS
                 }
+
+                # `status` is protected on the update path but was written
+                # straight through on create, so a STATUS or LATE column in
+                # the sheet could put any string at all into the column the
+                # board and the warnings read. Match it case-insensitively
+                # against the real list; drop anything else and say so.
+                incoming_status = po_data.get('status')
+                if incoming_status:
+                    match = next((v for v in ORDER_STATUSES
+                                  if v.upper() == str(incoming_status).strip().upper()), None)
+                    if match:
+                        po_data['status'] = match
+                    else:
+                        po_data.pop('status')
+                        errors.append(
+                            f"PO# {po_number} / Style {style_code}: ignored status "
+                            f"'{incoming_status}' — not one of {', '.join(ORDER_STATUSES)}.")
+
                 new_po = PurchaseOrder(**po_data)
                 for f, v in note_field_values.items():
                     apply_date_field(new_po, f, v)
@@ -442,6 +504,22 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
                 db.add(new_po)
                 rows_created += 1
                 print(f"  Created PO# {po_number} / {style_code}")
+
+        except SQLAlchemyError as e:
+            # A database error poisons the session: on PostgreSQL every query
+            # after it raises InFailedSqlTransaction, so carrying on would
+            # turn one real failure into a row-per-row cascade of misleading
+            # ones and then fail the commit anyway. Stop here and say what
+            # actually happened.
+            db.rollback()
+            po_info = f"PO# {po_number}" if po_number else f"Row {row_idx}"
+            errors.append(
+                f"{po_info}: the database rejected this row, so the import was stopped "
+                f"and nothing was saved. Nothing before this row was written either. "
+                f"({type(e).__name__}: {str(e).splitlines()[0][:200]})")
+            return ExcelUploadResponse(
+                success=False, rows_processed=rows_processed,
+                rows_created=0, rows_updated=0, errors=errors)
 
         except Exception as e:
             error_str = str(e).lower()
@@ -475,12 +553,20 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
             errors=errors
         )
 
+    # Truncate the list, but never the count. A run that reported ten problems
+    # while silently having two hundred is how a bad import looks survivable.
+    shown = errors[:10]
+    if len(errors) > 10:
+        shown.append(f"...and {len(errors) - 10} more problems not listed here "
+                     f"({len(errors)} in total). {rows_created} rows were created and "
+                     f"{rows_updated} updated despite these.")
+
     return ExcelUploadResponse(
         success=len(errors) == 0,
         rows_processed=rows_processed,
         rows_created=rows_created,
         rows_updated=rows_updated,
-        errors=errors[:10] if errors else []  # Limit errors shown
+        errors=shown,
     )
 
 
@@ -579,6 +665,20 @@ def preview_excel_import(file_bytes: bytes, db: Session, new_only: bool = False)
 
     start_row = _find_data_start_row(sheet, col_map)
 
+    over = _too_many_rows(sheet, start_row)
+    if over:
+        return {
+            "success": False,
+            "error": f"This file has {over:,} data rows, over the {MAX_IMPORT_ROWS:,} row "
+                     f"limit for a single import. Split it into smaller files.",
+            "new_orders": [], "updated_orders": [], "unchanged_orders": [], "errors": [],
+        }
+
+    # Same guard as the import path — surfaced here so a duplicated row is
+    # visible BEFORE anything is written, not as an error afterwards.
+    seen_keys = {}
+    duplicate_rows = []
+
     for row_idx in range(start_row, sheet.max_row + 1):
         try:
             po_number = _get_cell_str(sheet, row_idx, col_map.get("po_number"))
@@ -588,6 +688,17 @@ def preview_excel_import(file_bytes: bytes, db: Session, new_only: bool = False)
                 continue
             if not style_code or style_code.upper() in ['INPUT', 'NONE', 'STYLE CODE', '']:
                 continue
+
+            key = (po_number, style_code)
+            if key in seen_keys:
+                duplicate_rows.append({
+                    "po_number": po_number,
+                    "style_code": style_code,
+                    "first_row": seen_keys[key],
+                    "duplicate_row": row_idx,
+                })
+                continue
+            seen_keys[key] = row_idx
 
             # Check if exists
             existing_po = db.query(PurchaseOrder).filter(
@@ -687,18 +798,32 @@ def preview_excel_import(file_bytes: bytes, db: Session, new_only: bool = False)
         except Exception as e:
             errors.append(f"Row {row_idx}: {str(e)}")
 
+    if duplicate_rows:
+        listed = ', '.join(
+            f"{d['po_number']}/{d['style_code']} (rows {d['first_row']} and {d['duplicate_row']})"
+            for d in duplicate_rows[:5]
+        )
+        more = f" and {len(duplicate_rows) - 5} more" if len(duplicate_rows) > 5 else ""
+        warnings.append(
+            f"{len(duplicate_rows)} row(s) repeat a PO# + Style Code already listed "
+            f"earlier in this file: {listed}{more}. Only the first occurrence of each "
+            f"will be imported."
+        )
+
     return {
         "success": True,
         "new_orders": new_orders,
         "updated_orders": updated_orders,
         "unchanged_orders": unchanged_orders,
         "conflicts": conflicts,
+        "duplicate_rows": duplicate_rows,
         "summary": {
             "total_rows": len(new_orders) + len(updated_orders) + len(unchanged_orders),
             "new_count": len(new_orders),
             "update_count": len(updated_orders),
             "unchanged_count": len(unchanged_orders),
             "conflict_count": len(conflicts),
+            "duplicate_count": len(duplicate_rows),
         },
         "errors": errors[:10] if errors else [],
         "warnings": warnings
@@ -926,17 +1051,44 @@ def _build_column_map(sheet) -> Dict[str, int]:
     return col_map
 
 
+# How far down to look for the first real data row. Past this we fall back to
+# row 2, which is the safe direction to be wrong in — see below.
+DATA_START_SEARCH_LIMIT = 50
+
+
 def _find_data_start_row(sheet, col_map: Dict[str, int]) -> int:
-    """Find the first row with actual data (has PO# value)"""
+    """First row that carries real order data.
+
+    Requires BOTH a PO-shaped value and a style code, because those are the
+    two columns the import needs and a row with only one of them is a title,
+    a note, or a subtotal. Checking only the PO column let a heading like
+    "PO 2026 SUMMARY" start the scan early.
+
+    Falling back to row 2 is deliberate. Guessing too EARLY costs nothing —
+    the import loop skips any row missing a PO or style code anyway — while
+    guessing too LATE silently drops real orders off the top of the file.
+    """
     po_col = col_map.get("po_number", 1)
-    for row in range(2, min(sheet.max_row + 1, 50)):
-        val = sheet.cell(row, po_col).value
-        if val and str(val).strip() not in ['', 'None', 'INPUT', 'PO#']:
-            # Check if it looks like a real PO number (numeric or alphanumeric)
-            val_str = str(val).strip()
-            if val_str.isdigit() or (len(val_str) > 2 and any(c.isdigit() for c in val_str)):
-                return row
-    return 2  # Default to row 2
+    style_col = col_map.get("style_code")
+
+    def looks_like_po(v):
+        if not v:
+            return False
+        t = str(v).strip()
+        if t in ('', 'None', 'INPUT', 'PO#'):
+            return False
+        return t.isdigit() or (len(t) > 2 and any(c.isdigit() for c in t))
+
+    for row in range(2, min(sheet.max_row + 1, DATA_START_SEARCH_LIMIT)):
+        if not looks_like_po(sheet.cell(row, po_col).value):
+            continue
+        if style_col is None:
+            return row
+        style = _get_cell_str(sheet, row, style_col)
+        if style and style.upper() not in ('INPUT', 'STYLE CODE'):
+            return row
+
+    return 2
 
 
 def _extract_row_data(sheet, row_idx: int, col_map: Dict[str, int]) -> Dict[str, Any]:

@@ -704,14 +704,25 @@ export interface ImportPreviewResult {
     style_code: string;
   }>;
   conflicts: ImportConflict[];
+  /** Rows repeating a PO# + Style Code already listed earlier in the same file. */
+  duplicate_rows?: Array<{
+    po_number: string;
+    style_code: string;
+    first_row: number;
+    duplicate_row: number;
+  }>;
   summary?: {
     total_rows: number;
     new_count: number;
     update_count: number;
     unchanged_count: number;
     conflict_count: number;
+    duplicate_count?: number;
   };
   errors: string[];
+  warnings?: string[];
+  /** SHA-256 of the previewed file. Must be handed back to importExcel. */
+  file_digest?: string;
 }
 
 export const excelApi = {
@@ -751,10 +762,20 @@ export const excelApi = {
     return response.data;
   },
 
+  /**
+   * Commit an import.
+   *
+   * `confirmDigest` is the `file_digest` the preview returned. The backend
+   * recomputes it from the uploaded bytes and refuses the write if it does not
+   * match, so an import always applies to the file that was reviewed. `force`
+   * only overrides the duplicate-upload check, never the digest.
+   */
   importExcel: async (
     file: File,
     conflictResolutions?: Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }>,
-    newOnly: boolean = false
+    newOnly: boolean = false,
+    confirmDigest?: string,
+    force: boolean = false
   ): Promise<{
     success: boolean;
     rows_processed: number;
@@ -769,6 +790,8 @@ export const excelApi = {
       formData.append('conflict_resolutions', JSON.stringify(conflictResolutions));
     }
     if (newOnly) formData.append('new_only', 'true');
+    if (confirmDigest) formData.append('confirm_digest', confirmDigest);
+    if (force) formData.append('force', 'true');
 
     const response = await api.post('/api/excel/import', formData, {
       headers: {
@@ -792,13 +815,23 @@ export const excelApi = {
     return response.data;
   },
 
-  undoLastImport: async (): Promise<{
+  /**
+   * Undo an import.
+   *
+   * `batchId` is the import the page is showing. The backend refuses if that
+   * is no longer the most recent one, so a colleague importing in the
+   * meantime can't have their work reverted by this click.
+   */
+  undoLastImport: async (batchId?: string): Promise<{
     success: boolean;
     orders_deleted: number;
     orders_reverted: number;
     batch_id: string;
+    skipped_fields?: string[];
   }> => {
-    const response = await api.post('/api/excel/undo');
+    const formData = new FormData();
+    if (batchId) formData.append('batch_id', batchId);
+    const response = await api.post('/api/excel/undo', formData);
     return response.data;
   },
 };

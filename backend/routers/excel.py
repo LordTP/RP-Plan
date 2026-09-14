@@ -1,7 +1,21 @@
-"""Excel import / preview / export / template + import-undo endpoints."""
+"""Excel import / preview / export / template + import-undo endpoints.
+
+Writing is deliberately two calls. /preview reads the file and reports what an
+import WOULD do; /import does it. The two are bound by a SHA-256 of the
+uploaded bytes: preview returns the digest, import requires it back and
+recomputes it from what was actually uploaded. So the write always applies to
+the file the user reviewed, and an import cannot be fired at the API without
+having read the file first. Same idea as bulk-edit's `apply` flag.
+
+That digest also makes a replay recognisable, which matters because nginx cuts
+/api off at 120s: a slow import returns 504 to the browser while the backend
+keeps going and commits. The user re-uploads, and without this we would run the
+whole thing a second time.
+"""
+import hashlib
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import List, Optional
 
@@ -14,11 +28,33 @@ from models import (
     User, PurchaseOrder, ImportBatch, DateChangeHistory,
 )
 from auth import get_current_user, get_current_full_internal_user
-from excel_utils import import_excel_to_database, export_database_to_excel
+from excel_utils import (
+    import_excel_to_database, export_database_to_excel, MAX_UPLOAD_BYTES,
+)
+from import_revert import revert_field, UnrevertableField
 from realtime import manager
 
 
 router = APIRouter()
+
+# A re-upload of identical bytes inside this window is treated as a retry of
+# the same intent rather than a second, deliberate import. Comfortably longer
+# than nginx's 120s timeout, short enough that a genuine "import the same file
+# again tomorrow" is unaffected.
+REPLAY_WINDOW = timedelta(minutes=30)
+
+
+def _digest(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _reject_oversize(content: bytes) -> None:
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"That file is {len(content) / 1024 / 1024:.1f}MB. The limit is "
+                   f"{MAX_UPLOAD_BYTES // 1024 // 1024}MB — a spreadsheet this large is "
+                   f"usually carrying embedded images or thousands of blank rows.")
 
 
 @router.post("/api/excel/preview")
@@ -36,8 +72,12 @@ async def preview_excel_import(
         )
 
     content = await file.read()
+    _reject_oversize(content)
+
     from excel_utils import preview_excel_import as do_preview
     result = do_preview(content, db, new_only=new_only)
+    # The token /import requires back. Ties the write to this exact file.
+    result["file_digest"] = _digest(content)
     return result
 
 
@@ -46,10 +86,16 @@ async def import_excel(
     file: UploadFile = File(...),
     conflict_resolutions: Optional[str] = Form(None),
     new_only: bool = Form(False),
+    confirm_digest: Optional[str] = Form(None),
+    force: bool = Form(False),
     current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
-    """Import purchase orders from Excel file"""
+    """Import purchase orders from Excel file.
+
+    Requires `confirm_digest` — the `file_digest` /preview returned for this
+    same file. `force=true` overrides only the replay check, never the digest.
+    """
     if not file.filename.endswith(('.xlsx', '.xlsm')):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -57,6 +103,36 @@ async def import_excel(
         )
 
     content = await file.read()
+    _reject_oversize(content)
+    digest = _digest(content)
+
+    # The gate. An import with no preview behind it, or one whose file changed
+    # after the preview, is refused rather than written.
+    if not confirm_digest:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This import was not confirmed against a preview. Preview the file "
+                   "first, then import — that is what shows you the changes before they land.")
+    if confirm_digest != digest:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The file does not match the one that was previewed. Re-run the preview "
+                   "so you are approving the changes in the file you are actually importing.")
+
+    # Replay check. Identical bytes, already imported, still standing.
+    if not force:
+        recent = db.query(ImportBatch).filter(
+            ImportBatch.file_digest == digest,
+            ImportBatch.is_undone == False,
+            ImportBatch.created_at >= datetime.utcnow() - REPLAY_WINDOW,
+        ).order_by(ImportBatch.created_at.desc()).first()
+        if recent:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This exact file was already imported by {recent.username} at "
+                       f"{recent.created_at:%H:%M} ({recent.rows_created} created, "
+                       f"{recent.rows_updated} updated). If the page timed out, the import "
+                       f"still finished — check the orders before importing it again.")
 
     resolutions = []
     if conflict_resolutions:
@@ -85,6 +161,7 @@ async def import_excel(
             filename=file.filename,
             rows_created=result.rows_created,
             rows_updated=result.rows_updated,
+            file_digest=digest,
         )
         db.add(batch)
         db.commit()
@@ -232,10 +309,18 @@ async def get_last_import(
 
 @router.post("/api/excel/undo")
 async def undo_last_import(
+    batch_id: Optional[str] = Form(None),
     current_user: User = Depends(get_current_full_internal_user),
     db: Session = Depends(get_db)
 ):
-    """Undo the most recent Excel import"""
+    """Undo an Excel import.
+
+    `batch_id` names the import the caller believes they are undoing — the one
+    the page is showing them. It has to still be the most recent undoable
+    batch, or the request is refused: without that check, someone else
+    importing between the page load and the click means you silently revert
+    their work instead of the batch you were looking at.
+    """
     batch = db.query(ImportBatch).filter(
         ImportBatch.is_undone == False
     ).order_by(ImportBatch.created_at.desc()).first()
@@ -245,6 +330,15 @@ async def undo_last_import(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No import found to undo"
         )
+
+    if batch_id and batch_id != batch.batch_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"There has been another import since this page loaded — "
+                   f"{batch.username} imported {batch.filename or 'a file'} at "
+                   f"{batch.created_at:%H:%M} ({batch.rows_created} created, "
+                   f"{batch.rows_updated} updated). Undo reverts the most recent import, "
+                   f"so refresh and check that is the one you meant.")
 
     batch_id = batch.batch_id
     orders_deleted = 0
@@ -264,38 +358,33 @@ async def undo_last_import(
         DateChangeHistory.import_batch_id == batch_id
     ).all()
 
+    # Cache the orders so a batch touching one row across twenty fields does
+    # one query rather than twenty.
+    po_cache = {}
     reverted_po_ids = set()
+    skipped_fields = []
+
     for entry in history_entries:
-        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == entry.po_id).first()
+        po = po_cache.get(entry.po_id)
+        if po is None and entry.po_id not in po_cache:
+            po = db.query(PurchaseOrder).filter(PurchaseOrder.id == entry.po_id).first()
+            po_cache[entry.po_id] = po
+
         if po:
-            field_name = entry.field_name
-            old_value_str = entry.old_value
-
-            if old_value_str is None:
-                setattr(po, field_name, None)
-            elif field_name in ['size_2xs', 'size_xs', 'size_s', 'size_m', 'size_l',
-                                'size_xl', 'size_2xl', 'size_3xl', 'size_4xl', 'size_5xl',
-                                'size_11', 'size_12', 'size_13', 'size_14',
-                                'total_quantity']:
-                try:
-                    setattr(po, field_name, int(float(old_value_str)))
-                except (ValueError, TypeError):
-                    setattr(po, field_name, None)
-            elif field_name in ['trade_price', 'total_order_value']:
-                try:
-                    setattr(po, field_name, float(old_value_str))
-                except (ValueError, TypeError):
-                    setattr(po, field_name, None)
-            elif field_name in ['order_received_date', 'order_sent_to_factory_date',
-                                'original_po_ex_factory', 'date_approved_to_production',
-                                'revised_po_ex_factory', 'original_del_date_to_customer',
-                                'eta_to_uk', 'actual_date_del_to_uk',
-                                'eta_to_customer', 'actual_date_del_to_customer']:
-                from excel_utils import parse_date
-                setattr(po, field_name, parse_date(old_value_str))
-            else:
-                setattr(po, field_name, old_value_str)
-
+            # Coerced against the column's real type rather than a hand-kept
+            # list of field names. The old lists missed 18 date columns and
+            # is_active, and a miss aborted the entire undo at commit time —
+            # see import_revert for the full account.
+            try:
+                revert_field(po, entry.field_name, entry.old_value)
+            except UnrevertableField:
+                # A history row naming something that is not a writable column.
+                # Skip that one field; reverting the other 60 is still worth
+                # far more than failing the whole undo.
+                skipped_fields.append(entry.field_name)
+                # Deliberately not deleted: the history row stays as evidence
+                # of the one field the undo could not put back.
+                continue
             po.updated_at = datetime.utcnow()
             reverted_po_ids.add(entry.po_id)
 
@@ -319,4 +408,8 @@ async def undo_last_import(
         "orders_deleted": orders_deleted,
         "orders_reverted": orders_reverted,
         "batch_id": batch_id,
+        # Empty in normal operation. Non-empty means a history row named
+        # something that is no longer a column, and the UI should say so
+        # rather than report a clean undo.
+        "skipped_fields": sorted(set(skipped_fields)),
     }

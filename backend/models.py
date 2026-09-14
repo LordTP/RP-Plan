@@ -164,6 +164,24 @@ class PurchaseOrder(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # (po_number, style_code) is the identity the whole app matches on — it is
+    # how an Excel import decides create-vs-update, and how a re-import finds
+    # the row it wrote last time. It went unenforced for a long while, which
+    # meant two things could put a second copy of a style into the table:
+    # a file listing the same PO+style twice (SessionLocal sets
+    # autoflush=False, so the second lookup cannot see the first, still
+    # pending, insert), and a large import that exceeded nginx's 120s
+    # proxy_read_timeout, returned 504, and got retried while the first run
+    # was still committing. After either, `.first()` picks one of the copies
+    # arbitrarily and edits silently land on whichever it happened to pick.
+    #
+    # NULL style_code rows are still unconstrained — both engines treat NULLs
+    # as distinct in a unique index — but the import refuses a blank style
+    # code outright, so that path is closed where it matters.
+    __table_args__ = (
+        UniqueConstraint('po_number', 'style_code', name='uq_po_number_style_code'),
+    )
+
     # Relationships
     comments = relationship("Comment", back_populates="purchase_order", cascade="all, delete-orphan")
     date_changes = relationship("DateChangeHistory", back_populates="purchase_order", cascade="all, delete-orphan")
@@ -388,6 +406,13 @@ class ImportBatch(Base):
     rows_created = Column(Integer, default=0)
     rows_updated = Column(Integer, default=0)
     is_undone = Column(Boolean, default=False)
+    # SHA-256 of the uploaded bytes. Two jobs: it binds an import to the
+    # preview the user actually reviewed, and it makes a retry recognisable.
+    # nginx cuts /api off at proxy_read_timeout 120s, so a slow import returns
+    # 504 to the browser while the backend carries on and commits — the user
+    # then re-uploads the same file and, before the unique index existed, got
+    # a second copy of every row.
+    file_digest = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

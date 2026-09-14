@@ -156,10 +156,14 @@ function ImportContent() {
 
     setIsImporting(true);
     try {
+      // The digest from the preview. The backend recomputes it from the
+      // uploaded bytes and refuses the write unless it matches, so what gets
+      // imported is always the file whose changes were shown above.
       const result = await excelApi.importExcel(
         selectedFile,
         resolutions.length > 0 ? resolutions as Array<{ pending_change_id: number; resolution: 'use_excel' | 'use_pending' }> : undefined,
-        newOrdersOnly
+        newOrdersOnly,
+        preview?.file_digest
       );
       setImportComplete(true);
       setImportResult({
@@ -184,8 +188,17 @@ function ImportContent() {
   const handleUndo = async () => {
     setIsUndoing(true);
     try {
-      const result = await excelApi.undoLastImport();
+      // Name the batch the page is showing, so this can't revert an import
+      // someone else ran between the page loading and this click.
+      const result = await excelApi.undoLastImport(lastImport?.batch_id);
       toast.success(`Import undone: ${result.orders_deleted} orders deleted, ${result.orders_reverted} orders reverted`);
+      if (result.skipped_fields?.length) {
+        toast.error(
+          `${result.skipped_fields.length} field(s) could not be put back: ` +
+          `${result.skipped_fields.join(', ')}. Check those rows.`,
+          { duration: 8000 }
+        );
+      }
       setLastImport(null);
       setShowUndoConfirm(false);
       // If we just undid the import we completed on this page, reset the success state

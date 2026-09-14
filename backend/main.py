@@ -376,6 +376,61 @@ async def startup_event():
     finally:
         upper_db.close()
 
+    # Migration: import_batches.file_digest — binds an import to the preview it
+    # was approved from, and lets a 504-then-retry be recognised as a replay.
+    batch_columns = [c['name'] for c in inspector.get_columns('import_batches')]
+    if 'file_digest' not in batch_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE import_batches ADD COLUMN file_digest VARCHAR(64)"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_import_batches_file_digest "
+                "ON import_batches (file_digest)"))
+        print("✓ Added file_digest column to import_batches table")
+
+    # Migration: enforce (po_number, style_code) uniqueness on purchase_orders.
+    #
+    # create_all() adds the constraint to a fresh database from __table_args__,
+    # but never to a table that already exists — so existing installs need this.
+    #
+    # Deliberately NOT fatal. If duplicates are already in the table the index
+    # cannot be built, and refusing to start would take the whole app down over
+    # a data problem nobody can fix while it is down. Log loudly, leave the
+    # table as it is, and let the in-file duplicate check in excel_utils carry
+    # the load until someone resolves them.
+    PO_STYLE_UNIQUE_FLAG = 'purchase_orders_po_style_unique_v1'
+    uniq_db = SessionLocal()
+    try:
+        flag = uniq_db.query(AppSetting).filter(AppSetting.key == PO_STYLE_UNIQUE_FLAG).first()
+        if flag is None:
+            dupes = uniq_db.execute(text(
+                "SELECT po_number, style_code, COUNT(*) AS n FROM purchase_orders "
+                "WHERE style_code IS NOT NULL "
+                "GROUP BY po_number, style_code HAVING COUNT(*) > 1"
+            )).fetchall()
+
+            if dupes:
+                total = sum(r.n for r in dupes)
+                print(f"⚠ Cannot add uq_po_number_style_code: {len(dupes)} duplicated "
+                      f"PO+style pairs across {total} rows. Resolve them, then restart.")
+                for r in dupes[:10]:
+                    print(f"    PO {r.po_number} / {r.style_code}: {r.n} rows")
+            else:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS uq_po_number_style_code "
+                            "ON purchase_orders (po_number, style_code)"
+                        ))
+                    uniq_db.add(AppSetting(key=PO_STYLE_UNIQUE_FLAG, value='done'))
+                    uniq_db.commit()
+                    print("✓ purchase_orders (po_number, style_code) is now unique")
+                except Exception as exc:
+                    print(f"⚠ Could not add uq_po_number_style_code: {exc}")
+    except Exception as exc:
+        print(f"⚠ PO+style uniqueness migration skipped: {exc}")
+    finally:
+        uniq_db.close()
+
     # Migration: ensure users.role is stored as the enum NAME (uppercase), which is
     # SQLAlchemy's default when Column(Enum(UserRole)) has no values_callable.
     # A previous deploy briefly used lowercase values; this normalises any drift.
