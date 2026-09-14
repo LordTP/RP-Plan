@@ -39,7 +39,7 @@ import type { Order, OrderComponent } from '@/types';
 import { COLUMNS, FACTORY_PRODUCT_COLUMNS, FACTORY_SHIPPING_COLUMNS, FIT_SAMPLE_STATUS_OPTIONS, FIT_REQUIRED_OPTIONS, SAMPLE_STATUS_OPTIONS, SAMPLE_STATUS_FIELD_TO_TYPE, SHOW_COSTING } from '@/types';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionPill, SectionHeader, SectionDivider, SampleCard, TimelineItem, JourneyFact } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionHeader, SectionDivider, SampleCard, TimelineItem, JourneyFact } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -1498,45 +1498,10 @@ function DetailPanel({
   const productRef = useRef<HTMLElement>(null);
   const samplingRef = useRef<HTMLElement>(null);
   const timelineRef = useRef<HTMLElement>(null);
-  const [activeSection, setActiveSection] = useState<'product' | 'sampling' | 'timeline'>('product');
-  const sectionRefs = { product: productRef, sampling: samplingRef, timeline: timelineRef } as const;
-
-  // Use getBoundingClientRect rather than offsetTop — sections aren't
-  // guaranteed to use the scroller as their offsetParent (it has no
-  // explicit position), so offsetTop walks past it and gives garbage.
-  const scrollToSection = (key: 'product' | 'sampling' | 'timeline') => {
-    const el = sectionRefs[key].current;
-    const scroller = modalContentRef.current;
-    if (!el || !scroller) return;
-    const elRect = el.getBoundingClientRect();
-    const scrollerRect = scroller.getBoundingClientRect();
-    const top = elRect.top - scrollerRect.top + scroller.scrollTop - 8;
-    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    const scroller = modalContentRef.current;
-    if (!scroller) return;
-    const onScroll = () => {
-      // At the bottom of the scroll → force the last section active.
-      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
-        setActiveSection('timeline');
-        return;
-      }
-      const scrollerTop = scroller.getBoundingClientRect().top;
-      const threshold = scrollerTop + 60;
-      const order: ('product' | 'sampling' | 'timeline')[] = ['product', 'sampling', 'timeline'];
-      let current: typeof order[number] = 'product';
-      for (const key of order) {
-        const el = sectionRefs[key].current;
-        if (el && el.getBoundingClientRect().top <= threshold) current = key;
-      }
-      setActiveSection(current);
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalTab]);
+  // The jump-to pills are gone with the two-column layout, so the scroll
+  // spy that highlighted them went with them. productRef / samplingRef /
+  // timelineRef stay: the sections still carry them, and they are what a
+  // deep link would scroll to.
 
   // Order-level submissions (component_id IS NULL). We only care about these for the
   // rejection flow on PPS (always order-level) and on fit/strike/lab for orders without components.
@@ -1802,20 +1767,9 @@ function DetailPanel({
             )}
           </div>
 
-          {/* Sticky pill nav */}
-          <div className="px-6 py-2 border-b border-gray-200 bg-white/95 backdrop-blur flex items-center gap-1.5 flex-shrink-0">
-            <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-2">Jump to</span>
-            <SectionPill active={activeSection === 'product'} label="Product" onClick={() => scrollToSection('product')} />
-            <SectionPill
-              active={activeSection === 'sampling'}
-              label="Sampling"
-              badge={samplePending > 0 ? `${samplePending} pending` : undefined}
-              badgeTone="amber"
-              onClick={() => scrollToSection('sampling')}
-            />
-            {/* Shipping folded into Journey — its dates were already timeline steps. */}
-            <SectionPill active={activeSection === 'timeline'} label="Journey" onClick={() => scrollToSection('timeline')} />
-          </div>
+          {/* No jump-to pills. The Source Lab drawer dropped them when it went
+              two-column — with the work and the facts side by side there is
+              little left to scroll past. */}
 
           {/* Scroll body */}
           <div ref={modalContentRef} className="flex-1 overflow-y-auto bg-gray-50/40">
@@ -1920,52 +1874,56 @@ function DetailPanel({
               </>
             )}
 
+            {/* Size breakdown sits with the work, not the reference column —
+                same placement as the Source Lab drawer. */}
+              {sizes.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
+                    <SizeGuideTooltip gender={order.gender} />
+                  </div>
+                  <div className="space-y-1.5">
+                    {sizes.map(s => (
+                      <div key={s.label} className="flex items-center gap-3">
+                        <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
+                        <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
+                            style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
+                          >
+                            <span className="text-[10px] font-bold text-white">{s.value}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
+                    <span className="text-gray-500">Total units</span>
+                    <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Narrow column — the facts */}
             <div className="min-w-0">
             {/* Product */}
             <section ref={productRef} className="px-6 pt-6 pb-3">
-              <SectionHeader accent="blue" label="Product" />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                  {hasCol('description') && <DetailRow label="Description" value={order.description} />}
-                  {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
-                  {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} />}
-                  {hasCol('colour') && <DetailRow label="Colour" value={order.colour} />}
-                  {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
-                  {hasCol('season') && <DetailRow label="Season" value={order.season} />}
-                  {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
-                  {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
-                  {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
-                </div>
-                {sizes.length > 0 && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-4 self-start">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-[11px] font-semibold text-gray-700">Size breakdown</div>
-                      <SizeGuideTooltip gender={order.gender} />
-                    </div>
-                    <div className="space-y-1.5">
-                      {sizes.map(s => (
-                        <div key={s.label} className="flex items-center gap-3">
-                          <span className="text-[11px] font-medium text-gray-500 w-10 text-right">{s.label}</span>
-                          <div className="flex-1 h-5 bg-gray-100 rounded-md overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-md flex items-center justify-end pr-2"
-                              style={{ width: `${Math.max(((s.value || 0) / maxSize) * 100, 8)}%` }}
-                            >
-                              <span className="text-[10px] font-bold text-white">{s.value}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="border-t border-gray-100 mt-3 pt-2 flex items-center justify-between text-[11px]">
-                      <span className="text-gray-500">Total units</span>
-                      <span className="font-semibold text-gray-800">{formatQty(order.total_quantity)}</span>
-                    </div>
-                  </div>
-                )}
+              <SectionHeader accent="blue" label="Order" />
+              {/* No card, no rule between every row — same reasoning as the
+                  Source Lab drawer. The right column is reference material you
+                  scan, and boxing each row made nine facts look like nine
+                  separate things to deal with. */}
+              <div className="[&>*]:border-0 [&>*]:px-0 [&>*]:py-[3px]">
+                {hasCol('description') && <DetailRow label="Description" value={order.description} />}
+                {hasCol('customer') && <DetailRow label="Customer" value={order.customer} />}
+                {hasCol('china_orderbook_ref') && <DetailRow label="Order Reference" value={order.china_orderbook_ref} />}
+                {hasCol('colour') && <DetailRow label="Colour" value={order.colour} />}
+                {hasCol('gender') && <DetailRow label="Gender" value={order.gender} extra={<SizeGuideTooltip gender={order.gender} />} />}
+                {hasCol('season') && <DetailRow label="Season" value={order.season} />}
+                {hasCol('factory') && <DetailRow label="Factory" value={order.factory} />}
+                {hasCol('terms') && <DetailRow label="Terms" value={order.terms} />}
+                {hasCol('direct_repeat_new') && <DetailRow label="Direct Repeat/New" value={order.direct_repeat_new} />}
               </div>
             </section>
 
