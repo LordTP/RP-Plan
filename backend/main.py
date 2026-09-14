@@ -376,6 +376,43 @@ async def startup_event():
     finally:
         upper_db.close()
 
+    # Migration: vessel fields are the shipping flow's, not the order form's.
+    #
+    # fcl_lcl / vessel_name / vessel_etd / vessel_eta_to_port are set by a
+    # factory on a shipment draft, and pushed onto every linked PO when the
+    # draft is confirmed (routers/shipment_drafts.py). But role_column_settings
+    # had them flagged supplier-editable, which put an inline pencil on the
+    # same columns in the style drawer's Journey timeline — and THAT path runs
+    # through PUT /api/orders/{id}, which treats a date field as a change
+    # request needing Source Lab approval.
+    #
+    # Same factory, same column, two behaviours: instant via Shipping, queued
+    # for approval via the drawer. The COLUMNS definition in the frontend has
+    # always had these as supplierEditable: false, so the code's intent was
+    # never in doubt — the stored settings had drifted away from it. This puts
+    # them back. Visibility is untouched: factories still SEE the values.
+    VESSEL_READONLY_FLAG = 'supplier_vessel_fields_readonly_v1'
+    vessel_db = SessionLocal()
+    try:
+        flag = vessel_db.query(AppSetting).filter(AppSetting.key == VESSEL_READONLY_FLAG).first()
+        if flag is None:
+            rows = vessel_db.query(RoleColumnSettings).filter(
+                RoleColumnSettings.role == 'supplier',
+                RoleColumnSettings.column_key.in_(
+                    ['fcl_lcl', 'vessel_name', 'vessel_etd', 'vessel_eta_to_port']),
+                RoleColumnSettings.is_editable == True,
+            ).all()
+            for r in rows:
+                r.is_editable = False
+            vessel_db.add(AppSetting(key=VESSEL_READONLY_FLAG, value='done'))
+            vessel_db.commit()
+            print(f"✓ Vessel fields set read-only for suppliers ({len(rows)} changed) — "
+                  f"they are set on the Shipping page")
+    except Exception as exc:
+        print(f"⚠ Vessel read-only migration skipped: {exc}")
+    finally:
+        vessel_db.close()
+
     # Migration: import_batches.file_digest — binds an import to the preview it
     # was approved from, and lets a 504-then-retry be recognised as a replay.
     batch_columns = [c['name'] for c in inspector.get_columns('import_batches')]
