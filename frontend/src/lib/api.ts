@@ -572,7 +572,7 @@ export const settingsApi = {
   },
 
   getEmailAutomations: async (): Promise<{
-    automations: { key: string; label: string; description: string; setting_key: string; enabled: boolean }[];
+    automations: { key: string; label: string; description: string; setting_key: string; enabled: boolean; uses_recipients?: boolean }[];
   }> => {
     const response = await api.get('/api/settings/email-automations');
     return response.data;
@@ -1647,6 +1647,13 @@ export interface NotificationRule {
   label: string;
   description: string;
   enabled: boolean;
+  /**
+   * False when the automation works out its own audience — a mention emails
+   * whoever was mentioned, so there is no list to configure. The settings page
+   * hides the recipient picker for these and shows the toggle alone.
+   * Optional so an older backend (which omits it) keeps the picker.
+   */
+  uses_recipients?: boolean;
   recipients: NotificationRecipient[];
   open_fires: number;
 }

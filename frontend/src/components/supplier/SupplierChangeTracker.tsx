@@ -5,6 +5,7 @@ import { Clock, CheckCircle, XCircle, X, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { approvalsApi, MyPendingChange, MyApprovedChange, RejectedChange } from '@/lib/api';
+import { COLUMNS } from '@/types';
 
 /**
  * Three-column tracker shown to suppliers: their pending date-change requests,
@@ -59,8 +60,18 @@ export function SupplierChangeTracker({ refreshKey = 0 }: { refreshKey?: number 
     try { return format(parseISO(dateStr), 'dd MMM yyyy'); } catch { return dateStr; }
   };
 
+  /**
+   * The label a person recognises, not the database column.
+   *
+   * This used to be a bare replace(/_/g,' ') + title-case, which printed
+   * "Revised Po Ex Factory", "Vessel Etd" and "Vessel Eta To Port" — the
+   * three fields that actually route through approval. The app already
+   * carries proper labels in COLUMNS; the tracker just wasn't asking.
+   * Title-casing stays as the fallback for any column not in COLUMNS.
+   */
   const formatFieldName = (field: string): string =>
-    field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    COLUMNS.find(c => c.key === field)?.label
+    ?? field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   // Nothing in any bucket and not loading → render nothing so we don't leave a gap
   const hasAny = myPendingChanges.length > 0 || myApprovedChanges.length > 0 || rejectedChanges.length > 0;

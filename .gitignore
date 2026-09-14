@@ -65,3 +65,6 @@ Screenshot*.png
 # Local DB backups (should never be committed)
 *.backup-*
 *.sql.bak
+
+# Local DB snapshots taken before loading a prod dump
+*.db.bak-*

@@ -102,6 +102,9 @@ async def get_email_automations(
             'description': a['description'],
             'setting_key': setting_key,
             'enabled': app_settings.get_bool(db, setting_key),
+            # False for automations that resolve their own audience (mentions),
+            # so the settings page can hide the recipient picker.
+            'uses_recipients': a.get('uses_recipients', True),
         })
     return {'automations': out}
 

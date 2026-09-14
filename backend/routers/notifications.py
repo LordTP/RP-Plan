@@ -71,6 +71,7 @@ async def list_notification_rules(
             'label': auto['label'],
             'description': auto['description'],
             'enabled': enabled,
+            'uses_recipients': auto.get('uses_recipients', True),
             'recipients': recipients,
             'open_fires': open_count,
         })

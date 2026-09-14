@@ -15,6 +15,15 @@ class EmailAutomation(TypedDict):
     key: str
     label: str
     description: str
+    # Whether this automation sends to a configured recipient list.
+    #
+    # Only some do. A mention emails the person who was mentioned, worked out
+    # from the comment itself — there is no list to keep, and the recipients
+    # UI showing "0 recipients / no one will get emails" against it was simply
+    # untrue. The settings page uses this to decide whether to offer the
+    # picker at all, so an automation that ignores recipients stops pretending
+    # to have them.
+    uses_recipients: bool
 
 
 # Registry of individual email automations. Each one has its own toggle so
@@ -24,12 +33,15 @@ EMAIL_AUTOMATIONS: List[EmailAutomation] = [
     {
         'key': 'email_mention',
         'label': 'Comment @mentions',
-        'description': 'Email a user when someone @mentions them in a comment.',
+        'description': 'Email a user when someone @mentions them in a comment. '
+                       'Goes to whoever was mentioned — nothing to configure.',
+        'uses_recipients': False,
     },
     {
         'key': 'new_po_needs_components',
         'label': 'New PO needs components',
         'description': 'When a PO has all three sent-to-factory dates (Order / Tech packs / Specs) and still has zero components, notify the configured recipients. A single reminder fires 2 business days later if still empty.',
+        'uses_recipients': True,
     },
 ]
 
