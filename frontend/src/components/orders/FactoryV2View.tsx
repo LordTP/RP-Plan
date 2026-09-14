@@ -1345,6 +1345,7 @@ const DEFAULT_SIZE_LABELS = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4X
 // Callers pass the rows in to getSizeBreakdown instead of using a global.
 import type { SizeGuideRow } from '@/lib/api';
 import { useSizeGuide } from '@/lib/useSizeGuide';
+import { SizeGuideTooltip } from '@/components/orders/SizeGuideTooltip';
 
 function getSizeBreakdown(order: Order, sizeGuide: SizeGuideRow[]): { label: string; value: number }[] {
   const genderCode = order.gender ? order.gender.split('-')[0]?.trim() : '';
@@ -1354,90 +1355,6 @@ function getSizeBreakdown(order: Order, sizeGuide: SizeGuideRow[]): { label: str
     label: labels[i] || DEFAULT_SIZE_LABELS[i] || `S${i + 1}`,
     value: (order[key] as number) || 0,
   })).filter(s => s.value > 0);
-}
-
-function SizeGuideTooltip({ gender }: { gender: string | undefined }) {
-  const [show, setShow] = useState(false);
-  const matchCode = gender ? gender.split('-')[0]?.trim() : '';
-  const { rows: sizeGuideRows } = useSizeGuide();
-  const SIZE_GUIDE = sizeGuideRows.filter(r => r.is_active);
-
-  useEffect(() => {
-    if (!show) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShow(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [show]);
-
-  return (
-    <>
-      <button
-        onClick={() => setShow(true)}
-        className="p-0.5 text-gray-300 hover:text-primary-500 transition-colors"
-        title="Size guide"
-      >
-        <Ruler className="w-3 h-3" />
-      </button>
-      {show && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-8 bg-black/40 backdrop-blur-sm animate-fade-in"
-          onClick={() => setShow(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl overflow-hidden animate-scale-in max-w-[800px] w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-gray-900 to-gray-800">
-              <div>
-                <h3 className="text-sm font-bold text-white">Size Guide</h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  {matchCode ? `Current: ${gender}` : 'No gender code set'}
-                </p>
-              </div>
-              <button onClick={() => setShow(false)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
-                <X className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="text-xs w-full border-collapse">
-                <thead className="sticky top-0">
-                  <tr className="bg-gray-50">
-                    <th className="px-4 py-2.5 text-left font-semibold whitespace-nowrap text-gray-600 border-b border-gray-200">Gender</th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-gray-600 border-b border-gray-200" colSpan={15}>Size Range</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZE_GUIDE.map(row => {
-                    const isMatch = matchCode && row.code === matchCode;
-                    return (
-                      <tr
-                        key={row.code}
-                        className={cn(
-                          'border-b border-gray-50 transition-colors',
-                          isMatch ? 'bg-primary-50 font-semibold' : 'hover:bg-gray-50'
-                        )}
-                      >
-                        <td className={cn('px-4 py-2 whitespace-nowrap font-medium', isMatch ? 'text-primary-700' : 'text-gray-700')}>
-                          {row.code}-{row.label}
-                          {isMatch && <span className="ml-2 text-[9px] bg-primary-100 text-primary-600 px-1.5 py-0.5 rounded-full font-bold">CURRENT</span>}
-                        </td>
-                        {row.sizes.map((s, i) => (
-                          <td key={i} className={cn('px-2 py-2 text-center whitespace-nowrap', isMatch ? 'text-primary-700' : 'text-gray-500')}>{s}</td>
-                        ))}
-                        {Array.from({ length: Math.max(0, 15 - row.sizes.length) }).map((_, i) => (
-                          <td key={`pad-${i}`} className="px-2 py-2" />
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
 }
 
 // ─── Detail Panel ──────────────────────────────────────────
