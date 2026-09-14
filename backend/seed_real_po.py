@@ -1,9 +1,19 @@
 """Seed the real PO 5252 and its components — Mimi and Charlotte's data.
 
-Written for a freshly cleared production. Everything below was captured from
-the working local copy after the files were imported and the components built
-by hand, so it carries the real dates and sample states rather than a blank
-shell.
+Written for a freshly cleared production. Every value below was checked
+against the two source files rather than against the local database, which had
+been written over by test scripts:
+
+  TP SAMPLE DATA 11.09.xlsx            the order — Mimi
+  Wales AW26 example PD sheet 2026.xlsx  the sampling — Charlotte
+
+Charlotte's sheet gives the same two samples on all four styles:
+  LAB DIPS     "24.08  High Risk Red REJ/appr 03.09"
+  STRIKE OFFS  "07.09 -AOP print 1st strike off sent to cust/ 10.09 Appr"
+
+which is a lab dip received 24 Aug, rejected, approved 3 Sep, and an AOP print
+strike off received 7 Sep and approved 10 Sep. That is all of it — there is no
+third component in either file.
 
     docker exec -it app-backend-1 python seed_real_po.py            # dry run
     docker exec -it app-backend-1 python seed_real_po.py --apply    # for real
@@ -42,15 +52,6 @@ PAYLOAD = json.loads(r'''
       "sample_type": "lab_dip",
       "colour": "HIGH RISK RED",
       "description": "Wales babywear body colour",
-      "position": null,
-      "supplier_notes": null
-    },
-    {
-      "key": 3,
-      "name": "NECK LABEL PRINT",
-      "sample_type": "strike_off",
-      "colour": "WHITE",
-      "description": "second strike off, deliberately outstanding",
       "position": null,
       "supplier_notes": null
     }
@@ -111,12 +112,6 @@ PAYLOAD = json.loads(r'''
           "lab_dip_received": "2026-08-24T00:00:00",
           "lab_dip_approved": "2026-09-03T00:00:00",
           "_canonical": 1
-        },
-        {
-          "name": "NECK LABEL PRINT",
-          "sample_type": "strike_off",
-          "strike_off_status": "OUTSTANDING",
-          "_canonical": 3
         }
       ]
     },
