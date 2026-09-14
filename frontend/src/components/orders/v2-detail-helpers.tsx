@@ -377,8 +377,11 @@ export function SampleStatusCard({
 }: {
   label: string;
   status: string | null | undefined;
-  /** "order-level" etc — says where this sample lives, which used to be a
-   *  separate heading floating above the card. */
+  /** "order-level" etc — says where this sample lives. Leave it off when the
+   *  card already sits inside a container that states the scope: the drawer
+   *  wraps Fit and PPS in a box headed "ORDER-LEVEL · whole garment · not tied
+   *  to a component", and repeating it per card pushed the status badge onto a
+   *  second line on the longer title. */
   scope?: string;
   attempt?: React.ReactNode;
   /** Nothing recorded yet — no status, no dates. Collapses the rows behind a
@@ -400,8 +403,10 @@ export function SampleStatusCard({
 
   return (
     <div className={cn('rounded-lg border overflow-hidden bg-white', tone.edge)}>
-      <div className={cn('px-3 py-2 border-b flex items-center gap-2 flex-wrap', tone.edge, tone.head)}>
-        <span className="text-[10.5px] uppercase tracking-wider font-bold text-gray-700">{label}</span>
+      <div className={cn('px-3 py-2 border-b flex items-center gap-2', tone.edge, tone.head)}>
+        {/* No wrap — the badge belongs on the title's line. A long title
+            truncates instead of shunting the status onto a second row. */}
+        <span className="text-[10.5px] uppercase tracking-wider font-bold text-gray-700 truncate">{label}</span>
         {scope && <span className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">{scope}</span>}
         {attempt}
         <span className={cn('ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap', tone.pill)}>

@@ -1825,7 +1825,7 @@ function DetailPanel({
                   {/* Fit Sample — always at order level, regardless of components. */}
                   {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
                     <>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample · order-level</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">Fit Sample</div>
                       <SampleCard label="Fit Sample" highlight>
                         <RejectionContextBanner rejection={order.fit_sample_last_rejection} attemptNo={order.fit_sample_attempt_no} sampleAreaLabel="Fit Sample" size="sm" />
                         {hasCol('fit_sample_required') && <DetailRow label="Required" value={order.fit_sample_required} editable={canEdit('fit_sample_required')} options={FIT_REQUIRED_OPTIONS} onSave={(v) => onSave?.(order.id, 'fit_sample_required', v)} />}
@@ -1839,7 +1839,7 @@ function DetailPanel({
 
                   {(hasCol('pps_status') || hasCol('pps_received')) && (
                     <>
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS · order-level</div>
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2 mt-4">PPS</div>
                       <SampleCard label="Pre-Production Sample" highlight>
                         <RejectionContextBanner rejection={order.pps_last_rejection} attemptNo={order.pps_attempt_no} sampleAreaLabel="PPS" size="sm" />
                         {hasCol('pps_status') && <DetailRow label="Status" value={order.pps_status} editable={canEdit('pps_status')} options={SAMPLE_STATUS_OPTIONS} onSave={(v) => handleSampleStatusSave('pps_status', v)} extra={<AttemptBadge attemptNo={order.pps_attempt_no} rejectionCount={order.pps_rejection_count} size="xs" />} />}

@@ -2252,7 +2252,6 @@ function DetailBody({
               {(hasCol('fit_sample_status') || hasCol('fit_sample_received')) && (
                   <SampleStatusCard
                     label="Fit Sample"
-                    scope="order-level"
                     status={order.fit_sample_status}
                     empty={!order.fit_sample_status && !order.fit_sample_received && !order.fit_sample_approved && !order.fit_sample_required}
                   >
@@ -2268,7 +2267,6 @@ function DetailBody({
               {(hasCol('pps_status') || hasCol('pps_received')) && (
                   <SampleStatusCard
                     label="Pre-Production Sample"
-                    scope="order-level"
                     status={order.pps_status}
                     empty={!order.pps_status && !order.pps_received && !order.pps_sent_to_customer && !order.pps_approved}
                   >
