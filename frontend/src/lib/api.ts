@@ -1373,9 +1373,36 @@ export interface StuckRow {
   last_reason_notes: string | null;
 }
 
+/** A closed rejection, plus what became of the attempt that followed it. */
+export interface RejectionHistoryRow {
+  submission_id: number;
+  order_id: number;
+  po_number: string | null;
+  customer: string | null;
+  style_code: string | null;
+  description: string | null;
+  colour: string | null;
+  factory: string | null;
+  component_id: number | null;
+  component_name: string | null;
+  sample_type: SampleType;
+  attempt_no: number;
+  reason: string | null;
+  notes: string | null;
+  rejected_at: string | null;
+  rejected_by: string | null;
+  photo_url: string | null;
+  /** How the retry ended: approved, rejected again, still open, or no retry found. */
+  next_state: 'approved' | 'rejected_again' | 'open' | 'unknown';
+  days_to_next: number | null;
+}
+
 export interface ResubmissionsOverview {
   empty: boolean;
   in_rework_now: number;
+  history?: RejectionHistoryRow[];
+  history_total?: number;
+  stuck_total?: number;
   stuck: StuckRow[];
   by_factory: Array<{ factory: string; submissions: number; rejections: number; ftr_pct: number }>;
   by_type: Array<{ sample_type: SampleType; submissions: number; rejections: number; ftr_pct: number }>;

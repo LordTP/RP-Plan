@@ -217,6 +217,11 @@ class ComponentResponse(BaseModel):
     # Resubmission metadata — current attempt number and prior rejection count
     # per sample area. Default to 1/0 when no submissions exist (i.e. component
     # has never been rejected, implicit v1).
+    # How many styles carry this same component, this one included. Set by the
+    # order-components endpoint from a grouped count on canonical_id; the card
+    # uses it to say an edit here can reach other styles before you make one.
+    shared_style_count: Optional[int] = 1
+
     fit_sample_attempt_no: Optional[int] = 1
     fit_sample_rejection_count: Optional[int] = 0
     strike_off_attempt_no: Optional[int] = 1
@@ -260,6 +265,11 @@ class PurchaseOrderResponse(PurchaseOrderBase):
     # the max attempt across that order's components for that sample type;
     # for orders WITHOUT components it reflects the order-level submission.
     # PPS is always order-level. Defaults to v1 / 0 when no rejection has happened.
+    # How many styles carry this same component, this one included. Set by the
+    # order-components endpoint from a grouped count on canonical_id; the card
+    # uses it to say an edit here can reach other styles before you make one.
+    shared_style_count: Optional[int] = 1
+
     fit_sample_attempt_no: Optional[int] = 1
     fit_sample_rejection_count: Optional[int] = 0
     strike_off_attempt_no: Optional[int] = 1

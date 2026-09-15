@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRight, Check, RotateCcw, ExternalLink, AlertTriangle, Inbox } from 'lucide-react';
+import { ChevronRight, Check, RotateCcw, ExternalLink, AlertTriangle, Inbox, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { StuckRow, SampleType } from '@/lib/api';
+import type { StuckRow, SampleType, RejectionHistoryRow } from '@/lib/api';
 
 /**
  * Open rework, grouped by the decision that caused it.

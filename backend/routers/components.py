@@ -282,10 +282,29 @@ async def get_order_components(
     component_ids = [c.id for c in components]
     summary = _attempt_summary_for_components(db, component_ids)
     last_rejections = _last_rejection_by_key(db, [order_id], component_ids)
+
+    # How many styles carry each of these components.
+    #
+    # Editing a component in the style drawer can apply to this style alone or
+    # to every style sharing it, but the card gave no clue there were others —
+    # you only discovered a component was on six styles after changing it and
+    # reading the apply menu. One grouped query, so the count is there before
+    # the decision rather than after.
+    canonical_ids = [c.canonical_id for c in components if c.canonical_id]
+    shared_counts = {}
+    if canonical_ids:
+        for canon_id, n in db.query(
+            OrderComponent.canonical_id, func.count(OrderComponent.id)
+        ).filter(OrderComponent.canonical_id.in_(canonical_ids)
+        ).group_by(OrderComponent.canonical_id).all():
+            shared_counts[canon_id] = n
+
     result = []
     for c in components:
         d = ComponentResponse.model_validate(c).model_dump()
         _decorate_component_attempts(d, summary, last_rejections)
+        # 1 when nothing else shares it, so the UI can just compare against 1.
+        d['shared_style_count'] = shared_counts.get(c.canonical_id, 1) if c.canonical_id else 1
         result.append(d)
     return result
 
@@ -948,6 +967,14 @@ async def list_component_library(
                 (PurchaseOrder.style_code.ilike(like))
                 | (PurchaseOrder.po_number.ilike(like))
                 | (PurchaseOrder.customer_style_code.ilike(like))
+                # Customer, factory and description were missing, so typing a
+                # customer name narrowed the rail to nothing — while the
+                # family endpoint below happily searched customer, and the
+                # panel shows it on every row. The two have to agree or the
+                # rail filters out the match before the panel can find it.
+                | (PurchaseOrder.customer.ilike(like))
+                | (PurchaseOrder.factory.ilike(like))
+                | (PurchaseOrder.description.ilike(like))
             )
             .distinct()
             .subquery()

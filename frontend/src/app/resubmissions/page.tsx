@@ -10,6 +10,7 @@ import { submissionsApi, type ResubmissionsOverview, type SampleType, type Stuck
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { ScopeActionModal } from '@/components/samples/ScopeActionModal';
 import { ReworkDecisions } from '@/features/ReworkDecisions';
+import { RejectionHistory } from '@/features/RejectionHistory';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 
@@ -224,6 +225,9 @@ function PopulatedDashboard({
           onRejectAgain={onRejectAgain}
         />
       </section>
+
+      {/* What has already been rejected and how it turned out. */}
+      <RejectionHistory rows={data.history || []} total={data.history_total} />
 
       {/* Breakdown row */}
       <div className="grid grid-cols-2 gap-4">

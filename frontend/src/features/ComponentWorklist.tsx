@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { relativeTimeShort } from '@/lib/sampleStatus';
 import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { BulkEditModal, type BulkEditInstance } from '@/components/orders/BulkEditModal';
-import { StatusTile, TogglePill, Segmented, SortableTh, StatusBar, BulkBar, bulkActionPrimary } from '@/components/orders/v2-list-primitives';
+import { StatusTile, TogglePill, Segmented, SortableTh, BulkBar, bulkActionPrimary } from '@/components/orders/v2-list-primitives';
 import {
   type Instance, type TypeFilter,
   activeSampleFor, attemptFor, isNeedsAttention, isInFlight, isStale, isExFacUrgent, ageDays,
@@ -282,6 +282,8 @@ export function ComponentWorklist({
     po_number: i.order.po_number,
     customer: i.order.customer,
     approved: activeSampleFor(i.component).approved as string | null | undefined,
+    received: activeSampleFor(i.component).received as string | null | undefined,
+    status: activeSampleFor(i.component).status,
   }));
 
   return (
@@ -434,23 +436,6 @@ export function ComponentWorklist({
       </div>
       )}
 
-      {/* The footer counts rows and explains how to click them, so with no rows
-          it is a caption for nothing: "0 components · 0 samples · Click a row
-          to expand". Dropped when the list is empty. */}
-      {matching.length > 0 && (
-      <div className={cn(layout === 'cards' ? 'mt-0' : '-mt-3')}>
-        <StatusBar
-          segments={[
-            grouped
-              ? `${groups.length} component${groups.length === 1 ? '' : 's'} · ${matching.length} sample${matching.length === 1 ? '' : 's'}`
-              : `${matching.length} of ${counts.all} in flight`,
-            counts.attention > 0 ? `${counts.attention} need attention` : null,
-            selected.size > 0 ? `${selected.size} selected` : null,
-          ]}
-          hint={grouped ? 'Click a row to expand · click a style to edit' : 'Click a row to edit'}
-        />
-      </div>
-      )}
 
       {!isSupplier && onAddForOrders && (
         <NoComponentsPanel

@@ -169,6 +169,10 @@ export type ComponentSampleType = 'strike_off' | 'lab_dip' | 'label';
 export interface OrderComponent {
   id: number;
   order_id: number;
+  /** How many styles carry this same component (this one included).
+   *  >1 means an edit here can reach other styles — the card says so, and
+   *  the apply menu offers the scope. 1 when it is unique to this style. */
+  shared_style_count?: number;
   /** FK to the canonical library entry. Populated for every instance
    *  created via the library-first Add modal + auto-migrated legacy rows. */
   canonical_id?: number | null;

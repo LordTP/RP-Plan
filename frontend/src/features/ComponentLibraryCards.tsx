@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Library, AlertTriangle, Check, Paperclip } from 'lucide-react';
+import { Loader2, Search, Library, AlertTriangle, Check, Paperclip, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { componentsApi, type CanonicalComponent, type ComponentFamily, type FamilyEntry, type FamilyInstance } from '@/lib/api';
@@ -82,6 +82,26 @@ interface Props {
   reloadKey: number;
   openCanonicalId: number | null;
   onOpenEntry: (canonicalId: number) => void;
+}
+
+const fmtShort = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+
+/** How many styles to show per PO before collapsing behind a count. */
+const ROWS_PER_PO = 6;
+
+/** Unfinished first. The point of expanding is to find what still needs
+ *  chasing, so approved rows sinking to the bottom is the whole idea. */
+const CHASE_RANK: Record<string, number> = {
+  REJECTED: 0, LATE: 1, 'P23 ADVISE UPDATE': 2, OUTSTANDING: 3, '': 3, RECEIVED: 4,
+  APPROVED: 9, 'NOT REQUIRED': 9,
+};
+function sortForChasing<T extends { status: string | null }>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const ra = CHASE_RANK[(a.status || '').trim().toUpperCase()] ?? 5;
+    const rb = CHASE_RANK[(b.status || '').trim().toUpperCase()] ?? 5;
+    return ra - rb;
+  });
 }
 
 export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry }: Props) {
@@ -161,7 +181,7 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, colour, PO, style code…"
+            placeholder="Search name, colour, PO, customer, factory, style or product…"
             className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
@@ -327,9 +347,47 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [entry.instances]);
 
-  const uniform = useMemo(() => {
-    const s = new Set(entry.instances.map((i) => (i.status || '').trim().toUpperCase()));
-    return s.size === 1 ? Array.from(s)[0] : null;
+  /** Where this entry's styles actually are, and when they last moved.
+   *
+   *  The row used to collapse this to "all <status>" behind a green tick,
+   *  which read as success whatever the status was — "all outstanding" got the
+   *  same approving check as "all approved", when it means the exact opposite:
+   *  nothing has come back. It also carried no dates at all, so a sample
+   *  waiting three weeks looked identical to one requested this morning.
+   */
+  // Which POs inside this entry have had their full style list opened.
+  const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
+  const togglePO = (po: string) => setExpandedPOs((prev) => {
+    const next = new Set(prev);
+    next.has(po) ? next.delete(po) : next.add(po);
+    return next;
+  });
+
+  const roll = useMemo(() => {
+    let approved = 0, received = 0, outstanding = 0, other = 0;
+    let lastApproved: string | null = null;
+    let oldestOpen: string | null = null;
+    for (const i of entry.instances) {
+      const st = (i.status || '').trim().toUpperCase();
+      if (st === 'APPROVED') {
+        approved++;
+        if (i.approved && (!lastApproved || i.approved > lastApproved)) lastApproved = i.approved;
+      } else if (st === 'RECEIVED') {
+        received++;
+        if (i.received && (!oldestOpen || i.received < oldestOpen)) oldestOpen = i.received;
+      } else if (st === 'OUTSTANDING' || !st) {
+        outstanding++;
+      } else {
+        other++;
+      }
+    }
+    const total = entry.instances.length || 1;
+    return {
+      approved, received, outstanding, other, total, lastApproved, oldestOpen,
+      pct: (n: number) => `${Math.round((n / total) * 100)}%`,
+      done: approved === total,
+      noneBack: outstanding === total,
+    };
   }, [entry.instances]);
 
   return (
@@ -363,7 +421,9 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
         {entry.po_numbers.length > 0 && (
           <span className="flex items-center gap-1 flex-wrap min-w-0">
             {entry.po_numbers.slice(0, 4).map((po) => (
-              <span key={po} className="font-mono text-[10px] font-semibold text-gray-600 bg-white border border-gray-200 rounded px-1.5 py-0.5">
+              // The PO is what people scan this list for, so it is the
+              // biggest thing on the row after the colour, not a footnote.
+              <span key={po} className="font-mono text-[12px] font-bold text-gray-800 bg-white border border-gray-300 rounded px-2 py-0.5 tabular-nums">
                 {po}
               </span>
             ))}
@@ -376,17 +436,56 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
           <span className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-bold text-white bg-amber-600 rounded-full px-2 py-0.5">
             <AlertTriangle className="w-2.5 h-2.5" /> styles out of step
           </span>
-        ) : uniform !== null && (
-          <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
-            <Check className="w-3 h-3" strokeWidth={3} />
-            {uniform ? `all ${uniform.toLowerCase()}` : 'not started'}
+        ) : (
+          <span className="ml-auto flex items-center gap-2 flex-shrink-0">
+            {/* When it last moved. A row with no date reads the same at three
+                weeks as at three hours. */}
+            {roll.done && roll.lastApproved && (
+              <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                signed off {fmtShort(roll.lastApproved)}
+              </span>
+            )}
+            {!roll.done && roll.received > 0 && roll.oldestOpen && (
+              <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                in since {fmtShort(roll.oldestOpen)}
+              </span>
+            )}
+            {roll.done ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                <Check className="w-3 h-3" strokeWidth={3} /> All approved
+              </span>
+            ) : roll.noneBack ? (
+              // Deliberately not a tick. Nothing has come back.
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700">
+                <Clock className="w-3 h-3" /> None back yet
+              </span>
+            ) : (
+              <span className="text-[10px] font-semibold text-gray-600 tabular-nums whitespace-nowrap">
+                {roll.approved} of {roll.total} approved
+              </span>
+            )}
           </span>
         )}
       </div>
 
-      {/* Only an entry that disagrees with itself is worth expanding — the
-          rest are a single reassuring line. */}
-      {entry.out_of_step && byPo.map(([po, list]) => {
+      {/* One glance at where the styles sit. Reading a stack of these is how
+          you find the entry that has stalled. */}
+      {!entry.out_of_step && (
+        <div className="flex h-1 bg-gray-100" title={
+          `${roll.approved} approved · ${roll.received} received · ${roll.outstanding} outstanding`
+        }>
+          {roll.approved > 0 && <div className="bg-emerald-500" style={{ width: roll.pct(roll.approved) }} />}
+          {roll.received > 0 && <div className="bg-blue-400" style={{ width: roll.pct(roll.received) }} />}
+          {roll.outstanding > 0 && <div className="bg-amber-300" style={{ width: roll.pct(roll.outstanding) }} />}
+          {roll.other > 0 && <div className="bg-gray-300" style={{ width: roll.pct(roll.other) }} />}
+        </div>
+      )}
+
+      {/* Anything unfinished breaks out per PO, because "12 of 34 approved"
+          only tells you there is work left — it does not tell you WHICH
+          styles, which is what you came to find out. A fully approved entry
+          stays a single reassuring line; there is nothing to chase on it. */}
+      {(entry.out_of_step || !roll.done) && byPo.map(([po, list]) => {
         const statuses = new Set(list.map((i) => (i.status || '').trim().toUpperCase()));
         const poMixed = statuses.size > 1;
         return (
@@ -395,18 +494,36 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
               <span className="font-mono font-bold text-gray-700">PO {po}</span>
               <span className="text-gray-500 truncate">{list[0]?.customer || ''} · {list.length} {list.length === 1 ? 'style' : 'styles'}</span>
             </div>
-            {list.map((i) => {
+            {/* An add-event can span 34 styles. Showing every one turns the
+                library into a wall, so lead with the ones still needing work
+                and keep the finished ones behind a count. */}
+            {sortForChasing(list).slice(0, expandedPOs.has(po) ? undefined : ROWS_PER_PO).map((i) => {
               const pill = statusPillStyle(i.status);
+              const when = i.approved || i.received;
               return (
-                <div key={i.instance_id} className="grid grid-cols-[150px_1fr_auto] gap-2 items-center px-3 py-1 pl-7 text-[11.5px] border-t border-gray-50">
+                <div key={i.instance_id} className="grid grid-cols-[150px_1fr_auto_auto] gap-2 items-center px-3 py-1 pl-7 text-[11.5px] border-t border-gray-50">
                   <span className="font-mono tabular-nums text-gray-700 truncate">{i.style_code || `#${i.order_id}`}</span>
                   <span className="text-gray-500 truncate">{i.description || '—'}</span>
+                  <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
+                    {when ? fmtShort(when) : ''}
+                  </span>
                   <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
                     {pill.label}
                   </span>
                 </div>
               );
             })}
+            {list.length > ROWS_PER_PO && (
+              <button
+                onClick={(e) => { e.stopPropagation(); togglePO(po); }}
+                className="w-full px-3 py-1 pl-7 text-left text-[10.5px] font-medium text-gray-500
+                           hover:text-gray-900 hover:bg-gray-50 border-t border-gray-50"
+              >
+                {expandedPOs.has(po)
+                  ? 'Show fewer'
+                  : `Show all ${list.length} styles on ${po}`}
+              </button>
+            )}
           </div>
         );
       })}

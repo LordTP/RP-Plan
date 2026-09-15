@@ -842,10 +842,92 @@ async def resubmissions_overview(
         })
     by_type.sort(key=lambda x: x['ftr_pct'])
 
+    # ---- History: rejections that have been closed out ------------------
+    #
+    # The page could only show what is open, so the moment a rework resolved
+    # it vanished and there was no way to look back at what had been rejected,
+    # why, or whether the retry worked. Every closed attempt is here, newest
+    # first, each carrying what happened NEXT — that is the part worth
+    # reading, and it is the bit no single row knows on its own.
+    HISTORY_LIMIT = 300
+    rejected_rows = db.query(SampleSubmission).filter(
+        SampleSubmission.outcome == 'REJECTED',
+    ).order_by(SampleSubmission.resolved_at.desc().nullslast()).limit(HISTORY_LIMIT).all()
+
+    # One query for every attempt on the tuples we are about to report, rather
+    # than a follow-up query per row.
+    # Who actioned each rejection, resolved once rather than per row.
+    actor_ids = {r.actioned_by_id for r in rejected_rows if r.actioned_by_id}
+    actors = {}
+    if actor_ids:
+        for u in db.query(User).filter(User.id.in_(actor_ids)).all():
+            actors[u.id] = u.full_name or u.username
+
+    tuples = {(r.order_id, r.component_id, r.sample_type) for r in rejected_rows}
+    siblings: dict = {}
+    if tuples:
+        order_ids = {t[0] for t in tuples}
+        for sib in db.query(SampleSubmission).filter(
+                SampleSubmission.order_id.in_(order_ids)).all():
+            siblings.setdefault((sib.order_id, sib.component_id, sib.sample_type), []).append(sib)
+
+    history = []
+    for r in rejected_rows:
+        order = db.query(PurchaseOrder).filter(PurchaseOrder.id == r.order_id).first()
+        comp = (db.query(OrderComponent).filter(OrderComponent.id == r.component_id).first()
+                if r.component_id else None)
+
+        # What became of the attempt that followed this rejection.
+        nxt = None
+        for sib in siblings.get((r.order_id, r.component_id, r.sample_type), []):
+            if sib.attempt_no == r.attempt_no + 1:
+                nxt = sib
+                break
+        if nxt is None:
+            next_state = 'unknown'
+            resolved_days = None
+        elif nxt.outcome == 'APPROVED':
+            next_state = 'approved'
+            resolved_days = ((nxt.resolved_at - r.resolved_at).days
+                             if nxt.resolved_at and r.resolved_at else None)
+        elif nxt.outcome == 'REJECTED':
+            next_state = 'rejected_again'
+            resolved_days = ((nxt.resolved_at - r.resolved_at).days
+                             if nxt.resolved_at and r.resolved_at else None)
+        else:
+            next_state = 'open'
+            resolved_days = ((datetime.utcnow() - r.resolved_at).days
+                             if r.resolved_at else None)
+
+        history.append({
+            "submission_id": r.id,
+            "order_id": r.order_id,
+            "po_number": order.po_number if order else None,
+            "customer": order.customer if order else None,
+            "style_code": order.style_code if order else None,
+            "description": order.description if order else None,
+            "colour": order.colour if order else None,
+            "factory": order.factory if order else None,
+            "component_id": r.component_id,
+            "component_name": comp.name if comp else None,
+            "sample_type": r.sample_type,
+            "attempt_no": r.attempt_no,
+            "reason": r.reason,
+            "notes": r.notes,
+            "rejected_at": r.resolved_at.isoformat() if r.resolved_at else None,
+            "rejected_by": actors.get(r.actioned_by_id),
+            "photo_url": r.photo_url,
+            "next_state": next_state,
+            "days_to_next": resolved_days,
+        })
+
     return {
         "empty": False,
         "in_rework_now": in_rework,
         "stuck": stuck,
+        "history": history,
+        "history_total": db.query(func.count(SampleSubmission.id)).filter(
+            SampleSubmission.outcome == 'REJECTED').scalar() or 0,
         # True number in rework, so the UI can say "showing N of M" rather
         # than presenting a truncated list as if it were everything.
         "stuck_total": in_rework,

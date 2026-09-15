@@ -2174,7 +2174,22 @@ export function ComponentsSection({
                   <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 transition-transform ml-auto', open && 'rotate-90')} />
                 </div>
 
-                <div className="text-[13.5px] font-bold text-gray-900 truncate mt-1.5">{comp.name}</div>
+                <div className="flex items-baseline gap-1.5 mt-1.5 min-w-0">
+                  <span className="text-[13.5px] font-bold text-gray-900 truncate">{comp.name}</span>
+                  {/* Says up front that this component is not unique to this
+                      style, so the reach of an edit is visible before making
+                      one rather than only in the apply menu afterwards. */}
+                  {(comp.shared_style_count ?? 1) > 1 && (
+                    <span
+                      title={`This component is on ${comp.shared_style_count} styles. Editing it here can apply to one, some or all of them.`}
+                      className="flex-shrink-0 inline-flex items-center gap-0.5 text-[9.5px] font-semibold
+                                 px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 ring-1 ring-violet-100"
+                    >
+                      <Layers className="w-2.5 h-2.5" />
+                      {comp.shared_style_count} styles
+                    </span>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2 mt-2">
                   <span className={cn(

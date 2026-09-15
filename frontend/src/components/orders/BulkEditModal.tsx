@@ -16,6 +16,11 @@ export interface BulkEditInstance {
   po_number?: string | null;
   customer?: string | null;
   approved?: string | Date | null;
+  /** Current state, so the modal can say where these instances are before
+   *  you change them and how many the edit will actually move. Optional so a
+   *  caller without it still works — the summary simply hides. */
+  status?: string | null;
+  received?: string | Date | null;
 }
 
 interface Props {
@@ -23,6 +28,20 @@ interface Props {
   canonicalName: string;
   onClose: () => void;
   onDone: () => void;
+}
+
+/** Chip colour per sample status — same semantics as everywhere else:
+ *  approved is settled, received is with us, outstanding is with them. */
+function statusPill(status: string): string {
+  switch (status.toUpperCase()) {
+    case 'APPROVED': return 'bg-emerald-100 text-emerald-700';
+    case 'RECEIVED': return 'bg-blue-100 text-blue-700';
+    case 'REJECTED': return 'bg-red-100 text-red-700';
+    case 'LATE':
+    case 'P23 ADVISE UPDATE': return 'bg-orange-100 text-orange-700';
+    case 'NOT REQUIRED': return 'bg-gray-100 text-gray-500';
+    default: return 'bg-amber-100 text-amber-700';
+  }
 }
 
 export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Props) {
@@ -47,6 +66,25 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
       .then((r) => setRejectReasons(r.reasons))
       .catch(() => { /* form validation will still block submit */ });
   }, [isRejecting, rejectReasons.length]);
+
+  /** Where the ticked instances are right now, and how many this edit
+   *  actually moves.
+   *
+   *  The modal used to say "Update 34 instances" with no indication of what
+   *  those 34 currently were — setting APPROVED on a batch that was already
+   *  approved looked identical to signing off 34 outstanding samples. */
+  const state = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const i of instances) {
+      const st = (i.status || '').trim().toUpperCase() || 'OUTSTANDING';
+      counts[st] = (counts[st] || 0) + 1;
+    }
+    const known = instances.some((i) => i.status);
+    const alreadyAtTarget = statusOn
+      ? instances.filter((i) => (i.status || '').trim().toUpperCase() === statusVal).length
+      : 0;
+    return { counts, known, alreadyAtTarget, total: instances.length };
+  }, [instances, statusOn, statusVal]);
 
   const overwriteWarning = useMemo(() => {
     if (!approvedOn || isRejecting) return null;
@@ -107,30 +145,62 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
     // Backdrop is click-inert on purpose — bulk edits + rejections shouldn't
     // vanish if the user accidentally clicks outside the card. Use the X or
     // Cancel to close.
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40">
-      <div className="w-full max-w-lg bg-white rounded-lg shadow-xl">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">
-              Bulk edit — {instances.length} instance{instances.length === 1 ? '' : 's'}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-6">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden">
+        <div className="px-5 pt-4 pb-3 flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[15px] font-bold text-gray-900 leading-tight">
+              {isRejecting ? 'Reject' : 'Bulk edit'}{' '}
+              <span className="text-gray-400 font-semibold">
+                · {instances.length} {instances.length === 1 ? 'style' : 'styles'}
+              </span>
             </h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">{canonicalName}</p>
+            <p className="text-[12px] text-gray-600 mt-0.5 font-semibold truncate">{canonicalName}</p>
             {poSummary && (
-              <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-md">{poSummary}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5 truncate">{poSummary}</p>
             )}
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1">
+          <button onClick={onClose}
+                  className="p-1.5 -mr-1 -mt-0.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100
+                             rounded-lg transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-6 space-y-3">
+
+        {/* Where these styles are before anything changes. Without it, setting
+            APPROVED across a batch that is already approved looked exactly
+            like signing off a batch that was not. */}
+        {state.known && (
+          <div className="px-5 pb-3">
+            <div className="rounded-lg bg-gray-50 ring-1 ring-gray-200 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                Where they are now
+              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {Object.entries(state.counts)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([st, n]) => {
+                    const p = statusPill(st);
+                    return (
+                      <span key={st}
+                            className={cn('inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full', p)}>
+                        {n} {st.toLowerCase()}
+                      </span>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="px-5 pb-4 space-y-2.5 border-t border-gray-100 pt-4">
           <BulkField
             on={statusOn}
             onToggle={() => setStatusOn((v) => !v)}
             label="Status"
             hint={isRejecting
-              ? 'Closes current attempt on every ticked instance, opens v+1 outstanding'
-              : 'Set on every ticked instance'}
+              ? 'Closes the current attempt and opens the next one, outstanding'
+              : 'Set on every style you ticked'}
           >
             <select
               value={statusVal}
@@ -188,7 +258,7 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
                 on={approvedOn}
                 onToggle={() => setApprovedOn((v) => !v)}
                 label="Approved date"
-                hint="Applies where blank; overrides where set"
+                hint="Replaces any date already set"
               >
                 <input
                   type="date"
@@ -202,7 +272,7 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
                 on={receivedOn}
                 onToggle={() => setReceivedOn((v) => !v)}
                 label="Received date"
-                hint="Applies where blank; overrides where set"
+                hint="Replaces any date already set"
               >
                 <input
                   type="date"
@@ -222,10 +292,24 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
             </div>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 flex items-center gap-3">
+          {/* What this actually does, before you do it. */}
+          <p className="text-[11.5px] text-gray-500 min-w-0 flex-1">
+            {isRejecting ? (
+              <>Opens a new attempt on all <b className="text-gray-700">{instances.length}</b></>
+            ) : statusOn && state.known && state.alreadyAtTarget > 0 ? (
+              <>
+                <b className="text-gray-700">{instances.length - state.alreadyAtTarget}</b> will change
+                {' · '}
+                <span className="text-gray-400">{state.alreadyAtTarget} already {statusVal.toLowerCase()}</span>
+              </>
+            ) : (
+              <>Applies to all <b className="text-gray-700">{instances.length}</b></>
+            )}
+          </p>
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded"
+            className="px-3.5 py-2 text-[13px] font-medium text-gray-600 hover:text-gray-900 flex-shrink-0"
           >
             Cancel
           </button>
@@ -233,8 +317,8 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
             onClick={save}
             disabled={!canSubmit}
             className={cn(
-              'px-4 py-2 text-sm font-semibold text-white rounded disabled:opacity-50 flex items-center gap-1.5',
-              isRejecting ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700',
+              'px-4 py-2 text-[13px] font-semibold text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5 flex-shrink-0',
+              isRejecting ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700',
             )}
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
