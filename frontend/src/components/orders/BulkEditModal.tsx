@@ -79,11 +79,15 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
       const st = (i.status || '').trim().toUpperCase() || 'OUTSTANDING';
       counts[st] = (counts[st] || 0) + 1;
     }
-    const known = instances.some((i) => i.status);
+    // A null status is not "unknown" — everywhere else in the app an empty
+    // sample status reads as OUTSTANDING (activeSampleFor, the worklist's
+    // in-flight test, the library rollup all do this). Gating the summary on
+    // a non-null status meant a batch nobody had touched yet, which is the
+    // most common thing you bulk edit, showed no summary at all.
     const alreadyAtTarget = statusOn
       ? instances.filter((i) => (i.status || '').trim().toUpperCase() === statusVal).length
       : 0;
-    return { counts, known, alreadyAtTarget, total: instances.length };
+    return { counts, alreadyAtTarget, total: instances.length };
   }, [instances, statusOn, statusVal]);
 
   const overwriteWarning = useMemo(() => {
@@ -170,7 +174,7 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
         {/* Where these styles are before anything changes. Without it, setting
             APPROVED across a batch that is already approved looked exactly
             like signing off a batch that was not. */}
-        {state.known && (
+        {instances.length > 0 && (
           <div className="px-5 pb-3">
             <div className="rounded-lg bg-gray-50 ring-1 ring-gray-200 px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
@@ -297,7 +301,7 @@ export function BulkEditModal({ instances, canonicalName, onClose, onDone }: Pro
           <p className="text-[11.5px] text-gray-500 min-w-0 flex-1">
             {isRejecting ? (
               <>Opens a new attempt on all <b className="text-gray-700">{instances.length}</b></>
-            ) : statusOn && state.known && state.alreadyAtTarget > 0 ? (
+            ) : statusOn && state.alreadyAtTarget > 0 ? (
               <>
                 <b className="text-gray-700">{instances.length - state.alreadyAtTarget}</b> will change
                 {' · '}
