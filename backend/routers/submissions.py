@@ -758,11 +758,19 @@ async def resubmissions_overview(
         SampleSubmission.attempt_no >= 2,
     ).scalar() or 0
 
-    # Stuck list — open rows sorted by days-open desc, top 20
+    # Stuck list — open rows, oldest first.
+    #
+    # This was capped at 20 while the count above reported the true total, so
+    # the page said "20 open" beside a tile saying 42 in rework and gave no
+    # sign that 22 were missing. A rejection scoped to a whole PO creates one
+    # row per style, so 20 is a single decision on a mid-sized PO — the cap
+    # was hiding entire POs, not long tails. The list is grouped by decision
+    # in the UI, so the row count is no longer what the reader scrolls.
+    STUCK_LIMIT = 500
     open_rows = db.query(SampleSubmission).filter(
         SampleSubmission.outcome.is_(None),
         SampleSubmission.attempt_no >= 2,
-    ).order_by(SampleSubmission.requested_at.asc()).limit(20).all()
+    ).order_by(SampleSubmission.requested_at.asc()).limit(STUCK_LIMIT).all()
 
     stuck = []
     for r in open_rows:
@@ -838,6 +846,10 @@ async def resubmissions_overview(
         "empty": False,
         "in_rework_now": in_rework,
         "stuck": stuck,
+        # True number in rework, so the UI can say "showing N of M" rather
+        # than presenting a truncated list as if it were everything.
+        "stuck_total": in_rework,
+        "stuck_truncated": in_rework > len(stuck),
         "by_factory": by_factory,
         "by_type": by_type,
     }
