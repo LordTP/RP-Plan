@@ -117,11 +117,12 @@ function FactoryGuideContent() {
               <ExpandedPOMock />
             </MockShot>
             <p>
-              The panel is where you will spend most of your time. Four KPI tiles across the top, then
-              a <strong>Jump to</strong> bar — Product, Sampling, Shipping, Timeline — so you can get
-              straight to the part you need on a long style.
+              The panel is where you will spend most of your time. Across the top are a few summary
+              tiles — quantity, ex-factory, ETA and how many samples are signed off. Below that the
+              panel splits in two: <strong>Sampling</strong> on the left, which is the work, and{' '}
+              <strong>Order</strong> and <strong>Journey</strong> on the right, which is the reference.
             </p>
-            <MockShot caption="Click a style and its detail panel slides in — KPI tiles, Jump to, then each section">
+            <MockShot caption="Click a style and its detail panel slides in — summary tiles, then Sampling on the left with Order and Journey on the right">
               <StyleDetailMock />
             </MockShot>
             <Table>
@@ -129,7 +130,8 @@ function FactoryGuideContent() {
               <TableRow label="Ex-Factory" value="The current target date, with how far away it is underneath. If a revised date has been approved, that is the one showing." />
               <TableRow label="ETA Customer" value="When the goods are expected with the customer. Source Lab maintains this." />
               <TableRow label="Sampling" value="How many samples are signed off out of how many are needed, e.g. '0 of 2', with what is still outstanding named underneath." />
-              <TableRow label="Product" value="Description, customer, order reference, colour, gender, season, direct/repeat/new. A small pencil marks the fields you are allowed to edit." />
+              <TableRow label="Order" value="Description, customer, order reference, colour, gender, season, direct/repeat/new. All read-only for you — Source Lab maintains these." />
+              <TableRow label="Journey" value="Every date on the style in order, from Sent to Factory through to delivery. A green dot means done, an amber dot is where the order is now, and an empty circle has not happened yet." />
               <TableRow label="Sampling section" value="Every component on the style as a card — Strike Off, Lab Dip or Label badge, its status, and when it was approved. Click a card to open it." />
               <TableRow label="Comments" value="Top right of the panel. Mention someone with @ and they get an email." />
               <TableRow label="Date change" value="The amber calendar icon on a style row in the list. Click it to request a change to the Revised Ex-Factory date (see step 4)." />
@@ -140,19 +142,43 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          <Step number="3" title="Tracking your date-change requests">
+          <Step number="3" title="What you can and cannot change">
             <p>
-              Every time you submit a date change, it appears in the <strong>tracker bar at the top of the page</strong>. Three columns: <strong>Pending approval</strong> (waiting for Source Lab), <strong>Approved</strong> (live), and <strong>Rejected</strong> (with the reason explained).
+              Most of what you see is read-only. Source Lab keeps the order details, and the sample
+              statuses and dates are theirs to set — that is how a sign-off stays a sign-off. There is
+              one field you can change, and one thing you can build.
             </p>
-            <MockShot caption="Tracker bar — see at a glance what's waiting, what's live, what's been rejected">
-              <TrackerMock />
-            </MockShot>
-            <Tips>
-              <Tip icon={Clock}>A pending request shows the current date → proposed date so you can see what you've asked for.</Tip>
-              <Tip icon={X}>Cancel a pending request with the small × in the top-right of the card if you submitted it by mistake or things changed.</Tip>
-              <Tip icon={CheckCircle}>When Source Lab approves, the new date goes live on the order. Until then, the original date is still what we're tracking against.</Tip>
-              <Tip icon={XCircle}>If a request is rejected, the rejection reason shows on the card so you know why and what to try next.</Tip>
-            </Tips>
+            <Table>
+              <TableRow
+                label="Revised Ex-Factory"
+                value="The only date on a style you can change, and it goes to Source Lab as a request rather than saving straight away. See step 4."
+              />
+              <TableRow
+                label="Shipment details"
+                value="FCL/LCL, vessel name, ETD, ETA to port and the tracking reference. You set these on the Shipping page when you raise a shipment, not here — see the Shipping section."
+              />
+              <TableRow
+                label="Components"
+                value="You can add components to your styles and edit what they are. Whether a sample is received or approved stays with Source Lab."
+              />
+              <TableRow
+                label="Everything else"
+                value="Read-only. Colour, description, quantities, sizes, every sample status and date, and all the other dates on the Journey."
+              />
+            </Table>
+            <Callout type="warn" title="If nothing is clickable yet, this is why">
+              A style can only be edited once Source Lab has recorded all three of{' '}
+              <strong>Sent to Factory</strong>, <strong>Tech Packs Sent</strong> and{' '}
+              <strong>Specs Sent</strong>. Until then the whole style is locked and you will see:
+              <span className="block mt-1.5 font-mono text-[11px] bg-white/70 rounded px-2 py-1">
+                This order cannot be edited yet. Order Sent to Factory, Tech Packs, and Specs must all be sent first.
+              </span>
+              <span className="block mt-1.5">
+                You can check on the <strong>Journey</strong> panel — the first three dots tell you
+                which of the three are in. If one is missing, ask Source Lab to fill it in; there is
+                nothing you can do from your side.
+              </span>
+            </Callout>
           </Step>
 
           <Step number="4" title="Requesting a date change">
@@ -161,7 +187,7 @@ function FactoryGuideContent() {
             </p>
             <ol className="list-decimal pl-5 space-y-1.5 text-sm text-gray-700 my-3">
               <li>Expand the PO that contains the style.</li>
-              <li>Click the orange <strong>Date change</strong> button on the right of the style row.</li>
+              <li>Click the amber <strong>calendar icon</strong> on the right of the style row.</li>
               <li>A focused modal opens — pick the new date.</li>
               <li>Give a <strong>reason</strong> — required. "Fabric mill delay 1 week" is more useful than "delay".</li>
               <li>Choose the <strong>scope</strong>: just this style, all styles on this PO, or specific styles.</li>
@@ -175,7 +201,22 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          <Step number="5" title="Comments &amp; questions">
+          <Step number="5" title="Tracking your requests">
+            <p>
+              Every time you submit a date change, it appears in the <strong>tracker bar at the top of the page</strong>. Three columns: <strong>Pending approval</strong> (waiting for Source Lab), <strong>Approved</strong> (live), and <strong>Rejected</strong> (with the reason explained). The bar only appears once you have made a request — if you have never asked for one, the page starts at the search box.
+            </p>
+            <MockShot caption="Tracker bar — see at a glance what's waiting, what's live, what's been rejected">
+              <TrackerMock />
+            </MockShot>
+            <Tips>
+              <Tip icon={Clock}>A pending request shows the current date → proposed date so you can see what you've asked for.</Tip>
+              <Tip icon={X}>Cancel a pending request with the small × in the top-right of the card if you submitted it by mistake or things changed.</Tip>
+              <Tip icon={CheckCircle}>When Source Lab approves, the new date goes live on the order. Until then, the original date is still what we're tracking against.</Tip>
+              <Tip icon={XCircle}>If a request is rejected, the rejection reason shows on the card so you know why and what to try next.</Tip>
+            </Tips>
+          </Step>
+
+          <Step number="6" title="Comments &amp; questions">
             <p>
               Every order has a <strong>comments panel</strong>. Use it for anything that needs a written trail — questions, photos, confirmations.
             </p>
@@ -289,7 +330,7 @@ function FactoryGuideContent() {
           <SectionHeader
             icon={Layers}
             title="Factory · Components"
-            blurb="What components are, the two views on the /components page, how the library-first Add flow works, single-instance edits, bulk edits across POs, and when warnings fire. Same content for both Source Lab and factory users."
+            blurb="What a component is, the two views on the Components page, how adding one works, and what happens when a sample is rejected."
           />
 
           {/* Top-of-section key note — sets responsibility so everyone reads it before anything else. */}
@@ -403,7 +444,7 @@ function FactoryGuideContent() {
               />
               <TableRow
                 label="+ Create new"
-                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec URL, supplier notes) and target styles. Every field starts blank."
+                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec, supplier notes) and target styles. Every field starts blank."
               />
             </Table>
             <MockShot caption="Add Component modal — pick an existing entry as a template or start blank. Either way, a fresh library entry is created.">
@@ -443,8 +484,8 @@ function FactoryGuideContent() {
                 value="Strike Off only. Optional. Where the print / embroidery sits: CHEST POSITION – CENTRAL / LEFT AS WORN / RIGHT AS WORN, BACK, BACK NECK, HEM, LEFT SLEEVE AS WORN, RIGHT SLEEVE AS WORN."
               />
               <TableRow
-                label="Spec URL"
-                value="Optional. Link to the tech pack PDF, drawing, or wherever the sign-off spec lives."
+                label="Spec"
+                value="Optional. The spec reference off the tech pack, or a link to it if you have one."
               />
               <TableRow
                 label="Supplier notes"
@@ -464,7 +505,7 @@ function FactoryGuideContent() {
               Style picker groups by PO. Search matches PO number, style code, customer, or orderbook reference. Tick individual styles, or tick the PO row to select all its styles at once. <strong>Collapse all / Expand all</strong> in the top-right for fast scanning of a long list.
             </p>
             <Tips>
-              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to Chelsea PO 5310 and Stoke PO 5205 in one go, and both POs will show up in the same Library entry.</Tip>
+              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to TK MAXX PO 5260 and STICHD PO 5279 in one go, and both POs will show up in the same Library entry.</Tip>
               <Tip icon={Tag}>Ticking a style that already has a same-named component from a previous add-event is allowed — the new instance sits alongside the old one and belongs to a separate group. Only detach + re-add if you need them under a single group.</Tip>
             </Tips>
           </Step>
@@ -509,36 +550,11 @@ function FactoryGuideContent() {
             </Callout>
           </Step>
 
-          {/* 5. Bulk edit — Source Lab only. Documented here so factories know
-              what Source Lab is doing on their components, not as a how-to. */}
-          <Step number="5.1" title="Bulk edit across styles + POs — Source Lab only">
-            <Callout type="warn" title="You won't see this — it's here so you know what's happening">
-              Bulk edit sets sample status, received and approved dates, which are Source Lab's
-              to set. The button doesn't appear for factory logins and the endpoint refuses the
-              request. This section explains what Source Lab is doing to your components, so a
-              status changing across several styles at once isn't a surprise.
-            </Callout>
-            <p>
-              Source Lab tick the checkbox on multiple styles (or use the PO-level checkbox to grab a whole PO). A dark <strong>bar floats up at the bottom of the screen</strong> showing how many are selected, with a <strong>Bulk edit</strong> button on it — the same bar you get on the orders table. The status dropdown has the full seven options (NOT REQUIRED / OUTSTANDING / P23 ADVISE UPDATE / LATE / RECEIVED / APPROVED / REJECTED). Received + Approved dates are separate optional field overrides.
-            </p>
-            <p>
-              Picking <strong>REJECTED</strong> swaps in a red panel with the standard reason list (Colour / Placement / Stitch / Material / Spec / Print / Other) plus an optional note. Confirming closes the current attempt on each ticked instance and opens v+1 at OUTSTANDING with a fresh clock. Received / Approved dates are cleared per instance — this is a lifecycle event, not a field edit.
-            </p>
-            <MockShot caption="Bulk edit modal — set status, received date, and approved date across every ticked instance at once. Picking REJECTED reveals the reason picker inline.">
-              <BulkEditMock />
-            </MockShot>
-            <p>
-              You can set any combination of the three fields. If any of the ticked instances already have an Approved date and you're setting a new one, you'll see a warning before it overwrites.
-            </p>
-            <Callout type="info" title="Why it matters to you">
-              Source Lab can approve "CHEST PRINT — HOME KIT BLUE" across 6 styles on 3 POs in one
-              action. So several of your styles can move to APPROVED at the same moment from a
-              single decision — that's expected, not a glitch.
-            </Callout>
-            <Callout type="info" title="No accidental dismiss">
-              The bulk edit modal only closes via the X or Cancel — clicking outside the card won't drop your work. Same behaviour on the single-instance edit modal.
-            </Callout>
-          </Step>
+          <Callout type="info" title="Several of your styles can change at the same time">
+            Source Lab can approve a component across every style carrying it in one action. So if
+            six of your styles all move to APPROVED at the same moment, that is one decision being
+            applied — not a glitch, and not something you need to chase.
+          </Callout>
 
           {/* 6. Lifecycle */}
           <Step number="6.1" title="The sample lifecycle">
@@ -818,9 +834,9 @@ function POCardCollapsedMock({ po, customer, factory, styles, units, exFac, stat
    view, so the labels had been corrected on a picture of the wrong screen. */
 
 const V2_POS: { po: string; customer: string; styles: number; qty: string; exfac: string }[] = [
-  { po: 'DEMO-5301', customer: 'TRUEPATH RETAIL', styles: 4, qty: '1,254', exfac: '07 Oct 2026' },
-  { po: 'DEMO-5302', customer: 'NORTHGATE SPORT', styles: 2, qty: '380', exfac: '13 Oct 2026' },
-  { po: 'DEMO-5303', customer: 'BQ DIRECT', styles: 5, qty: '768', exfac: '19 Oct 2026' },
+  { po: '5278', customer: 'AL-HILAL', styles: 5, qty: '1,000', exfac: '09 Oct 2026' },
+  { po: '5260', customer: 'TK MAXX', styles: 6, qty: '10,512', exfac: '10 Oct 2026' },
+  { po: '5265', customer: 'SOURCE LAB', styles: 6, qty: '36', exfac: '10 Oct 2026' },
   { po: '5252', customer: 'LEVY MERCHANDISING', styles: 4, qty: '936', exfac: '30 Oct 2026' },
 ];
 
@@ -920,16 +936,30 @@ function StyleDetailMock() {
     ['ETA CUSTOMER', '\u2014', null],
     ['SAMPLING', '0 of 2', 'Fit, PPS pending'],
   ];
-  const product: [string, string, boolean?][] = [
-    ['Description', 'SS27 SHORT'],
-    ['Customer', 'TRUEPATH RETAIL'],
-    ['Colour', 'WHITE'],
-    ['Gender', '\u2014', true],
-    ['Season', 'SS27'],
+  // Right-hand column. The panel calls this ORDER, not "Product", and none
+  // of these carry a pencil for a factory — the only field a factory can
+  // touch on the whole panel is Revised Ex-Factory, and that opens a change
+  // request rather than saving.
+  const orderFacts: [string, string][] = [
+    ['Description', 'AL-HILAL SNAPBACK HAT HIGH CROWN'],
+    ['Customer', 'AL-HILAL'],
+    ['Order Reference', 'CAPS'],
+    ['Colour', 'BIRCH'],
+    ['Gender', '009'],
+    ['Season', 'AW26'],
+  ];
+  const journey: [string, string, 'done' | 'now' | 'todo'][] = [
+    ['Sent to Factory', '29/07/2026', 'done'],
+    ['Tech Packs Sent', '29/07/2026', 'done'],
+    ['Specs Sent', '31/07/2026', 'done'],
+    ['Requested Ex-Factory', '23/09/2026', 'done'],
+    ['Revised Ex-Factory', '07/10/2026', 'now'],
+    ['ETA UK', '01/12/2026', 'todo'],
+    ['ETA Customer', '06/12/2026', 'todo'],
   ];
   const comps: [string, 'strike_off' | 'lab_dip'][] = [
     ['AOP PRINT', 'strike_off'], ['AOP PRINT', 'strike_off'],
-    ['RIB FABRIC', 'strike_off'], ['HIGH RISK RED', 'lab_dip'],
+    ['RIB FABRIC', 'strike_off'], ['NINE IRON', 'lab_dip'],
   ];
   return (
     <div className="relative bg-gray-50" style={{ minHeight: 430 }}>
@@ -937,7 +967,7 @@ function StyleDetailMock() {
       <div className="absolute inset-0 p-3">
         <div className="h-6 w-56 rounded bg-white border border-gray-200 mb-2" />
         <div className="space-y-1">
-          {['DEMO-5301', 'S005010A-0121-NRO', 'S005011A-0121-NRO', 'S005012A-0121-NRO', 'DEMO-5302', 'DEMO-5303'].map((r, i) => (
+          {['5278', 'S006165A-0501-NRO', 'S006166A-0217-NRO', 'S006167A-0501-NRO', '5260', '5265'].map((r, i) => (
             <div key={r} className={cn('h-5 rounded border border-gray-100 bg-white flex items-center px-2',
               i === 1 && 'ring-1 ring-primary-200')}>
               <span className="font-mono text-[8px] text-gray-500">{r}</span>
@@ -949,11 +979,11 @@ function StyleDetailMock() {
       {/* the panel itself */}
       <div className="absolute inset-y-0 right-0 w-[78%] bg-white shadow-2xl border-l border-gray-200 overflow-hidden">
         <div className="px-3 pt-2.5 pb-2 border-b border-gray-100">
-          <p className="text-[8px] text-gray-400">DEMO-5301 · S005010A-0121-NRO · updated 6 hours ago</p>
+          <p className="text-[8px] text-gray-400">5278 · S006165A-0501-NRO · updated 6 hours ago</p>
           <div className="flex items-center gap-1.5 mt-1">
-            <p className="text-[13px] font-extrabold text-gray-900">SS27 SHORT</p>
+            <p className="text-[13px] font-extrabold text-gray-900">AL-HILAL SNAPBACK HAT</p>
             <span className="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[8px] font-semibold">Unknown</span>
-            <span className="text-[9px] text-gray-500">· WHITE</span>
+            <span className="text-[9px] text-gray-500">· BIRCH</span>
             <span className="ml-auto px-1.5 py-1 rounded-md border border-gray-200 text-[8.5px] font-semibold text-gray-600">Comments</span>
             <span className="text-[9px] text-gray-300">⌃ ⌄ ✕</span>
           </div>
@@ -970,43 +1000,65 @@ function StyleDetailMock() {
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5 px-3 py-2 border-y border-gray-100">
-          <span className="text-[7.5px] font-bold tracking-wider text-gray-400">JUMP TO</span>
-          <span className="px-2 py-0.5 rounded-full bg-primary-600 text-white text-[8.5px] font-semibold">Product</span>
-          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Sampling</span>
-          <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 pending</span>
-          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Shipping</span>
-          <span className="px-2 py-0.5 rounded-full text-gray-600 text-[8.5px]">Timeline</span>
-        </div>
-
-        <div className="px-3 py-2.5">
-          <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-primary-500 pl-1.5 mb-1.5">PRODUCT</p>
-          <div className="rounded-lg border border-gray-200 overflow-hidden mb-3">
-            {product.map(([k, v, editable]) => (
-              <div key={k} className="flex items-center px-2.5 py-1.5 border-b border-gray-50 last:border-0">
-                <span className="text-[9px] text-gray-600 flex-1">{k}{editable && <span className="text-gray-300"> ✎</span>}</span>
-                <span className="text-[9px] font-semibold text-gray-900">{v}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-amber-500 pl-1.5">SAMPLING</p>
-            <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 PENDING</span>
-            <span className="ml-1 text-[8px] text-gray-500">COMPONENTS</span>
-            <span className="px-1 rounded-full bg-gray-100 text-gray-600 text-[7px] font-bold">6</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {comps.map(([name, type], i) => (
-              <div key={i} className="rounded-lg border border-green-200 bg-white px-2.5 py-2">
-                <div className="flex items-center"><TypeBadge type={type} /><span className="ml-auto text-[9px] text-gray-300">›</span></div>
-                <p className="text-[9.5px] font-bold text-gray-900 mt-1">{name}</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="px-1 py-0.5 rounded bg-green-100 text-green-700 text-[7px] font-bold">APPROVED</span>
-                  <span className="text-[7px] text-gray-400">approved 3 Sep</span>
+        {/* Two columns: the work on the left, the facts on the right. There is
+            no jump bar — the panel dropped it when it went two-column, and
+            drawing one here sent factories looking for a control that does
+            not exist. */}
+        <div className="grid grid-cols-[1.35fr_1fr] border-t border-gray-100">
+          <div className="px-3 py-2.5 border-r border-gray-200">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-amber-500 pl-1.5">SAMPLING</p>
+              <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[7px] font-bold">2 PENDING</span>
+              <span className="ml-1 text-[8px] text-gray-500">COMPONENTS</span>
+              <span className="px-1 rounded-full bg-gray-100 text-gray-600 text-[7px] font-bold">3</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {comps.slice(0, 3).map(([name, type], i) => (
+                <div key={i} className="rounded-lg border border-green-200 bg-white px-2.5 py-2">
+                  <div className="flex items-center"><TypeBadge type={type} /><span className="ml-auto text-[9px] text-gray-300">›</span></div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <p className="text-[9.5px] font-bold text-gray-900 truncate">{name}</p>
+                    <span className="text-[6.5px] font-semibold px-1 py-0.5 rounded-full bg-violet-50 text-violet-700 flex-shrink-0">5 styles</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="px-1 py-0.5 rounded bg-green-100 text-green-700 text-[7px] font-bold">APPROVED</span>
+                    <span className="text-[7px] text-gray-400">approved 3 Sep</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+            <p className="text-[7.5px] font-bold tracking-wide text-gray-500 mt-2.5 mb-1">FIT SAMPLE</p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50/30 px-2.5 py-1.5">
+              {['Required', 'Status', 'Received', 'Approved'].map((k) => (
+                <div key={k} className="flex items-center justify-between py-0.5">
+                  <span className="text-[8.5px] text-gray-600">{k}</span>
+                  <span className="text-[8.5px] text-gray-400">—</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="px-3 py-2.5">
+            <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-primary-500 pl-1.5 mb-1.5">ORDER</p>
+            <div className="rounded-lg border border-gray-200 overflow-hidden mb-2.5">
+              {orderFacts.map(([k, v]) => (
+                <div key={k} className="flex items-center px-2.5 py-1 border-b border-gray-50 last:border-0">
+                  <span className="text-[8.5px] text-gray-600 flex-1">{k}</span>
+                  <span className="text-[8.5px] font-semibold text-gray-900 truncate max-w-[92px]">{v}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[8px] font-bold tracking-wide text-gray-700 border-l-2 border-violet-500 pl-1.5 mb-1.5">JOURNEY</p>
+            <div className="rounded-lg border border-gray-200 px-2.5 py-1.5">
+              {journey.map(([k, v, state]) => (
+                <div key={k} className="flex items-center gap-1.5 py-0.5">
+                  <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0',
+                    state === 'done' ? 'bg-emerald-500' : state === 'now' ? 'bg-amber-500' : 'border border-gray-300')} />
+                  <span className={cn('text-[8.5px] flex-1', state === 'now' ? 'font-bold text-gray-900' : 'text-gray-600')}>{k}</span>
+                  <span className="text-[8px] text-gray-500 tabular-nums">{v}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1016,10 +1068,10 @@ function StyleDetailMock() {
 
 function ExpandedPOMock() {
   const styles: [string, string, string, string][] = [
-    ['S005010A-0121-NRO', 'SS27 SHORT', 'WHITE', '393'],
-    ['S005011A-0121-NRO', 'SS27 TEE', 'HIGH RISK RED', '334'],
-    ['S005012A-0121-NRO', 'SS27 HOODIE', 'BOTTLE GREEN', '358'],
-    ['S005013A-0121-NRO', 'SS27 TEE', 'BLACK', '169'],
+    ['S006165A-0501-NRO', 'AL-HILAL SNAPBACK HAT HIGH CROWN', 'BIRCH', '393'],
+    ['S006166A-0217-NRO', 'AL-HILAL VINTAGE WASH HAT', 'NINE IRON', '334'],
+    ['S006167A-0501-NRO', 'AL-HILAL DAD STYLE CORDUROY HAT', 'BIRCH', '358'],
+    ['S006169A-0875-NRO', 'AL-HILAL VINTAGE WASH HAT', 'BLUE WING TEAL', '169'],
   ];
   return (
     <V2Chrome expandLabel="Collapse all">
@@ -1230,7 +1282,7 @@ function SKUPickerMock() {
         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100">
           <div className="w-3 h-3 rounded border-2 border-gray-300"></div>
           <span className="text-[11px] font-bold">PO 4992</span>
-          <span className="text-[10px] text-gray-500">TRUEPATH RETAIL · 3 styles · 1,800 units</span>
+          <span className="text-[10px] text-gray-500">AL-HILAL · 3 styles · 1,800 units</span>
           <ChevronRight className="w-3 h-3 text-gray-400 ml-auto"/>
         </div>
       </div>
@@ -1654,7 +1706,7 @@ function LibraryTabMock() {
   const items: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; colour?: string; position?: string; styles: number; customers: number; active?: boolean }[] = [
     { name: 'CHEST PRINT — HOME KIT BLUE', type: 'strike_off', colour: 'Sky Captain', position: 'CHEST POSITION – CENTRAL', styles: 11, customers: 3, active: true },
     { name: 'MAIN FABRIC — COTTON 200GSM', type: 'strike_off', colour: 'Bottle Green', styles: 14, customers: 4 },
-    { name: 'SLEEVE EMB — CHELSEA CREST', type: 'strike_off', colour: 'Gold', position: 'LEFT SLEEVE AS WORN', styles: 4, customers: 1 },
+    { name: 'EMBROIDERED CREST', type: 'strike_off', colour: 'BIRCH', position: 'CHEST POSITION – CENTRAL', styles: 5, customers: 1 },
     { name: 'CARE LABEL — STANDARD', type: 'label', styles: 22, customers: 5 },
     { name: 'PEACOAT NAVY', type: 'lab_dip', colour: 'Peacoat', styles: 7, customers: 2 },
   ];
@@ -1742,13 +1794,13 @@ function LibraryTabMock() {
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">All styles using this</p>
-                <p className="text-[10px] font-semibold text-violet-600">Bulk edit</p>
+                <p className="text-[10px] text-gray-400">3 styles</p>
               </div>
               <div className="divide-y divide-gray-100 text-[11px]">
                 {[
-                  { code: 'S003883A-0001', po: '5202 · CHELSEA', st: 'Approved 12 Jun', tone: 'green' as const },
-                  { code: 'S004450A-0001', po: '5205 · STOKE', st: 'Received 4 Jun', tone: 'blue' as const },
-                  { code: 'S004612B-0002', po: '5251 · EVERTON', st: 'v1 out · 18 Jun', tone: 'amber' as const },
+                  { code: 'S006165A-0501', po: '5278 · AL-HILAL', st: 'Approved 27 Aug', tone: 'green' as const },
+                  { code: 'S004748A-0003', po: '5260 · TK MAXX', st: 'Received 2 Sep', tone: 'blue' as const },
+                  { code: 'S006028A-0868', po: '5279 · STICHD', st: 'v2 out · 19d', tone: 'amber' as const },
                 ].map((r, i) => (
                   <div key={i} className="px-3 py-1.5 flex items-center gap-2">
                     <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
@@ -1825,7 +1877,7 @@ function AddModalMock() {
                 <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                   <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
                   <span className="font-mono font-bold">PO 5310</span>
-                  <span className="text-gray-500">· CHELSEA · 4 styles</span>
+                  <span className="text-gray-500">· AL-HILAL · 5 styles</span>
                 </div>
                 <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
                   <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
@@ -1840,7 +1892,7 @@ function AddModalMock() {
                 <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
                   <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
                   <span className="font-mono font-bold">PO 5205</span>
-                  <span className="text-gray-500">· STOKE · 3 styles</span>
+                  <span className="text-gray-500">· TK MAXX · 6 styles</span>
                 </div>
               </div>
             </div>
@@ -1881,7 +1933,7 @@ function WorklistMock() {
       exfac: '06/11/2026', attention: '1 needs attention', multi: true },
     { type: 'strike_off', name: 'CHEST PRINT — HOME KIT BLUE', sub: '1 style · PO 5252 · LEVY MERCHANDISING',
       chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '30/10/2026' },
-    { type: 'lab_dip', name: 'PEACOAT NAVY', sub: '1 style · PO 5261 · TRUEPATH RETAIL',
+    { type: 'lab_dip', name: 'PEACOAT NAVY', sub: '1 style · PO 5261 · AL-HILAL',
       chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '31/10/2026' },
     { type: 'label', name: 'CARE LABEL — STANDARD', sub: '2 styles · 2 POs',
       chips: [{ t: '2 Received', tone: 'blue' }], exfac: '13/10/2026', multi: true },
@@ -2013,7 +2065,7 @@ function CreateNewFormMock() {
             </div>
           </div>
           <div>
-            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Spec URL <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
+            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Spec <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
             <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-400 bg-white">https://…</div>
           </div>
           <div>
@@ -2029,7 +2081,7 @@ function CreateNewFormMock() {
               <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
                 <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
                 <span className="font-mono font-bold">PO 5310</span>
-                <span className="text-gray-500">· CHELSEA · 4 styles</span>
+                <span className="text-gray-500">· AL-HILAL · 5 styles</span>
               </div>
               <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
                 <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
@@ -2042,52 +2094,6 @@ function CreateNewFormMock() {
         <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
           <p className="text-[10px] text-gray-500">1 style selected</p>
           <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Create &amp; add to 1 style</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BulkEditMock() {
-  return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-md mx-auto shadow-sm">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <p className="text-sm font-bold text-gray-900">Bulk edit — 6 instances</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">CHEST PRINT — HOME KIT BLUE</p>
-          <p className="text-[10px] text-gray-400">PO 5202 · PO 5205 (3) · PO 5251</p>
-        </div>
-        <div className="p-5 space-y-2">
-          <label className="flex items-center gap-2 p-2.5 rounded border-2 border-violet-500 bg-violet-50">
-            <span className="w-3.5 h-3.5 rounded border border-violet-500 bg-violet-500 flex items-center justify-center text-white text-[9px]">✓</span>
-            <div className="flex-1">
-              <p className="text-[11px] font-bold text-gray-900">Status</p>
-              <p className="text-[9px] text-gray-500">Set on every ticked instance</p>
-            </div>
-            <span className="text-[10px] border border-gray-300 rounded px-2 py-0.5 bg-white">APPROVED</span>
-          </label>
-          <label className="flex items-center gap-2 p-2.5 rounded border-2 border-violet-500 bg-violet-50">
-            <span className="w-3.5 h-3.5 rounded border border-violet-500 bg-violet-500 flex items-center justify-center text-white text-[9px]">✓</span>
-            <div className="flex-1">
-              <p className="text-[11px] font-bold text-gray-900">Approved date</p>
-              <p className="text-[9px] text-gray-500">Applies where blank; overrides where set</p>
-            </div>
-            <span className="text-[10px] border border-gray-300 rounded px-2 py-0.5 bg-white">2026-07-07</span>
-          </label>
-          <label className="flex items-center gap-2 p-2.5 rounded border border-gray-200 bg-white">
-            <span className="w-3.5 h-3.5 rounded border border-gray-300 bg-white" />
-            <div className="flex-1">
-              <p className="text-[11px] font-bold text-gray-500">Received date</p>
-              <p className="text-[9px] text-gray-400">(unchecked)</p>
-            </div>
-          </label>
-          <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-[10px] text-amber-800">
-            <p><strong>Heads up:</strong> 2 of the 6 instances already have an Approved date set. Confirming will overwrite them.</p>
-          </div>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
-          <button className="px-3 py-1.5 text-[11px] font-medium text-gray-600 border border-gray-300 rounded-md">Cancel</button>
-          <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Update 6 instances</button>
         </div>
       </div>
     </div>
