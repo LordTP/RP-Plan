@@ -34,7 +34,7 @@ function FactoryGuideContent() {
           </div>
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Factory Guide</h1>
-            <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">
+            <p className="text-sm text-gray-600 mt-1.5 leading-relaxed max-w-[78ch]">
               How to use the Critical Path app — for our factory partners. Two main pages: <strong>Product</strong> (find your orders, request date changes, track approvals) and <strong>Shipping</strong> (raise shipment drafts when goods are ready to leave).
             </p>
           </div>
@@ -78,11 +78,16 @@ function FactoryGuideContent() {
         {/* ============== SECTION: PRODUCT ============== */}
         {section === 'product' && (
         <section className="mb-12">
+          {/* index left, content right — uses the width without stretching the text */}
           <SectionHeader
             icon={ShoppingBag}
             title="Factory · Product"
             blurb="When you sign in, you land here. Your orders are grouped by PO with the styles inside. Use this page to track samples, request date changes, and stay across what Source Lab has approved."
           />
+
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+            <StepIndex steps={PRODUCT_STEPS} />
+            <div className="min-w-0">
 
           <Step number="1" title="Finding your orders">
             <p>
@@ -228,17 +233,24 @@ function FactoryGuideContent() {
               <Tip icon={Info}>Comments save instantly. They appear in Source Lab's dashboard alongside email notifications.</Tip>
             </Tips>
           </Step>
+            </div>
+          </div>
         </section>
         )}
 
         {/* ============== SECTION: SHIPPING ============== */}
         {section === 'shipping' && (
         <section>
+          {/* index left, content right — uses the width without stretching the text */}
           <SectionHeader
             icon={Truck}
             title="Factory · Shipping"
             blurb="When goods are ready to leave your factory, raise a shipment draft. Add the styles + quantities going out, fill in vessel info, then confirm. Source Lab gets the shipment in their tracking instantly."
           />
+
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+            <StepIndex steps={SHIPPING_STEPS} />
+            <div className="min-w-0">
 
           <Step number="1" title="Create a new shipment draft">
             <p>
@@ -321,17 +333,24 @@ function FactoryGuideContent() {
               <TableRow label="Don't have a tracking number yet" value="Leave it blank for now. Update once the freight forwarder sends it." />
             </Table>
           </Step>
+            </div>
+          </div>
         </section>
         )}
 
         {/* ============== SECTION: COMPONENTS ============== */}
         {section === 'components' && (
         <section className="mb-12">
+          {/* index left, content right — uses the width without stretching the text */}
           <SectionHeader
             icon={Layers}
             title="Factory · Components"
             blurb="What a component is, the two views on the Components page, how adding one works, and what happens when a sample is rejected."
           />
+
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+            <StepIndex steps={COMPONENT_STEPS} />
+            <div className="min-w-0">
 
           {/* Top-of-section key note — sets responsibility so everyone reads it before anything else. */}
           <div className="my-4 rounded-xl bg-violet-50 ring-1 ring-violet-200 border-l-4 border-violet-500 px-5 py-4 flex items-start gap-4">
@@ -597,7 +616,8 @@ function FactoryGuideContent() {
               Anything on v3+ shows on the Sourcelab Resubmissions dashboard. Usually a comms issue worth a phone call when things hit a third attempt.
             </Callout>
           </Step>
-
+            </div>
+          </div>
         </section>
         )}
 
@@ -609,6 +629,38 @@ function FactoryGuideContent() {
   );
 }
 
+const PRODUCT_STEPS = [
+  { n: '1', title: 'Finding your orders' },
+  { n: '2', title: 'Reading a PO and the styles inside' },
+  { n: '3', title: 'What you can and cannot change' },
+  { n: '4', title: 'Requesting a date change' },
+  { n: '5', title: 'Tracking your requests' },
+  { n: '6', title: 'Comments and questions' },
+];
+
+const SHIPPING_STEPS = [
+  { n: '1', title: 'Create a new shipment draft' },
+  { n: '2', title: 'Select which SKUs are going' },
+  { n: '3', title: 'Fill in the shipment details' },
+  { n: '4', title: 'Save vs Confirm' },
+  { n: '5', title: "After you've confirmed" },
+  { n: '6', title: 'Common situations' },
+];
+
+const COMPONENT_STEPS = [
+  { n: '1.1', title: 'Sample types — SO, LD, LB' },
+  { n: '1.2', title: 'Fit Sample and PPS are not components' },
+  { n: '2.1', title: 'The Components page — Worklist and Library' },
+  { n: '2.2', title: 'Library — browse and edit identity' },
+  { n: '3.1', title: 'Adding a component' },
+  { n: '3.2', title: 'Create new — filling the form' },
+  { n: '3.3', title: 'Target styles — pick which to apply' },
+  { n: '4.1', title: 'Worklist — the working queue' },
+  { n: '4.2', title: 'Editing a single instance' },
+  { n: '6.1', title: 'The sample lifecycle' },
+  { n: '7.1', title: 'Rejections and rework' },
+];
+
 /* ============== Layout helpers ============== */
 
 function SectionHeader({ icon: Icon, title, blurb }: { icon: any; title: string; blurb: string }) {
@@ -619,21 +671,63 @@ function SectionHeader({ icon: Icon, title, blurb }: { icon: any; title: string;
       </div>
       <div>
         <h2 className="text-xl font-extrabold tracking-tight">{title}</h2>
-        <p className="text-sm text-gray-600 mt-1 leading-relaxed">{blurb}</p>
+        <p className="text-sm text-gray-600 mt-1 leading-relaxed max-w-[78ch]">{blurb}</p>
       </div>
     </div>
   );
 }
 
+/** Anchor id for a step, so the index on the left can jump to it. */
+const stepId = (n: string) => `step-${n.replace('.', '-')}`;
+
 function Step({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl ring-1 ring-gray-100 px-7 py-6 mb-4">
-      <div className="flex items-baseline gap-3 mb-3">
-        <span className="text-[10px] uppercase tracking-widest font-bold text-violet-600 num">Step {number}</span>
-        <h3 className="text-base font-bold tracking-tight">{title}</h3>
+    <section id={stepId(number)} className="scroll-mt-24 bg-white rounded-xl ring-1 ring-gray-100 px-6 py-5 mb-3">
+      <div className="flex items-center gap-3 mb-3">
+        <span className="w-7 h-7 rounded-full bg-violet-600 text-white flex items-center justify-center
+                         text-[12px] font-bold flex-shrink-0 tabular-nums">
+          {number}
+        </span>
+        <h3 className="text-[17px] font-bold tracking-tight text-gray-900">{title}</h3>
       </div>
-      <div className="text-sm text-gray-700 space-y-2 leading-relaxed">{children}</div>
-    </div>
+      {/* Prose is capped at a readable measure. The page is full-width, but a
+          line of body text running the whole way across a 1400px screen is
+          around 150 characters — roughly twice what anyone reads comfortably,
+          and this guide goes to people reading English as a second language.
+          Mocks and tables opt out and use the full column. */}
+      <div className="text-[14px] text-gray-700 space-y-2.5 leading-[1.65] [&>p]:max-w-[68ch]
+                      [&>ol]:max-w-[68ch] [&>ul]:max-w-[68ch]">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** Sticky index down the left. A factory arrives wanting one answer, not a
+ *  read-through, and the page was a single unbroken scroll with no way to see
+ *  what it covered or jump to it. */
+function StepIndex({ steps }: { steps: { n: string; title: string }[] }) {
+  return (
+    <nav className="hidden lg:block sticky top-24 self-start">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 px-3">
+        On this page
+      </p>
+      <ol className="space-y-0.5">
+        {steps.map((s) => (
+          <li key={s.n}>
+            <a
+              href={`#${stepId(s.n)}`}
+              className="flex items-start gap-2.5 px-3 py-1.5 rounded-lg text-[12.5px] text-gray-600
+                         hover:bg-white hover:text-gray-900 transition-colors group"
+            >
+              <span className="text-[11px] font-bold text-gray-400 group-hover:text-violet-600
+                               tabular-nums mt-px flex-shrink-0">{s.n}</span>
+              <span className="leading-snug">{s.title}</span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -662,7 +756,7 @@ function Tips({ children }: { children: React.ReactNode }) {
 
 function Tip({ icon: Icon, children }: { icon: any; children: React.ReactNode }) {
   return (
-    <li className="flex items-start gap-2.5 text-sm text-gray-700">
+    <li className="flex items-start gap-2.5 text-[13.5px] text-gray-700 max-w-[72ch]">
       <Icon className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
       <span>{children}</span>
     </li>
@@ -675,7 +769,7 @@ function Callout({ type, title, children }: { type: 'info' | 'warn'; title: stri
     : { bg: 'bg-blue-50', ring: 'ring-blue-200', icon: 'text-blue-600', title: 'text-blue-900' };
   const Icon = type === 'warn' ? AlertTriangle : Info;
   return (
-    <div className={cn('rounded-lg ring-1 px-4 py-3 my-3 flex items-start gap-3', styles.bg, styles.ring)}>
+    <div className={cn('rounded-lg ring-1 px-4 py-3 my-3 flex items-start gap-3 max-w-[76ch]', styles.bg, styles.ring)}>
       <Icon className={cn('w-4 h-4 flex-shrink-0 mt-0.5', styles.icon)} />
       <div className="flex-1">
         <p className={cn('text-[12px] font-bold uppercase tracking-wider mb-0.5', styles.title)}>{title}</p>
@@ -697,7 +791,7 @@ function TableRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[180px_1fr] gap-3 px-4 py-2.5 hover:bg-gray-50">
       <span className="text-[12px] font-semibold text-gray-900">{label}</span>
-      <span className="text-[12px] text-gray-600 leading-relaxed">{value}</span>
+      <span className="text-[12px] text-gray-600 leading-relaxed max-w-[62ch]">{value}</span>
     </div>
   );
 }
