@@ -448,11 +448,15 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                   </button>
 
                   <div className={cn('mt-2.5 space-y-2.5', !showExtras && 'hidden')}>
-                    <Field label="Spec URL">
+                    {/* Labelled "Spec", not "Spec URL": people put a spec
+                        reference here — a code off the tech pack — far more
+                        often than a link. The column is still spec_url;
+                        renaming it would be a migration for a caption. */}
+                    <Field label="Spec">
                       <input
                         value={specUrl}
                         onChange={(e) => setSpecUrl(e.target.value)}
-                        placeholder="https://…"
+                        placeholder="Spec code or link"
                         className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                     </Field>

@@ -523,19 +523,27 @@ function CanonicalDetailPanel({
             </div>
           )}
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Spec URL</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1">Spec</div>
             {editing ? (
               <input
                 type="text"
                 value={form.spec_url}
                 onChange={(e) => setForm((f) => f ? { ...f, spec_url: e.target.value } : f)}
-                placeholder="https://…"
+                placeholder="Spec code or link"
                 className="w-full px-2 py-1 text-sm bg-white border border-slate-300 rounded"
               />
             ) : detail.spec_url ? (
-              <a href={detail.spec_url} target="_blank" rel="noreferrer" className="text-primary-600 hover:underline text-sm flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5" /> {detail.spec_url}
-              </a>
+              // Only linkify something that is actually a link. A spec code
+              // wrapped in an <a href> is a dead click that navigates nowhere.
+              /^https?:\/\//i.test(detail.spec_url) ? (
+                <a href={detail.spec_url} target="_blank" rel="noreferrer" className="text-primary-600 hover:underline text-sm flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5" /> {detail.spec_url}
+                </a>
+              ) : (
+                <span className="text-slate-700 text-sm flex items-center gap-1 font-mono">
+                  <FileText className="w-3.5 h-3.5 text-slate-400" /> {detail.spec_url}
+                </span>
+              )
             ) : (
               <span className="text-slate-400 italic text-sm">—</span>
             )}
