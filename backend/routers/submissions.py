@@ -486,7 +486,10 @@ def reconcile_and_sync(
         latest = _latest_submission(db, order.id, component_id, sample_type)
         if latest is not None and latest.outcome is None:
             latest.outcome = 'APPROVED'
-            latest.resolved_at = now
+            # Business date where the caller gave one, matching the reject and
+            # approve paths -- resolved_at is what the history measures gaps
+            # between, so all four writers have to agree on the clock.
+            latest.resolved_at = getattr(target, f'{prefix}_approved', None) or now
             latest.actioned_by_id = actioned_by_id
             if latest.submitted_at is None:
                 received = getattr(target, f'{prefix}_received', None)
@@ -556,7 +559,9 @@ def sync_submission_on_status_change(
         latest = _latest_submission(db, order.id, component_id, sample_type)
         if latest is not None and latest.outcome is None:
             latest.outcome = 'APPROVED'
-            latest.resolved_at = now
+            written_to = component if component is not None else order
+            approved_col = _column_names(sample_type)['approved']
+            latest.resolved_at = getattr(written_to, approved_col, None) or now
             latest.actioned_by_id = actioned_by_id
         return
 
@@ -575,9 +580,18 @@ def _approve_one_target(
 
     `now` and `approved_on` are deliberately separate. `now` is the AUDIT
     timestamp — when this action was actually recorded — and must stay real
-    or the trail lies. `approved_on` is the BUSINESS date the sample was
-    approved, which can legitimately be in the past when back-filling an
-    existing PD sheet. Defaults to `now` when the caller doesn't care.
+    or the trail lies; it survives on the row's own created_at / updated_at.
+    `approved_on` is the BUSINESS date the sample was approved, which can
+    legitimately be in the past when back-filling an existing PD sheet.
+    Defaults to `now` when the caller doesn't care.
+
+    resolved_at takes the BUSINESS date, matching _reject_one_target. Both ends
+    of an attempt have to be measured on the same clock or the gap between them
+    is meaningless: the resubmissions history works out how long a remake took
+    by subtracting one attempt's resolved_at from the next one's, and with a
+    business-dated rejection against an audit-dated approval it reported every
+    sample backfilled from Prime's sheet as taking 57 days -- the age of the
+    rejection -- when the remakes actually landed in 35 and 44.
     """
     approved_on = approved_on or now
     target = component if component is not None else order
@@ -586,7 +600,7 @@ def _approve_one_target(
     latest = _latest_submission(db, order.id, component_id, sample_type)
     if latest is not None and latest.outcome is None:
         latest.outcome = 'APPROVED'
-        latest.resolved_at = now
+        latest.resolved_at = approved_on
         latest.actioned_by_id = actioned_by_id
         if latest.submitted_at is None:
             if state_before['received'] is not None:

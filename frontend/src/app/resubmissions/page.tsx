@@ -9,7 +9,7 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { submissionsApi, type ResubmissionsOverview, type SampleType, type StuckRow } from '@/lib/api';
 import { RejectSampleModal } from '@/components/samples/RejectSampleModal';
 import { ScopeActionModal } from '@/components/samples/ScopeActionModal';
-import { ReworkDecisions } from '@/features/ReworkDecisions';
+import { ReworkQueue } from '@/features/ReworkQueue';
 import { RejectionHistory } from '@/features/RejectionHistory';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -192,39 +192,25 @@ function PopulatedDashboard({
 }) {
   return (
     <div className="space-y-6">
-      {/* KPI row */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatTile
-          label="In rework now"
-          value={data.in_rework_now}
-          hint="Sample areas on attempt 2+"
-          tone={data.in_rework_now > 0 ? 'warn' : 'info'}
-        />
-        <StatTile
-          label="Total rejections logged"
-          value={data.by_factory.reduce((s, f) => s + f.rejections, 0)}
-          hint="Across all time"
-        />
-        <StatTile
-          label="Stuck (3+ attempts)"
-          value={data.stuck.filter(s => s.attempt_no >= 3).length}
-          hint="Need eyes on these"
-          tone={data.stuck.some(s => s.attempt_no >= 3) ? 'danger' : 'info'}
-        />
-      </div>
+      {/* The three KPI tiles that used to sit here are gone. Two of them were
+          restatements of the list directly below ("in rework now", "stuck 3+"),
+          and "total rejections logged" was a number nobody acts on — between
+          them they took a full band of the page above the fold. The counts that
+          earned their place now sit in the headings of the sections they
+          describe. */}
 
       {/* Open rework, grouped by the decision that caused it rather than by
-          PO. See features/ReworkDecisions for why the table shape failed. */}
-      <section>
-        <ReworkDecisions
-          stuck={data.stuck}
-          total={(data as any).stuck_total}
-          onOpenOrder={onOpenOrder}
-          onMarkReceived={onMarkReceived}
-          onApprove={onApprove}
-          onRejectAgain={onRejectAgain}
-        />
-      </section>
+          PO. See features/ReworkDecisions for why the table shape failed, and
+          features/ReworkQueue for why the cards that replaced it did too. */}
+      <ReworkQueue
+        stuck={data.stuck}
+        history={data.history || []}
+        total={(data as any).stuck_total}
+        onOpenOrder={onOpenOrder}
+        onMarkReceived={onMarkReceived}
+        onApprove={onApprove}
+        onRejectAgain={onRejectAgain}
+      />
 
       {/* What has already been rejected and how it turned out. */}
       <RejectionHistory rows={data.history || []} total={data.history_total} />
@@ -289,34 +275,6 @@ function PopulatedDashboard({
           )}
         </BreakdownCard>
       </div>
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: number;
-  hint: string;
-  tone?: 'info' | 'warn' | 'danger';
-}) {
-  const toneClasses =
-    tone === 'danger' ? 'border-red-200 bg-red-50/60' :
-    tone === 'warn'   ? 'border-amber-200 bg-amber-50/60' :
-                        'border-gray-200 bg-white';
-  const valueTone =
-    tone === 'danger' ? 'text-red-700' :
-    tone === 'warn'   ? 'text-amber-800' :
-                        'text-gray-900';
-  return (
-    <div className={cn('rounded-lg border p-4', toneClasses)}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</div>
-      <div className={cn('text-3xl font-bold mt-1', valueTone)}>{value}</div>
-      <div className="text-[11px] text-gray-500 mt-1">{hint}</div>
     </div>
   );
 }

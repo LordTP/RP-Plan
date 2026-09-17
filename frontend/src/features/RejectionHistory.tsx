@@ -218,9 +218,31 @@ export function RejectionHistory({ rows, total }: { rows: RejectionHistoryRow[];
             Nothing matches those filters.
           </p>
         ) : (
-          <ul className="divide-y divide-gray-100 max-h-[560px] overflow-y-auto">
-            {shown.map(g => <HistoryRow key={g.key} g={g} />)}
-          </ul>
+          /* A table, deliberately unlike the queue above. The two halves of
+             this page answer different questions -- what do I chase now, and
+             what already happened -- but they used to render in the same cards
+             with the same chips and the same pink reason panel, so the only way
+             to tell which half you were in was to read the heading. The record
+             is also read in columns: scanning down dates, or POs, or outcomes.
+             PO, customer and factory stop repeating on every row and become
+             columns you can scan. */
+          <div className="max-h-[560px] overflow-auto">
+            <table className="w-full text-[12px] border-collapse">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="text-left text-[10px] uppercase tracking-wider text-gray-400">
+                  <th className="font-bold px-3 py-2 border-b border-gray-200">Component</th>
+                  <th className="font-bold px-3 py-2 border-b border-gray-200">PO</th>
+                  <th className="font-bold px-3 py-2 border-b border-gray-200 whitespace-nowrap">Rejected</th>
+                  <th className="font-bold px-3 py-2 border-b border-gray-200">Reason</th>
+                  <th className="font-bold px-3 py-2 border-b border-gray-200 text-right">Styles</th>
+                  <th className="font-bold px-3 py-2 border-b border-gray-200">Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map(g => <HistoryRow key={g.key} g={g} />)}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className="px-4 py-2 bg-gray-50/60 border-t border-gray-100 flex items-center justify-between">
@@ -250,100 +272,88 @@ function SectionTitle({ count }: { count: number }) {
 function HistoryRow({ g }: { g: Group }) {
   const [open, setOpen] = useState(false);
   const tag = SAMPLE_TAG[g.sampleType];
-  const out = OUTCOME[g.outcome];
-  const OutIcon = out.icon;
+  const oc = OUTCOME[g.outcome];
+  const OcIcon = oc.icon;
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex items-start gap-3">
-        <span className={cn('text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded mt-0.5 flex-shrink-0', tag.cls)}>
-          {tag.short}
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-bold text-gray-900">{g.componentName}</span>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-              v{g.attemptNo} rejected
+    <>
+      <tr
+        onClick={() => setOpen(v => !v)}
+        className={cn('cursor-pointer border-b border-gray-50 align-top',
+          open ? 'bg-gray-50/70' : 'hover:bg-gray-50/50')}
+      >
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <ChevronRight className={cn('w-3 h-3 text-gray-300 flex-shrink-0 transition-transform',
+              open && 'rotate-90')} />
+            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0', tag.cls)}>
+              {tag.short}
             </span>
-            <span className={cn('inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ring-1', out.cls)}>
-              <OutIcon className="w-2.5 h-2.5" />
-              {out.label}
-              {g.outcome === 'approved' && g.avgDays != null && <> · {g.avgDays}d</>}
-            </span>
+            <span className="font-bold text-gray-900">{g.componentName}</span>
+            <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0">v{g.attemptNo}</span>
           </div>
-
-          {/* Where and who — the context that makes a note make sense. */}
-          <div className="flex items-center gap-2.5 mt-1 flex-wrap text-[11px] text-gray-500">
-            <span className="font-mono font-semibold text-gray-700">{g.poNumber}</span>
-            {g.customer && <span className="truncate max-w-[180px]">{g.customer}</span>}
-            {g.factory && (
-              <span className="inline-flex items-center gap-1">
-                <FactoryIcon className="w-3 h-3 text-gray-400" />{g.factory}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1">
-              <Calendar className="w-3 h-3 text-gray-400" />{fmtDate(g.rejectedAt)}
-            </span>
-            {g.rejectedBy && (
-              <span className="inline-flex items-center gap-1">
-                <UserIcon className="w-3 h-3 text-gray-400" />{g.rejectedBy}
-              </span>
-            )}
-          </div>
-
-          {/* The reason, in full — the thing the old table truncated. */}
-          {g.reason && (
-            <div className="mt-2 rounded-lg bg-red-50/50 ring-1 ring-red-100 px-3 py-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-red-700">
-                {REASON_LABEL[g.reason] || g.reason}
-              </span>
-              {g.notes && <p className="text-[12px] text-gray-700 mt-1 leading-relaxed">{g.notes}</p>}
-            </div>
+        </td>
+        <td className="px-3 py-2">
+          <div className="font-mono font-semibold text-gray-800 tabular-nums">{g.poNumber}</div>
+          {g.customer && <div className="text-[10.5px] text-gray-400 truncate max-w-[160px]">{g.customer}</div>}
+        </td>
+        <td className="px-3 py-2 whitespace-nowrap">
+          <div className="text-gray-700">{fmtDate(g.rejectedAt) || '—'}</div>
+          {g.rejectedBy && <div className="text-[10.5px] text-gray-400 truncate max-w-[130px]">{g.rejectedBy}</div>}
+        </td>
+        <td className="px-3 py-2 max-w-[280px]">
+          <span className="text-gray-700">{g.reason ? (REASON_LABEL[g.reason] || g.reason) : '—'}</span>
+          {g.notes && (
+            <div className={cn('text-[11px] text-gray-500 mt-0.5', !open && 'truncate')}>{g.notes}</div>
           )}
-
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <button
-              onClick={() => setOpen(v => !v)}
-              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-gray-600 hover:text-gray-900"
-              aria-expanded={open}
-            >
-              <ChevronRight className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-90')} />
-              {g.rows.length} {g.rows.length === 1 ? 'style' : 'styles'}
-            </button>
-            {/* The split, when a decision did not land the same way everywhere. */}
-            {[
-              [g.approved, 'fixed', 'text-emerald-700'],
-              [g.rejectedAgain, 'rejected again', 'text-red-700'],
-              [g.stillOpen, 'still open', 'text-amber-700'],
-            ].filter(([n]) => (n as number) > 0).map(([n, label, cls]) => (
-              <span key={label as string} className={cn('text-[10.5px] font-medium', cls as string)}>
-                {n as number} {label as string}
+        </td>
+        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{g.rows.length}</td>
+        <td className="px-3 py-2">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className={cn('inline-flex items-center gap-1 text-[10.5px] font-semibold px-1.5 py-0.5 rounded', oc.cls)}>
+              <OcIcon className="w-2.5 h-2.5" />
+              {oc.label}
+              {g.outcome === 'approved' && g.avgDays != null && (
+                <span className="tabular-nums font-normal opacity-80"> · {g.avgDays}d</span>
+              )}
+            </span>
+            {/* Only worth breaking out when the styles disagreed. */}
+            {g.stillOpen > 0 && g.approved > 0 && (
+              <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
+                {g.approved} fixed · {g.stillOpen} open
               </span>
-            ))}
+            )}
           </div>
+        </td>
+      </tr>
 
-          {open && (
-            <ul className="mt-2 rounded-lg bg-gray-50/60 ring-1 ring-gray-100 divide-y divide-gray-100
-                           max-h-[220px] overflow-y-auto">
-              {g.rows.map(r => (
-                <li key={r.submission_id} className="flex items-center gap-2 px-3 py-1.5">
-                  <span className="font-mono text-[11px] text-gray-800 tabular-nums flex-shrink-0">
-                    {r.style_code || '—'}
-                  </span>
-                  <span className="text-[11px] text-gray-500 truncate">{r.description || '—'}</span>
-                  {r.colour && <span className="text-[10.5px] text-gray-400 flex-shrink-0">· {r.colour}</span>}
-                  <span className={cn('ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0',
-                    OUTCOME[r.next_state].cls)}>
-                    {OUTCOME[r.next_state].label}
-                  </span>
-                </li>
-              ))}
+      {open && (
+        <tr className="border-b border-gray-100">
+          <td colSpan={6} className="px-3 pb-2.5 pt-0 bg-gray-50/70">
+            <ul className="rounded-lg ring-1 ring-gray-200 bg-white overflow-hidden divide-y divide-gray-50">
+              {g.rows.map(r => {
+                const rOc = OUTCOME[(r.next_state as Outcome) || 'unknown'];
+                return (
+                  <li key={r.submission_id} className="flex items-center gap-2.5 px-3 py-1.5">
+                    <span className="font-mono text-[11px] text-gray-800 tabular-nums flex-shrink-0">
+                      {r.style_code || '—'}
+                    </span>
+                    <span className="text-[11px] text-gray-500 truncate">{r.description || '—'}</span>
+                    {r.colour && <span className="text-[10.5px] text-gray-400 flex-shrink-0">· {r.colour}</span>}
+                    <span className={cn('ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0', rOc.cls)}>
+                      {rOc.label}
+                      {r.days_to_next != null && (
+                        <span className="tabular-nums font-normal opacity-80"> · {r.days_to_next}d</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-          )}
-        </div>
-      </div>
-    </li>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
