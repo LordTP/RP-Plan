@@ -102,7 +102,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
     setSampleType(''); setName(''); setColour(''); setDescription('');
     setPositions([]); setSpecUrl(''); setSupplierNotes('');
     setSelectedOrderIds(new Set()); setTemplateOpen(false); setCopiedFrom(null); setCopiedFromId(null); setCopiedColour('');
-    setShowExtras(false);
+    setShowExtras(true);
   }, []);
 
   // Mount hidden, then transition in on the next frame — a CSS transition
@@ -156,7 +156,11 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
   }, [open, dirty, onClose]);
 
   const extrasFilled = [specUrl, description, supplierNotes].filter((v) => v.trim()).length;
-  const [showExtras, setShowExtras] = useState(false);
+  // Open. The left column runs alongside the style picker, which is a long
+  // scrolling list, so collapsed it left roughly 370px of empty column below
+  // the fold-out and hid three usable fields behind a click nobody had a
+  // reason to make. The toggle stays for anyone who wants it tighter.
+  const [showExtras, setShowExtras] = useState(true);
   const stillIdenticalToCopy = copiedFrom != null
     && name.trim().toUpperCase() === copiedFrom.trim().toUpperCase()
     && colour.trim().toUpperCase() === copiedColour.trim().toUpperCase();
@@ -293,7 +297,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                     </button>
                   }
                 />
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-1.5">
                   {SAMPLE_TYPE_CARDS.map((c) => {
                     const on = sampleType === c.value;
                     const Icon = c.icon;
@@ -309,31 +313,39 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                           requestAnimationFrame(() => nameRef.current?.focus());
                         }}
                         className={cn(
-                          'relative text-left p-2.5 rounded-lg border group',
+                          'relative text-left pl-3 pr-9 py-2.5 rounded-lg border group',
                           'transition-all duration-200 ease-out',
                           on
-                            ? cn('border-transparent ring-2 shadow-sm -translate-y-0.5', c.ring, c.wash)
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:-translate-y-0.5',
+                            ? cn('border-transparent ring-2 shadow-sm', c.ring, c.wash)
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
                         )}
                       >
                         <span
                           className={cn(
-                            'absolute top-2 right-2 w-3.5 h-3.5 rounded-full bg-gray-900 text-white',
+                            'absolute top-1/2 -translate-y-1/2 right-3 w-4 h-4 rounded-full bg-gray-900 text-white',
                             'flex items-center justify-center transition-all duration-200',
                             on ? 'opacity-100 scale-100' : 'opacity-0 scale-50',
                           )}
                         >
-                          <Check className="w-2 h-2" strokeWidth={4} />
+                          <Check className="w-2.5 h-2.5" strokeWidth={4} />
                         </span>
-                        <Icon className={cn('w-4 h-4 mb-1.5 transition-colors', on ? 'text-gray-800' : 'text-gray-400 group-hover:text-gray-600')} />
-                        <div className="text-[12px] font-bold text-gray-900 leading-tight">{c.title}</div>
-                        <div className="text-[10px] text-gray-500 leading-snug mt-0.5">{c.blurb}</div>
+                        {/* Icon and title on one line. Three of these side by
+                            side in a column this narrow wrapped the blurb to
+                            four ragged lines and stacked the icon above the
+                            name; as full-width rows each blurb gets a line of
+                            its own and the column stops looking empty. */}
+                        <div className="flex items-center gap-2">
+                          <Icon className={cn('w-[18px] h-[18px] flex-shrink-0 transition-colors',
+                            on ? 'text-gray-800' : 'text-gray-400 group-hover:text-gray-600')} />
+                          <span className="text-[14px] font-bold text-gray-900 leading-none">{c.title}</span>
+                        </div>
+                        <div className="text-[12px] text-gray-500 leading-snug mt-1 pl-[26px]">{c.blurb}</div>
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1.5">
-                  <Lock className="w-3 h-3 flex-shrink-0 text-gray-400" />
+                <p className="text-[11.5px] text-gray-500 mt-2.5 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
                   Permanent — a component can&apos;t change type after it&apos;s created.
                 </p>
               </section>
@@ -370,7 +382,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                       value={name}
                       onChange={(e) => setName(e.target.value.toUpperCase())}
                       placeholder="CHEST PRINT"
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     />
                   </Field>
                   <Field label="Colour" required={colourRequired}>
@@ -410,7 +422,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                             type="button"
                             onClick={() => setPositions((prev) => (on ? prev.filter((x) => x !== p) : [...prev, p]))}
                             className={cn(
-                              'px-2 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide border transition',
+                              'px-2.5 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide border transition',
                               on
                                 ? 'bg-amber-100 border-amber-300 text-amber-800'
                                 : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700',
@@ -436,9 +448,9 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                   <button
                     type="button"
                     onClick={() => setShowExtras((v) => !v)}
-                    className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700"
+                    className="inline-flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-widest text-gray-500 hover:text-gray-700"
                   >
-                    <ChevronRight className={cn('w-3 h-3 transition-transform', showExtras && 'rotate-90')} />
+                    <ChevronRight className={cn('w-3.5 h-3.5 transition-transform', showExtras && 'rotate-90')} />
                     More details
                     {extrasFilled > 0 && (
                       <span className="px-1.5 py-0.5 rounded-full bg-primary-100 text-primary-700 text-[9px] tabular-nums normal-case tracking-normal">
@@ -457,7 +469,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                         value={specUrl}
                         onChange={(e) => setSpecUrl(e.target.value)}
                         placeholder="Spec code or link"
-                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                     </Field>
                     <Field label="Description">
@@ -466,7 +478,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                         onChange={(e) => setDescription(e.target.value)}
                         rows={2}
                         placeholder="What this component is"
-                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                     </Field>
                     <Field label="Supplier notes">
@@ -475,7 +487,7 @@ export function LibraryFirstAddModal({ open, onClose, orders, isSupplier, initia
                         onChange={(e) => setSupplierNotes(e.target.value)}
                         rows={2}
                         placeholder="Anything the factory should know"
-                        className="w-full px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                     </Field>
                   </div>
@@ -616,7 +628,7 @@ function StepHeading({
       >
         {done ? <Check className="w-2.5 h-2.5" strokeWidth={3.5} /> : n}
       </span>
-      <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">{title}</span>
+      <span className="text-[11.5px] uppercase tracking-widest text-gray-500 font-bold">{title}</span>
       <span className="flex-1 h-px bg-gray-100" />
       {action}
     </div>
@@ -628,7 +640,7 @@ function Field({
 }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) {
   return (
     <div className={className}>
-      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+      <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
         {label}{' '}
         {required
           ? <span className="text-red-500 normal-case tracking-normal">(required)</span>
