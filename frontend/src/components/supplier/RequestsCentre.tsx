@@ -186,19 +186,36 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
       || r.rows.some(x => (x.style_code || '').toLowerCase().includes(needle)));
   }, [requests, q]);
 
-  const buckets = useMemo(() => ({
-    waiting: matching.filter(r => r.pending > 0),
-    stale: matching.filter(r => r.pending > 0 && r.ageDays >= 7),
-    approved: matching.filter(r => r.approved > 0),
-    declined: matching.filter(r => r.declined > 0),
-    all: matching,
-  }), [matching]);
+  /**
+   * Buckets hold requests but COUNT styles, and the difference matters.
+   *
+   * Counting requests made the rail incoherent: a request that came back part
+   * approved still has styles waiting, so it sat in both "Sent, not answered"
+   * and "Approved", and the rail read 5 + 4 + 2 = 11 against 5 requests and 16
+   * styles -- reconciling with neither. Worse, "Approved — date moved: 4"
+   * pointed at four requests of which none were actually finished.
+   *
+   * A status belongs to a style, not to a request. Counting styles makes the
+   * labels true and the rail add up: 9 waiting + 5 approved + 2 declined = the
+   * 16 styles that exist.
+   */
+  const buckets = useMemo(() => {
+    const mk = (rs: Request[], styles: (r: Request) => number) =>
+      ({ requests: rs, styles: rs.reduce((n, r) => n + styles(r), 0) });
+    return {
+      waiting: mk(matching.filter(r => r.pending > 0), r => r.pending),
+      stale: mk(matching.filter(r => r.pending > 0 && r.ageDays >= 7), r => r.pending),
+      approved: mk(matching.filter(r => r.approved > 0), r => r.approved),
+      declined: mk(matching.filter(r => r.declined > 0), r => r.declined),
+      all: mk(matching, r => r.rows.length),
+    };
+  }, [matching]);
 
   // Never sit on an empty bucket after a search or a cancel.
   useEffect(() => {
-    if (buckets[bucket].length === 0) {
+    if (buckets[bucket].requests.length === 0) {
       const next = (['waiting', 'stale', 'approved', 'declined', 'all'] as BucketKey[])
-        .find(k => buckets[k].length > 0);
+        .find(k => buckets[k].requests.length > 0);
       if (next && next !== bucket) setBucket(next);
     }
   }, [buckets, bucket]);
@@ -229,7 +246,8 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
   // Nothing ever asked — say nothing at all.
   if (requests.length === 0) return null;
 
-  const waitingCount = requests.filter(r => r.pending > 0).length;
+  const waitingRequests = requests.filter(r => r.pending > 0).length;
+  const waitingStyles = requests.reduce((n, r) => n + r.pending, 0);
   // Styles, not requests. Counting fully-answered requests read as "0 answered"
   // while five styles had been approved, because every request still had
   // something open -- true at request level, wrong to anybody reading it.
@@ -254,7 +272,7 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
   const groups = ['Waiting on Source Lab', 'Answered', 'Everything'];
 
   const active = TABS.find(t => t.key === bucket) || TABS[0];
-  const shown = buckets[bucket];
+  const shown = buckets[bucket].requests;
 
   return (
     /* The panel drops OVER the order list rather than above it.
@@ -269,17 +287,18 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
       <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-            waitingCount > 0 ? 'bg-amber-100' : 'bg-gray-100')}>
-            <Clock className={cn('w-5 h-5', waitingCount > 0 ? 'text-amber-600' : 'text-gray-400')} />
+            waitingStyles > 0 ? 'bg-amber-100' : 'bg-gray-100')}>
+            <Clock className={cn('w-5 h-5', waitingStyles > 0 ? 'text-amber-600' : 'text-gray-400')} />
           </div>
           <div className="min-w-0">
             <h3 className="text-base font-bold text-gray-900">Requests Centre</h3>
             <p className="text-xs text-gray-500 truncate">
               {q
                 ? `${matching.length} match${matching.length === 1 ? '' : 'es'} for "${q}"`
-                : waitingCount > 0
-                  ? `${waitingCount} ${waitingCount === 1 ? 'request' : 'requests'} waiting on Source Lab`
-                    + (answeredStyles > 0 ? ` · ${answeredStyles} styles already answered` : '')
+                : waitingStyles > 0
+                  ? `${waitingStyles} styles waiting on Source Lab, across `
+                    + `${waitingRequests} ${waitingRequests === 1 ? 'request' : 'requests'}`
+                    + (answeredStyles > 0 ? ` · ${answeredStyles} answered` : '')
                   : `Nothing outstanding · ${answeredStyles} styles answered`}
             </p>
           </div>
@@ -318,7 +337,7 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
           <div className="lg:border-r border-b lg:border-b-0 border-gray-100 bg-gray-50/60 p-3
                           lg:h-full min-h-0 overflow-y-auto">
             {groups.map((g) => {
-              const tabs = TABS.filter(t => t.group === g && buckets[t.key].length > 0);
+              const tabs = TABS.filter(t => t.group === g && buckets[t.key].requests.length > 0);
               if (!tabs.length) return null;
               return (
                 <div key={g} className="mb-4 last:mb-0">
@@ -343,7 +362,7 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
                           <span className="flex-1 text-xs font-medium truncate">{t.label}</span>
                           <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[20px] text-center',
                             on ? 'bg-white/60' : `${tone.bg} ${tone.text}`)}>
-                            {buckets[t.key].length}
+                            {buckets[t.key].styles}
                           </span>
                         </button>
                       );
