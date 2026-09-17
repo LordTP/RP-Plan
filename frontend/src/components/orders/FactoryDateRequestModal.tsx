@@ -113,9 +113,9 @@ export function FactoryDateRequestModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-gray-900/50
                     backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
-         onClick={saving ? undefined : onClose} role="dialog" aria-modal="true">
-      <div className="w-full max-w-3xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-200 overflow-hidden my-auto"
-           onClick={(e) => e.stopPropagation()}>
+         role="dialog" aria-modal="true"
+         onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-3xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-200 overflow-hidden my-auto">
 
         <header className="px-5 py-4 border-b border-gray-200 flex items-start gap-3">
           <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
@@ -247,7 +247,7 @@ export function FactoryDateRequestModal({
                 canSubmit ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-300 cursor-not-allowed')}
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Send request
+              Submit request
             </button>
           </div>
         </footer>

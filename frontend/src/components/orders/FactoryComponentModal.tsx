@@ -114,9 +114,9 @@ export function FactoryComponentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6
                     bg-gray-900/60 overflow-y-auto"
-         onClick={onClose} role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden my-auto"
-           onClick={(e) => e.stopPropagation()}>
+         role="dialog" aria-modal="true"
+         onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden my-auto">
 
         <header className="px-5 py-4 border-b border-gray-200 flex items-start gap-3">
           <div className="min-w-0 flex-1">

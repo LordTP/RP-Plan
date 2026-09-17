@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseISO } from 'date-fns';
@@ -179,10 +180,18 @@ export function InlineBulkScopeEditor({
     ? styleLabel
     : `${totalIfBulk} style${totalIfBulk === 1 ? '' : 's'}`;
 
-  return (
+  // Portalled to the body. The detail panel slides in with a CSS transform, and
+  // a transformed ancestor becomes the containing block for position:fixed --
+  // so this overlay's inset-0 covered the panel rather than the viewport,
+  // leaving the panel's own scrim exposed around it. A click there landed on
+  // the scrim, closed the whole panel, and took the half-filled editor with it.
+  // Escaping the transform is what makes "only the X closes it" actually true.
+  return createPortal((
     <div
-      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
-      onClick={saving ? undefined : onCancel}
+      className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => e.stopPropagation()}
     >
       {/* Wide enough for the style picker to be usable. At max-w-sm the list of
           styles you were choosing between was a 384px column with a scrollbox
@@ -348,6 +357,36 @@ export function InlineBulkScopeEditor({
         </div>
       </div>
     </div>
+  ), document.body);
+}
+
+/** Tick / cross for an inline edit, so nothing is written until the person
+ *  says so. Lives here rather than in either DetailRow because orders-v2 and
+ *  FactoryV2View each carry their own copy of that component. */
+export function ConfirmEdit({ onSubmit, onCancel }: { onSubmit: () => void; onCancel: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 flex-shrink-0">
+      <button
+        onClick={onSubmit}
+        title="Submit"
+        aria-label="Submit"
+        className="p-1 rounded text-white bg-primary-600 hover:bg-primary-700"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+          <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button
+        onClick={onCancel}
+        title="Cancel"
+        aria-label="Cancel"
+        className="p-1 rounded text-gray-500 hover:bg-gray-100"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+          <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </span>
   );
 }
 
@@ -598,6 +637,7 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
   sub?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   const hasDate = !!date || !!note;
   const bulkCtx = useBulkScope();
   const isBulkable = !!fieldKey && !!bulkCtx;
@@ -630,7 +670,11 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
   // value span alone, which on an unset date is a single grey em-dash -- a
   // ~10px hit area that reads as punctuation rather than a control, so the
   // commonest edit on this panel was also its best-hidden one.
-  const openEditor = () => { if (editable && !editing) setEditing(true); };
+  const openEditor = () => {
+    if (!editable || editing) return;
+    setDraft(note || (date ? String(date).split('T')[0] : ''));
+    setEditing(true);
+  };
 
   return (
     <div className="relative">
@@ -638,7 +682,7 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
       onClick={openEditor}
       onKeyDown={(e) => {
         if (!editable || editing) return;
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditing(true); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(); }
       }}
       role={editable && !editing ? 'button' : undefined}
       tabIndex={editable && !editing ? 0 : undefined}
@@ -667,13 +711,15 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
             onCancel={() => setEditing(false)}
           />
         ) : editing ? (
-          <DatePickerInput
-            value={note || (date ? date.split('T')[0] : '')}
-            onChange={(v) => { onSave?.(v); setEditing(false); }}
-            onBlur={() => setEditing(false)}
-            autoFocus
-            size="sm"
-          />
+          /* Pick then confirm. onChange fires the moment a day is clicked in
+             the calendar, so a misclick was already saved. */
+          <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <DatePickerInput value={draft} onChange={setDraft} autoFocus size="sm" />
+            <ConfirmEdit
+              onSubmit={() => { onSave?.(draft); setEditing(false); }}
+              onCancel={() => setEditing(false)}
+            />
+          </span>
         ) : (
           <span
             className={cn(

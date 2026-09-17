@@ -36,7 +36,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
-import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope, TimelineItem, JourneyFact } from '@/components/orders/v2-detail-helpers';
+import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope, TimelineItem, JourneyFact, ConfirmEdit } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
   OrderTableV2,
@@ -2571,23 +2571,27 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
             size="sm"
           />
         ) : type === 'date' ? (
-          <DatePickerInput
-            value={editValue}
-            onChange={(v) => handleSave(v)}
-            onBlur={() => setEditing(false)}
-            autoFocus
-            size="sm"
-          />
+          /* Pick then confirm, rather than writing on the pick. A date picker
+             fires onChange the instant a day is clicked, so a misclick in the
+             calendar was already saved -- and on a supplier field that means a
+             change request sent to Source Lab. Same for the text input, which
+             saved on blur: clicking away from a half-typed value committed it. */
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <DatePickerInput value={editValue} onChange={setEditValue} autoFocus size="sm" />
+            <ConfirmEdit onSubmit={() => handleSave()} onCancel={() => setEditing(false)} />
+          </div>
         ) : (
-          <input
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={() => handleSave()}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
-            autoFocus
-            className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[180px] text-right"
-          />
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false); }}
+              autoFocus
+              className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 w-[160px] text-right"
+            />
+            <ConfirmEdit onSubmit={() => handleSave()} onCancel={() => setEditing(false)} />
+          </div>
         )
       ) : (
         <span
