@@ -35,13 +35,14 @@ function FactoryGuideContent() {
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Factory Guide</h1>
             <p className="text-sm text-gray-600 mt-1.5 leading-relaxed max-w-[78ch]">
-              How to use the Critical Path app — for our factory partners. Two main pages: <strong>Product</strong> (find your orders, request date changes, track approvals) and <strong>Shipping</strong> (raise shipment drafts when goods are ready to leave).
+              How to use the Critical Path app — for our factory partners. Three pages: <strong>Product</strong> (find your orders, request date changes, track approvals), <strong>Components</strong> (add the components for every new order, then track them to sign-off) and <strong>Shipping</strong> (raise shipment drafts when goods are ready to leave).
             </p>
           </div>
         </div>
 
-        {/* Section tabs (sticky) — switch between Product and Shipping. Only
-            the active section renders below, so it's not a scroll jump. */}
+        {/* Section tabs (sticky) — switch between Product, Components and
+            Shipping. Only the active section renders below, so it's not a
+            scroll jump. */}
         <div className="sticky top-12 z-20 bg-gray-50/95 backdrop-blur-sm py-2 -mx-6 px-6 mb-5 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <button
@@ -333,7 +334,7 @@ function FactoryGuideContent() {
           <SectionHeader
             icon={Layers}
             title="Factory · Components"
-            blurb="What a component is, the two views on the Components page, how adding one works, and what happens when a sample is rejected."
+            blurb="You add the components for every order that lands. This covers the three sample types, how to add them, how to track them, and what happens when one is rejected."
           />
 
           {/* Top-of-section key note — sets responsibility so everyone reads it before anything else. */}
@@ -345,15 +346,15 @@ function FactoryGuideContent() {
               <p className="text-[10px] uppercase tracking-widest font-bold text-violet-600 mb-1">Key note · Prime</p>
               <p className="text-sm font-bold text-gray-900 mb-1">When a new order lands on Critical Path, add its components.</p>
               <p className="text-[13px] text-gray-700 leading-relaxed">
-                As soon as a new order appears in CP, Prime need to add the components for it. Don't wait for Sourcelab to ask — the sample workflow doesn't start until the components exist. Everything downstream (statuses, dates, warnings) depends on them being there.
+                As soon as a new order appears in CP, Prime need to add the components for it. Don't wait for Source Lab to ask — the sample workflow doesn't start until the components exist. Everything downstream (statuses, dates, warnings) depends on them being there.
               </p>
             </div>
           </div>
 
-          {/* 1. Basics — the three sample types */}
+          {/* 1. What you're sampling — the three types */}
           <Step number="1.1" title="Sample types — SO, LD, LB">
             <p>
-              A <strong>component</strong> is one physical thing being sampled: a fabric, a print, a label, a colour swatch. Every component tracks <strong>one</strong> sample type. Pick it when you create — it can't change afterwards.
+              A <strong>component</strong> is one physical thing being sampled: a fabric, a print, a label, a colour swatch. Every component tracks <strong>one</strong> sample type. Pick it when you create — it can&apos;t change afterwards.
             </p>
             <Table>
               <TableRow
@@ -373,7 +374,7 @@ function FactoryGuideContent() {
               <TypeComparisonMock />
             </MockShot>
             <Callout type="info" title="The same name can be two types">
-              "Pocket" might exist as a Strike Off (sample the fabric) AND as a Lab Dip (match the colour) on the same style. Each is a separate component with its own status + dates.
+              &quot;Pocket&quot; might exist as a Strike Off (sample the fabric) AND as a Lab Dip (match the colour) on the same style. Each is a separate component with its own status + dates.
             </Callout>
           </Step>
 
@@ -383,87 +384,53 @@ function FactoryGuideContent() {
             </p>
           </Step>
 
-          {/* 2. The two views on /components */}
-          <Step number="2.1" title="The /components page — Worklist + Library">
+          {/* 2. Adding — the factory's actual job, so it comes before browsing */}
+          <Step number="2.1" title="Adding them — this is your job">
             <p>
-              Everything happens under <strong>Components</strong> in the nav. Two tabs at the top:
+              A new order arrives on Critical Path with no components on it yet — that&apos;s where you come in. Adding them is what opens up the sample workflow, so it&apos;s worth doing early: statuses, dates and sign-off all hang off the components being there.
+            </p>
+            <p>
+              Open <strong>Components</strong> in the nav and click <strong>+ Add component</strong>, top right. The same button sits on any style&apos;s Components section if you&apos;d rather work from the order. The modal walks you through three numbered steps:
             </p>
             <Table>
               <TableRow
-                label="Worklist"
-                value="What needs chasing today. One card per add-event — the group of styles created together in a single Add Component action — with status tiles across the top you can click to filter (Needs attention, In flight, and so on). Expand a card to see every style in the group. There's a Cards / Table toggle if you'd rather scan a dense list."
+                label="1 · Sample type"
+                value="Strike Off, Lab Dip or Label — three cards, pick one. Nothing else unlocks until you do. This is permanent: a component can't change type after it's created."
               />
               <TableRow
-                label="Library"
-                value="What components exist. A rail of cards, one per NAME, and a detail panel listing every separate entry sharing that name — because one name is not one component. Each Add Component creates a fresh entry, so 'Rib Fabric' can be a dozen unrelated ones across different POs and seasons."
+                label="2 · Identity"
+                value="Name and Colour sit on the form. Strike Offs also get Positions. Description, Spec and Supplier notes are tucked behind MORE DETAILS if you need them."
+              />
+              <TableRow
+                label="3 · Apply to styles"
+                value="The picker on the right, grouped by PO. Tick the styles this component goes on."
               />
             </Table>
-            <Callout type="info" title="Worklist vs Library in one line">
-              <strong>Worklist</strong> = "what needs chasing today?"  ·  <strong>Library</strong> = "what components exist?"
-            </Callout>
-            <Callout type="warn" title="OUT OF STEP — the one alarm in the Library">
-              If an entry's own styles hold different statuses, it's flagged <strong>OUT OF STEP</strong>.
-              Entries that merely share a name differ all the time — different POs, different seasons,
-              approved months apart — and that's normal. But one entry is one add and one decision, so
-              its styles should move together. When one lags behind, somebody missed it.
-            </Callout>
-          </Step>
-
-          <Step number="2.2" title="Library — browse + edit identity">
             <p>
-              A rail of cards down the left, <strong>one per name</strong>, each showing how many
-              separate entries share that name and how many styles they cover between them. Click a
-              card and the right panel lists every entry under it — its colour, its position (Strike
-              Offs only), the POs it touches and each style&apos;s status.
+              The footer keeps a running summary of what you&apos;re about to create — type, name and how many styles are picked — then <strong>Create &amp; add</strong> does it in one go.
             </p>
-            <p>
-              Grouped by name because a name is a label, not an identity. Every Add Component mints a
-              fresh entry, so &quot;Rib Fabric&quot; can be a dozen unrelated ones. A flat list of
-              those is unreadable, which is exactly what the old table gave you.
-            </p>
-            <MockShot caption="Library tab — a card per name on the left; the right panel lists every separate entry sharing it, with its styles and statuses.">
-              <LibraryTabMock />
-            </MockShot>
-            <Tips>
-              <Tip icon={Tag}>Names are stored UPPERCASE. Entries are never merged by name — two with the same name sit under the same card as separate entries, because they came from separate adds.</Tip>
-              <Tip icon={Tag}>Colour is <strong>required</strong> for Strike Offs + Lab Dips, optional for Labels.</Tip>
-              <Tip icon={Tag}>Position is Strike-Off-only. Pick from a fixed list (Central / Left as Worn / Back Neck / Hem / etc).</Tip>
-              <Tip icon={Search}>Search matches name, description, colour and supplier notes — and it narrows the entries inside a card, not just which cards show.</Tip>
-            </Tips>
-            <Callout type="warn" title="Editing identity propagates within the add-event group">
-              Rename or update the colour on the Library and it hits every instance in that same add-event group — not other library entries that happen to share the name. If a change needs to reach a style in a different entry, edit that entry too, or delete + re-add so it lands in the same group.
-            </Callout>
-          </Step>
-
-          {/* 3. Adding — every add is a fresh library entry */}
-          <Step number="3.1" title="Adding — every add is a fresh library entry">
-            <p>
-              Click <strong>+ Add component</strong> — either the page-level button on <span className="font-mono">/components</span>, or the button on any style's Components section. Same modal opens with two tabs:
-            </p>
-            <Table>
-              <TableRow
-                label="From library (as template)"
-                value="Search the left rail, pick an existing entry, then tick target styles. The picked entry's identity (name / sample type / colour / position / spec / supplier notes) is copied into the form so you don't retype — but a brand-new library entry is created for this add-event with no link back to the picked one."
-              />
-              <TableRow
-                label="+ Create new"
-                value="Fill identity (name auto-uppercases, colour, position for SO, description, spec, supplier notes) and target styles. Every field starts blank."
-              />
-            </Table>
-            <MockShot caption="Add Component modal — pick an existing entry as a template or start blank. Either way, a fresh library entry is created.">
+            <MockShot caption="Add Component modal — sample type, then identity, then the styles it goes on. The footer says what is about to be created.">
               <AddModalMock />
             </MockShot>
-            <Callout type="info" title="Both tabs behave the same way">
-              Every submit mints a fresh library entry that groups only the styles you ticked in this add-event. All instances start blank (OUTSTANDING, no dates). There is no way to inherit approved status from another style or start a new instance as APPROVED — the sample has to actually happen.
+            <Callout type="info" title="Copy an existing component">
+              The link at the top of step 1 opens a searchable list of everything already in the library. Pick one and it prefills the form for you — but it still creates a brand-new entry, with no link back to the one you copied. It saves typing, nothing more.
+            </Callout>
+            <Callout type="info" title="Every add starts blank">
+              Whichever route you take, the new entry covers only the styles you ticked and every one of them starts at OUTSTANDING with no dates. There&apos;s no way to inherit approved status from another style — the sample has to actually happen.
+            </Callout>
+            <Callout type="warn" title="Get the name and colour right first time">
+              Renaming, recolouring and removing all sit with Source Lab — one entry can span POs and customers, so those changes are theirs to make. Worth a quick check of the name, colour and ticked styles before you create. If something does go in wrong, just email Source Lab and they&apos;ll sort it. Sample type is fixed once created, for everyone.
             </Callout>
             <Callout type="info" title="You land where the work is">
-              When the add succeeds you're taken straight to the Library tab with the fresh entry pre-selected — so you can see exactly which styles you just linked and start managing them from there.
+              When the add succeeds you&apos;re taken straight to the Library tab with the fresh entry pre-selected — so you can see exactly which styles you just linked before anyone chases you about them.
             </Callout>
           </Step>
 
-          <Step number="3.2" title="Create new — filling the form">
+          <Step number="2.2" title="Step 2 — the identity fields">
             <p>
-              Flip to the <strong>+ Create new</strong> tab when the component genuinely doesn't exist in the library yet. Fields:
+              Once a sample type is picked, the identity fields appear. Only <strong>Name</strong> and{' '}
+              <strong>Colour</strong> (plus <strong>Positions</strong> on a Strike Off) are on show — the
+              rest live behind <strong>MORE DETAILS</strong>, so the common case stays two boxes.
             </p>
             <Table>
               <TableRow
@@ -476,70 +443,124 @@ function FactoryGuideContent() {
               />
               <TableRow
                 label="Description"
-                value="Optional. One or two lines to explain what this is (e.g. 'Digital transfer, cotton base, 2026 crest')."
+                value="Behind MORE DETAILS. Optional. One or two lines to explain what this is (e.g. 'Digital transfer, cotton base, 2026 crest')."
               />
               <TableRow
                 label="Colour"
                 value="REQUIRED for Strike Offs + Lab Dips. Optional for Labels. The specific shade — 'Sky Captain', 'Bottle Green', 'Peacoat'."
               />
               <TableRow
-                label="Position"
-                value="Strike Off only. Optional. Where the print / embroidery sits: CHEST POSITION – CENTRAL / LEFT AS WORN / RIGHT AS WORN, BACK, BACK NECK, HEM, LEFT SLEEVE AS WORN, RIGHT SLEEVE AS WORN."
+                label="Positions"
+                value="Strike Off only. Optional, and you can pick MORE THAN ONE — they're chips, not a dropdown. CHEST CENTRAL, CHEST LEFT, CHEST RIGHT, BACK, BACK NECK, HEM, LEFT SLEEVE, RIGHT SLEEVE."
               />
               <TableRow
                 label="Spec"
-                value="Optional. The spec reference off the tech pack, or a link to it if you have one."
+                value="Behind MORE DETAILS. Optional. The spec code off the tech pack."
               />
               <TableRow
                 label="Supplier notes"
-                value="Optional. Anything the supplier needs to know that doesn't fit in the description — colour reference codes, base fabric hint, tolerances."
+                value="Behind MORE DETAILS. Optional. Anything that doesn't fit in the description — colour reference codes, base fabric hint, tolerances."
               />
             </Table>
-            <MockShot caption="Create new form — name auto-uppercases, colour is required for SO/LD, position dropdown appears for Strike Offs.">
+            <MockShot caption="Copy an existing component — a searchable list of what's already there. It prefills the form; the entry it creates is still brand new.">
               <CreateNewFormMock />
             </MockShot>
             <Callout type="info" title="Save + apply in one shot">
-              Fill identity, tick target styles, hit Create — the canonical lands in the library AND instances land on each ticked style, all in one action. No two-step "save then apply."
+              Fill identity, tick target styles, hit <strong>Create &amp; add</strong> — the library entry is made AND it lands on each ticked style, all in one action. No two-step &quot;save then apply.&quot;
             </Callout>
           </Step>
 
-          <Step number="3.3" title="Target styles — pick which to apply">
+          <Step number="2.3" title="Step 3 — picking the styles">
             <p>
-              Style picker groups by PO. Search matches PO number, style code, customer, or orderbook reference. Tick individual styles, or tick the PO row to select all its styles at once. <strong>Collapse all / Expand all</strong> in the top-right for fast scanning of a long list.
+              Step 3 is the picker on the right, grouped by PO. Search matches PO number, style code and customer. Tick individual styles, or tick the PO row to take all of its styles at once — <strong>Select all</strong> and <strong>Collapse</strong> sit top-right for a long list.
             </p>
             <Tips>
-              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to TK MAXX PO 5260 and STICHD PO 5279 in one go, and both POs will show up in the same Library entry.</Tip>
-              <Tip icon={Tag}>Ticking a style that already has a same-named component from a previous add-event is allowed — the new instance sits alongside the old one and belongs to a separate group. Only detach + re-add if you need them under a single group.</Tip>
+              <Tip icon={Tag}>Most components go on every style in the PO — tick the PO row and you&apos;re done.</Tip>
+              <Tip icon={Tag}>Cross-PO selection is fine — apply the same component to two of your POs in one go, and both will show up in the same Library entry.</Tip>
+              <Tip icon={Tag}>Ticking a style that already has a same-named component from a previous add is allowed — the new one sits alongside the old rather than replacing it. Check the style isn&apos;t already covered before you add it twice.</Tip>
+              <Tip icon={Tag}>You only ever see your own POs in this picker. Other factories&apos; orders aren&apos;t in the list.</Tip>
             </Tips>
           </Step>
 
-          {/* 4. Worklist + editing */}
-          <Step number="4.1" title="Worklist — the working queue">
+          {/* 3. Tracking what you added */}
+          <Step number="3.1" title="Worklist — chasing what you added">
             <p>
-              One card per <strong>add-event</strong> — the group of styles created together in a single
-              Add Component action — showing the component's name, colour, sample type, how many styles
-              it covers and how long it has been waiting.
+              Once components exist, the <strong>Worklist</strong> tab is where you live. One card per{' '}
+              <strong>add-event</strong> — the group of styles you created together in a single Add
+              Component action — showing the name, sample type, which PO and customer it&apos;s on, how
+              many styles it covers, how long it&apos;s been idle and the ex-factory date it&apos;s
+              working towards.
             </p>
             <p>
               Status tiles run across the top. They are filters, not just counts: click{' '}
               <strong>Needs attention</strong> to cut the list to the urgent ones, click it again to
               clear. Expand any card to see every style in that group with its own status.
             </p>
-            <MockShot caption="Worklist — one card per add-event, status tiles across the top double as filters.">
+            <MockShot caption="Worklist — one card per add-event, with idle days and ex-factory on each. The tiles across the top double as filters.">
               <WorklistMock />
             </MockShot>
             <Tips>
               <Tip icon={Tag}>Cards / Table toggle — cards to scan, table when you want a dense list.</Tip>
-              <Tip icon={Tag}>Type filter (All / SO / LD / LB) scopes the whole tab.</Tip>
-              <Tip icon={Tag}>Search narrows to a PO number, style code or component name.</Tip>
+              <Tip icon={Tag}>Type filter (All / Strike Off / Lab Dip / Label) scopes the whole tab.</Tip>
+              <Tip icon={Tag}><strong>Group by add</strong> is on by default. Turn it off and you get one row per style instead of one card per add.</Tip>
+              <Tip icon={Tag}><strong>Hide shipped</strong> keeps orders that have already gone out of the way.</Tip>
+              <Tip icon={Search}>Search narrows to a PO number, style code or component name.</Tip>
             </Tips>
           </Step>
 
-          <Step number="4.2" title="Editing a single instance">
+          <Step number="3.2" title="Library — what already exists">
             <p>
-              Expand a Worklist card and click any style on it — an edit modal opens on top, no page navigation. Set status, received date, approved date, or reject with a reason. Save and the change immediately reflects in both tabs.
+              The <strong>Library</strong> tab answers a different question: not &quot;what needs
+              chasing&quot; but &quot;what have we got?&quot; Worth a look before you create something
+              new — if it&apos;s already there, use <strong>Copy an existing component</strong> rather
+              than retyping it.
             </p>
-            <MockShot caption="Sample lifecycle inside the instance edit modal — status pill, three field tiles, attempt history.">
+            <p>
+              A rail of cards down the left, <strong>one per name</strong>, each showing how many
+              separate entries share that name and how many styles they cover between them. Click a
+              card and the right panel lists every entry under it, numbered <strong>#1</strong>,{' '}
+              <strong>#2</strong> and so on — colour, style count, PO, and a coloured bar telling you
+              at a glance where that entry has got to (&quot;All approved&quot;, &quot;None back
+              yet&quot;). Open one and you get the styles underneath with their own statuses.
+            </p>
+            <p>
+              Grouped by name because a name is a label, not an identity. Every add mints a fresh
+              entry, so &quot;RIB FABRIC&quot; can be a dozen unrelated ones across different POs and
+              seasons. A flat list of those is unreadable.
+            </p>
+            <MockShot caption="Library tab — a card per name on the left; the right panel numbers every entry under that name, with a progress bar each.">
+              <LibraryTabMock />
+            </MockShot>
+            <Tips>
+              <Tip icon={Tag}>Names are stored UPPERCASE. Entries are never merged by name — two with the same name sit under the same card as separate entries, because they came from separate adds.</Tip>
+              <Tip icon={Search}>Search matches name, colour, PO, customer, factory, style and product — and it narrows the entries inside a card, not just which cards show.</Tip>
+              <Tip icon={Tag}>The tiles across the top are counts, not filters: names in the library, styles out of step, how many are on a style, unused entries, and how many have no spec recorded.</Tip>
+            </Tips>
+            <Callout type="warn" title="OUT OF STEP — the one alarm in the Library">
+              If an entry&apos;s own styles hold different statuses, it&apos;s flagged{' '}
+              <strong>OUT OF STEP</strong>. Entries that merely share a name differ all the time —
+              different POs, different seasons, approved months apart — and that&apos;s normal. But one
+              entry is one add and one decision, so its styles should move together. When one lags
+              behind, somebody missed it.
+            </Callout>
+          </Step>
+
+          <Step number="3.3" title="After you've added — who does what">
+            <p>
+              Adding is yours, signing off is Source Lab&apos;s. Handy to know where the line sits, so
+              nothing sits waiting on the wrong person.
+            </p>
+            <Table>
+              <TableRow
+                label="You do"
+                value="Add components to every new order. Pick which styles each one goes on. Send the physical samples in, and remake anything that gets rejected."
+              />
+              <TableRow
+                label="Source Lab does"
+                value="Marks a sample Received when it lands, then Approved or Rejected. Renames a library entry, or removes one added by mistake. Decides whether a sample is NOT REQUIRED."
+              />
+            </Table>
+            <MockShot caption="Click any style on a worklist card and this opens — status, dates and attempt history, so you can see exactly where a sample is up to.">
               <ComponentCardMock
                 name="CHEST PRINT — HOME KIT BLUE"
                 type="strike_off"
@@ -548,19 +569,22 @@ function FactoryGuideContent() {
                 approved="20 May 2026"
               />
             </MockShot>
-            <Callout type="info" title="Factories see this read-only">
-              Suppliers can add / detach components and edit identity fields on ones touching their POs, but Status / Received / Approved are Sourcelab's call.
+            <Callout type="info" title="Greyed-out dates are not a bug">
+              Click a style and the <strong>Status</strong>, <strong>Received</strong> and{' '}
+              <strong>Approved</strong> fields show as plain text rather than editable boxes. That is
+              deliberate — Source Lab sets those. You open this to <em>read</em> where a sample is up
+              to, and to see the attempt history and any rejection reason.
+            </Callout>
+            <Callout type="info" title="Several of your styles can change at the same time">
+              Source Lab can approve a component across every style carrying it in one action. So if
+              six of your styles all move to APPROVED at the same moment, that is one decision being
+              applied — not a glitch, and not something you need to chase.
             </Callout>
           </Step>
 
-          <Callout type="info" title="Several of your styles can change at the same time">
-            Source Lab can approve a component across every style carrying it in one action. So if
-            six of your styles all move to APPROVED at the same moment, that is one decision being
-            applied — not a glitch, and not something you need to chase.
-          </Callout>
 
-          {/* 6. Lifecycle */}
-          <Step number="6.1" title="The sample lifecycle">
+          {/* 4. Sign-off */}
+          <Step number="4.1" title="The sample lifecycle">
             <div className="my-3 flex items-center gap-2 text-[11px] flex-wrap">
               <StatusPill tone="gray">OUTSTANDING</StatusPill>
               <span className="text-gray-400">→</span>
@@ -579,12 +603,17 @@ function FactoryGuideContent() {
             </p>
           </Step>
 
-          {/* 7. Rejections */}
-          <Step number="7.1" title="Rejections and v2 (rework)">
+          
+          <Step number="4.2" title="Rejections and v2 (rework)">
             <p>
-              When Sourcelab rejects, they pick a structured <strong>reason</strong> (Colour / Placement / Stitch / Material / Spec / Print / Other), add an optional <strong>note</strong>, and optionally a <strong>photo</strong>. Confirming closes the attempt as REJECTED and opens v2 at OUTSTANDING with the clock reset.
+              When Source Lab rejects, they pick a structured <strong>reason</strong> (Colour / Placement / Stitch / Material / Spec / Print / Other), add an optional <strong>note</strong>, and optionally a <strong>photo</strong>. Confirming closes the attempt as REJECTED and opens v2 at OUTSTANDING with the clock reset.
             </p>
-            <MockShot caption="Same component on v2 with the rejection context banner — factories see the reason + note so they know what to fix.">
+            <p>
+              <strong>Don&apos;t add a new component for the remake.</strong> v2 is already open on the
+              same one — read the reason, fix it, send the new sample in against it. Adding a
+              duplicate splits the history and loses the attempt count.
+            </p>
+            <MockShot caption="Same component on v2 with the rejection context banner — you get the reason and the note, so you know exactly what to change.">
               <ComponentCardMock
                 name="CHEST EMB"
                 type="strike_off"
@@ -597,7 +626,7 @@ function FactoryGuideContent() {
               />
             </MockShot>
             <Callout type="warn" title="Stuck on v3+ needs direct attention">
-              Anything on v3+ shows on the Sourcelab Resubmissions dashboard. Usually a comms issue worth a phone call when things hit a third attempt.
+              Anything on v3+ shows on the Source Lab Resubmissions dashboard. Usually a comms issue worth a phone call when things hit a third attempt.
             </Callout>
           </Step>
         </section>
@@ -1735,204 +1764,298 @@ function WarningEntryMock() {
 /* ─── Mocks for the library-first Add flow, the Worklist and bulk edit ─── */
 
 function LibraryTabMock() {
-  const items: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; colour?: string; position?: string; styles: number; customers: number; active?: boolean }[] = [
-    { name: 'CHEST PRINT — HOME KIT BLUE', type: 'strike_off', colour: 'Sky Captain', position: 'CHEST POSITION – CENTRAL', styles: 11, customers: 3, active: true },
-    { name: 'MAIN FABRIC — COTTON 200GSM', type: 'strike_off', colour: 'Bottle Green', styles: 14, customers: 4 },
-    { name: 'EMBROIDERED CREST', type: 'strike_off', colour: 'BIRCH', position: 'CHEST POSITION – CENTRAL', styles: 5, customers: 1 },
-    { name: 'CARE LABEL — STANDARD', type: 'label', styles: 22, customers: 5 },
-    { name: 'PEACOAT NAVY', type: 'lab_dip', colour: 'Peacoat', styles: 7, customers: 2 },
+  const tiles = [
+    { label: 'NAMES', n: '19', active: true },
+    { label: 'STYLES OUT OF STEP', n: '0', red: true },
+    { label: 'ON A STYLE', n: '19' },
+    { label: 'UNUSED', n: '0' },
+    { label: 'NO SPEC', n: '19' },
+  ];
+  const rail: { name: string; type: 'strike_off' | 'lab_dip' | 'label'; meta: string; active?: boolean }[] = [
+    { name: 'AOP PRINT', type: 'strike_off', meta: '2 entries · 38 styles', active: true },
+    { name: 'EMBROIDERED LOGO', type: 'strike_off', meta: '1 entry · 34 styles' },
+    { name: 'FLOATY BLUE', type: 'lab_dip', meta: '1 entry · 34 styles' },
+    { name: 'CARE LABEL', type: 'label', meta: '3 entries · 20 styles' },
+    { name: 'MAIN FABRIC', type: 'lab_dip', meta: '3 entries · 18 styles' },
+    { name: 'PANEL FABRIC', type: 'lab_dip', meta: '2 entries · 17 styles' },
   ];
   return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-4xl mx-auto">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-          <p className="text-sm font-bold text-gray-900">Components</p>
-          <div className="flex items-center gap-3 border-b-2 border-transparent">
-            <span className="pb-2 text-[11px] font-bold text-violet-700 border-b-2 border-violet-500 -mb-3">Library</span>
-            <span className="pb-2 text-[11px] font-medium text-gray-500">Worklist</span>
+    <div className="p-3 bg-gray-50">
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-sm font-extrabold text-gray-900">Components</p>
+        <span className="text-[9px] text-gray-400">Identity for every component — the only place a rename happens</span>
+        <span className="ml-auto inline-flex rounded-md border border-gray-200 bg-white overflow-hidden">
+          <span className="px-2 py-1 text-[10px] font-medium text-gray-500">Worklist</span>
+          <span className="px-2 py-1 text-[10px] font-bold text-primary-700 bg-primary-50">Library</span>
+        </span>
+      </div>
+
+      <div className="grid grid-cols-5 gap-1.5 mb-2">
+        {tiles.map(t => (
+          <div key={t.label} className={cn('rounded-md border bg-white px-2 py-1.5',
+            t.active ? 'border-primary-400 ring-1 ring-primary-200' : 'border-gray-200')}>
+            <p className="text-[7.5px] font-bold tracking-wide text-gray-500">{t.label}</p>
+            <p className={cn('text-sm font-extrabold', t.red ? 'text-red-600' : 'text-gray-900')}>{t.n}</p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <div className="text-[10px] text-gray-400">+ Add component</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-[150px_1fr] gap-1.5">
+        {/* One card per NAME */}
+        <div className="space-y-1">
+          {rail.map((c, i) => (
+            <div key={i} className={cn('rounded-lg border bg-white px-2 py-1.5',
+              c.active ? 'border-primary-400 ring-1 ring-primary-200' : 'border-gray-200')}>
+              <div className="flex items-center gap-1">
+                <TypeBadge type={c.type} />
+                <span className="text-[7.5px] font-semibold text-emerald-600 flex items-center gap-0.5">
+                  <CheckCircle2 className="w-2 h-2" /> in step
+                </span>
+              </div>
+              <p className="text-[10px] font-extrabold text-gray-900 mt-0.5 leading-tight">{c.name}</p>
+              <p className="text-[8px] text-gray-500">{c.meta}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Every entry under that name */}
+        <div className="rounded-lg border border-gray-200 bg-white p-2">
+          <div className="flex items-center gap-1.5 mb-2">
+            <TypeBadge type="strike_off" />
+            <span className="text-[11px] font-extrabold text-gray-900">AOP PRINT</span>
+            <span className="text-[8.5px] text-gray-500">2 entries · 38 styles</span>
+          </div>
+
+          <div className="rounded-md border border-gray-200 overflow-hidden mb-1.5">
+            <div className="px-2 py-1.5 flex items-center gap-1.5 text-[9px]">
+              <span className="font-mono font-bold text-gray-400">#1</span>
+              <span className="font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">HIGH RISK RED</span>
+              <span className="text-gray-500">4 styles</span>
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded border border-gray-200 text-gray-700">5252</span>
+              <span className="ml-auto text-gray-400">signed off 10 Sept</span>
+              <span className="font-semibold text-emerald-600 flex items-center gap-0.5">
+                <CheckCircle2 className="w-2.5 h-2.5" /> All approved
+              </span>
+            </div>
+            <div className="h-1 bg-emerald-500" />
+          </div>
+
+          <div className="rounded-md border border-gray-200 overflow-hidden">
+            <div className="px-2 py-1.5 flex items-center gap-1.5 text-[9px]">
+              <span className="font-mono font-bold text-gray-400">#2</span>
+              <span className="font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">FLOATY BLUE</span>
+              <span className="text-gray-500">34 styles</span>
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded border border-gray-200 text-gray-700">5279</span>
+              <span className="ml-auto font-semibold text-amber-600 flex items-center gap-0.5">
+                <Clock className="w-2.5 h-2.5" /> None back yet
+              </span>
+            </div>
+            <div className="h-1 bg-amber-400" />
+            <div className="px-2 py-1 bg-gray-50/60 text-[8.5px] font-mono font-bold text-gray-600">
+              PO 5279 <span className="font-sans font-normal text-gray-400">STICHD · 34 styles</span>
+            </div>
+            {[['S006367A-0868-MCI', 'MCI MENS REVERSIBLE BUCKET HAT'],
+              ['S006028A-0868-MCI', 'MCI MENS SHORT SLEEVE SHIRT'],
+              ['S006368A-0868-MCI', 'MCI MENS SWIM SHORTS']].map(([code, desc]) => (
+              <div key={code} className="px-2 py-1 border-t border-gray-50 flex items-center gap-2 text-[8.5px]">
+                <span className="font-mono text-gray-600">{code}</span>
+                <span className="text-gray-500 truncate">{desc}</span>
+                <span className="ml-auto font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Outstanding</span>
+              </div>
+            ))}
+            <div className="px-2 py-1 border-t border-gray-50 text-[8.5px] font-semibold text-primary-600">
+              Show all 34 styles on 5279
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-[240px_1fr]">
-          {/* Left rail */}
-          <div className="border-r border-gray-100 bg-gray-50/40">
-            <div className="p-2.5 border-b border-gray-100">
-              <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[11px] text-gray-400 bg-white flex items-center">
-                <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
-                Search library…
+      </div>
+
+      <p className="mt-1.5 text-[8px] text-gray-400">One card per name · an entry is one add</p>
+    </div>
+  );
+}
+
+/* The Add Component modal as it actually is: one numbered flow, not tabs.
+   Left column carries steps 1 + 2, right column is the style picker, and the
+   footer keeps a live summary of what is about to be created. */
+function AddModalMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between">
+          <div>
+            <p className="text-[8px] uppercase tracking-widest font-bold text-blue-600">New component</p>
+            <p className="text-sm font-bold text-gray-900 mt-0.5">Add component</p>
+            <p className="text-[10px] text-gray-500">Creates one library entry and puts a blank sample against every style you pick.</p>
+          </div>
+          <X className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        </div>
+
+        <div className="grid grid-cols-[1fr_1.15fr]">
+          {/* 1 + 2 */}
+          <div className="border-r border-gray-100 p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500 flex items-center gap-1.5">
+                <StepDot n="1" /> Sample type
+              </p>
+              <span className="text-[9px] font-semibold text-blue-600">Copy an existing component</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="rounded-lg border-2 border-blue-500 bg-blue-50/50 p-2">
+                <p className="text-[10px] font-bold text-gray-900">Strike Off</p>
+                <p className="text-[8px] text-gray-500 leading-tight mt-0.5">Print or embroidery, approved in position</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-2">
+                <p className="text-[10px] font-bold text-gray-900">Lab Dip</p>
+                <p className="text-[8px] text-gray-500 leading-tight mt-0.5">Colour matched against a reference</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-2">
+                <p className="text-[10px] font-bold text-gray-900">Label</p>
+                <p className="text-[8px] text-gray-500 leading-tight mt-0.5">Woven, care and branding labels</p>
+              </div>
+            </div>
+            <p className="text-[8.5px] text-gray-500 flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5" /> Permanent — a component can&apos;t change type after it&apos;s created.
+            </p>
+
+            <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500 flex items-center gap-1.5 pt-1">
+              <StepDot n="2" /> Identity
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[8px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+                  Name <span className="text-red-500 normal-case">(required)</span>
+                </p>
+                <div className="px-2 py-1.5 border border-gray-200 rounded-md text-[10px] font-mono text-gray-900">CHEST PRINT</div>
+              </div>
+              <div>
+                <p className="text-[8px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+                  Colour <span className="text-red-500 normal-case">(required)</span>
+                </p>
+                <div className="px-2 py-1.5 border border-gray-200 rounded-md text-[10px] font-mono text-gray-900">FIG</div>
               </div>
             </div>
             <div>
-              {items.map((c, i) => (
-                <div key={i} className={cn(
-                  'px-3 py-2.5 border-b border-gray-100 text-[11px]',
-                  c.active ? 'bg-violet-50 border-l-4 border-l-violet-500 -ml-px' : ''
-                )}>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <TypeBadge type={c.type} />
-                    <span className="font-semibold text-gray-900 truncate flex-1">{c.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1 flex-wrap mt-1">
-                    {c.colour && (
-                      <span className="text-[10px] font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 truncate max-w-[100px]">{c.colour}</span>
-                    )}
-                    {c.position && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 truncate max-w-[130px]">{c.position}</span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-gray-500 mt-1 tabular-nums">{c.styles} styles · {c.customers} customer{c.customers === 1 ? '' : 's'}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Right detail */}
-          <div className="p-4 space-y-3">
-            {/* Identity */}
-            <div className="rounded-lg border border-gray-200 p-3 flex items-start gap-3">
-              <div className="w-9 h-9 rounded bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-sm">📷</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <TypeBadge type="strike_off" />
-                  <p className="text-sm font-bold text-gray-900">CHEST PRINT — HOME KIT BLUE</p>
-                  <span className="text-[11px] font-semibold text-gray-700 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sky Captain</span>
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-2 py-0.5">Central</span>
-                </div>
-                <p className="text-[11px] text-gray-500 mt-0.5 truncate">Digital transfer, cotton base, 2026 crest · 📎 spec-chest-print-v2.pdf</p>
-              </div>
-              <button className="text-[10px] font-semibold text-violet-600">Edit</button>
-            </div>
-            {/* Rollup */}
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <div className="rounded border border-gray-200 bg-gray-50 p-1.5">
-                <p className="text-[9px] uppercase font-bold text-gray-500">Used</p>
-                <p className="text-sm font-bold text-gray-900 tabular-nums">11</p>
-              </div>
-              <div className="rounded border border-emerald-200 bg-emerald-50 p-1.5">
-                <p className="text-[9px] uppercase font-bold text-emerald-700">Approved</p>
-                <p className="text-sm font-bold text-emerald-700 tabular-nums">6</p>
-              </div>
-              <div className="rounded border border-blue-200 bg-blue-50 p-1.5">
-                <p className="text-[9px] uppercase font-bold text-blue-700">Received</p>
-                <p className="text-sm font-bold text-blue-700 tabular-nums">2</p>
-              </div>
-              <div className="rounded border border-amber-200 bg-amber-50 p-1.5">
-                <p className="text-[9px] uppercase font-bold text-amber-700">Outstanding</p>
-                <p className="text-sm font-bold text-amber-700 tabular-nums">3</p>
-              </div>
-            </div>
-            {/* Instance list */}
-            <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">All styles using this</p>
-                <p className="text-[10px] text-gray-400">3 styles</p>
-              </div>
-              <div className="divide-y divide-gray-100 text-[11px]">
-                {[
-                  { code: 'S006165A-0501', po: '5278 · AL-HILAL', st: 'Approved 27 Aug', tone: 'green' as const },
-                  { code: 'S004748A-0003', po: '5260 · TK MAXX', st: 'Received 2 Sep', tone: 'blue' as const },
-                  { code: 'S006028A-0868', po: '5279 · STICHD', st: 'v2 out · 19d', tone: 'amber' as const },
-                ].map((r, i) => (
-                  <div key={i} className="px-3 py-1.5 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
-                    <span className="font-mono tabular-nums text-gray-700">{r.code}</span>
-                    <span className="flex-1 truncate text-gray-500">{r.po}</span>
-                    <StatusPill tone={r.tone}>{r.st}</StatusPill>
-                  </div>
+              <p className="text-[8px] uppercase tracking-wider font-bold text-gray-500 mb-1">
+                Positions <span className="text-gray-400 normal-case">(optional)</span>
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {['CHEST CENTRAL', 'CHEST LEFT', 'CHEST RIGHT', 'BACK', 'BACK NECK', 'HEM', 'LEFT SLEEVE', 'RIGHT SLEEVE'].map((pos) => (
+                  <span key={pos} className={cn('text-[8px] font-semibold px-1.5 py-0.5 rounded border',
+                    pos === 'CHEST CENTRAL' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200')}>
+                    {pos}
+                  </span>
                 ))}
               </div>
             </div>
+            <p className="text-[9px] font-semibold text-gray-500 flex items-center gap-1">
+              <ChevronRight className="w-2.5 h-2.5" /> MORE DETAILS
+            </p>
           </div>
+
+          {/* 3 */}
+          <div className="p-3.5">
+            <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500 flex items-center gap-1.5 mb-2">
+              <StepDot n="3" /> Apply to styles
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 pl-6 pr-2 py-1 border border-gray-200 rounded-md text-[9px] text-gray-400 flex items-center">
+                <Search className="w-2.5 h-2.5 text-gray-400 -ml-4 mr-1.5" />
+                Search PO, style, customer…
+              </div>
+              <span className="text-[9px] font-semibold text-gray-500 whitespace-nowrap">Select all</span>
+              <span className="text-[9px] font-semibold text-gray-500 whitespace-nowrap">Collapse</span>
+            </div>
+            <div className="rounded-lg border border-gray-200 overflow-hidden text-[9.5px]">
+              <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm border border-gray-300 bg-blue-600 flex-shrink-0" />
+                <span className="font-mono font-bold">PO 5254</span>
+                <span className="text-gray-400">· STICHD</span>
+                <span className="ml-auto text-gray-400">14 styles</span>
+              </div>
+              {[['S004807A-0767-MCI', 'MCI LADIES OVERSIZED HOODY', 'FIG'],
+                ['S004807K-0767-MCI', 'MCI KIDS OVERSIZED HOODY', 'FIG'],
+                ['S002603A-0767-MCI', 'MCI LADIES OVERSIZED 1/4 ZIP', 'FIG']].map(([code, desc, col]) => (
+                <div key={code} className="px-2 py-1 pl-6 border-b border-gray-50 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm border border-gray-300 bg-blue-600 flex-shrink-0" />
+                  <span className="font-mono text-gray-700">{code}</span>
+                  <span className="text-gray-500 truncate">{desc}</span>
+                  <span className="ml-auto text-gray-400">{col}</span>
+                </div>
+              ))}
+              <div className="px-2 py-1.5 bg-gray-50 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm border border-gray-300 bg-white flex-shrink-0" />
+                <span className="font-mono font-bold">PO 5260</span>
+                <span className="text-gray-400">· TK MAXX</span>
+                <span className="ml-auto text-gray-400">6 styles</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+          <p className="text-[9px] text-gray-500 flex items-center gap-1.5">
+            <span className="uppercase tracking-widest font-bold text-gray-400">Creates</span>
+            <TypeBadge type="strike_off" />
+            <span className="font-mono font-bold text-gray-800">CHEST PRINT</span>
+            <span className="text-gray-400">· 3 styles picked</span>
+          </p>
+          <button className="px-3 py-1 text-[10px] font-semibold text-white bg-blue-600 rounded-md flex items-center gap-1">
+            <CheckCircle2 className="w-2.5 h-2.5" /> Create &amp; add
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function AddModalMock() {
+function StepDot({ n }: { n: string }) {
+  return (
+    <span className="w-3.5 h-3.5 rounded-full bg-gray-200 text-gray-700 text-[8px] font-bold flex items-center justify-center">
+      {n}
+    </span>
+  );
+}
+
+/* "Copy an existing component" swaps the left column for a searchable list of
+   what already exists. It prefills — it does not link the two together. */
+function CreateNewFormMock() {
   return (
     <div className="p-4">
-      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-3xl mx-auto shadow-sm">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 border-b border-gray-100 flex items-start justify-between">
           <div>
-            <p className="text-sm font-bold text-gray-900">Add component</p>
-            <p className="text-[10px] text-gray-500">Every add creates a fresh library entry. Pick an existing entry to copy its identity, or fill from scratch.</p>
+            <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500">Copy from existing</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Prefills the form below. Still creates a new entry.</p>
           </div>
-          <X className="w-3.5 h-3.5 text-gray-400" />
+          <X className="w-3 h-3 text-gray-400 flex-shrink-0" />
         </div>
-        <div className="px-5 pt-3">
-          <div className="inline-flex p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
-            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">From library (as template)</span>
-            <span className="px-3 py-1 rounded-md text-gray-500">+ Create new</span>
+        <div className="p-3">
+          <div className="pl-6 pr-2 py-1.5 border-2 border-blue-500 rounded-md text-[10px] text-gray-400 flex items-center mb-2">
+            <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
+            Search name, colour, PO, style code…
           </div>
-        </div>
-        <div className="grid grid-cols-[220px_1fr]">
-          <div className="border-r border-gray-100 p-3 bg-gray-50/40 space-y-1.5">
-            <div className="pl-6 pr-2 py-1 border border-gray-200 rounded text-[10px] text-gray-400 bg-white flex items-center">
-              <Search className="w-3 h-3 text-gray-400 -ml-4 mr-1.5" />
-              Search library…
-            </div>
-            <div className="p-2 rounded border-2 border-violet-500 bg-violet-50">
-              <div className="flex items-center gap-1.5">
-                <TypeBadge type="strike_off" />
-                <span className="text-[11px] font-bold text-gray-900 truncate">CHEST PRINT — HOME KIT BLUE</span>
-              </div>
-              <p className="text-[9px] text-gray-500 mt-0.5">11 styles · 3 customers · 📎</p>
-            </div>
-            <div className="p-2 rounded border border-gray-200 bg-white">
-              <div className="flex items-center gap-1.5">
-                <TypeBadge type="lab_dip" />
-                <span className="text-[11px] font-bold text-gray-900 truncate">PEACOAT NAVY</span>
-              </div>
-              <p className="text-[9px] text-gray-500 mt-0.5">7 styles · 2 customers</p>
-            </div>
-            <div className="p-2 rounded border border-gray-200 bg-white">
-              <div className="flex items-center gap-1.5">
-                <TypeBadge type="label" />
-                <span className="text-[11px] font-bold text-gray-900 truncate">CARE LABEL — STANDARD</span>
-              </div>
-              <p className="text-[9px] text-gray-500 mt-0.5">22 styles · 5 customers</p>
-            </div>
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="rounded border border-violet-200 bg-violet-50/60 p-2">
-              <p className="text-[10px] font-bold text-violet-800">A new library entry will be created</p>
-              <p className="text-[9px] text-violet-700/80 mt-0.5">Identity below is copied from the picked entry — no link back. Every ticked style starts blank (OUTSTANDING, no dates).</p>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="text-[9px] uppercase tracking-widest font-bold text-gray-500">Apply to styles</p>
-                <p className="text-[9px] font-semibold text-gray-500">Collapse all</p>
-              </div>
-              <div className="rounded border border-gray-200 overflow-hidden text-[10px]">
-                <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
-                  <span className="font-mono font-bold">PO 5310</span>
-                  <span className="text-gray-500">· AL-HILAL · 5 styles</span>
+          <div className="divide-y divide-gray-50">
+            {[['AOP PRINT', 'HIGH RISK RED', '4 styles · 1 customer'],
+              ['AOP PRINT', 'FLOATY BLUE', '34 styles · 1 customer'],
+              ['CHEST PRINT', 'FIG', '14 styles · 1 customer'],
+              ['EMBROIDERED CREST', 'BIRCH', '5 styles · 1 customer'],
+              ['HEAT TRANSFER LOGO', 'JET BLACK', '6 styles · 1 customer']].map(([name, col, meta], i) => (
+              <div key={i} className="py-1.5">
+                <div className="flex items-center gap-1.5">
+                  <TypeBadge type="strike_off" />
+                  <span className="text-[10.5px] font-bold text-gray-900">{name}</span>
+                  <span className="text-[8.5px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{col}</span>
                 </div>
-                <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
-                  <span className="font-mono">S004901A-0001</span>
-                  <span className="text-gray-500">Home Kit Body · Blue</span>
-                </div>
-                <div className="px-2 py-1 pl-8 bg-violet-50/50 border-t border-gray-100 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
-                  <span className="font-mono">S004901A-0004</span>
-                  <span className="text-gray-500">Home Kit Body · Red</span>
-                </div>
-                <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded border border-gray-300 bg-white" />
-                  <span className="font-mono font-bold">PO 5205</span>
-                  <span className="text-gray-500">· TK MAXX · 6 styles</span>
-                </div>
+                <p className="text-[9px] text-gray-500 mt-0.5">{meta}</p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
-          <p className="text-[10px] text-gray-500">2 styles selected</p>
-          <button className="px-3 py-1 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Add to 2 styles</button>
+        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50">
+          <p className="text-[9px] text-gray-500">
+            Two entries can share a name — <b className="text-gray-700">AOP PRINT</b> in two colours is two separate entries.
+          </p>
         </div>
       </div>
     </div>
@@ -1948,32 +2071,34 @@ function AddModalMock() {
  */
 function WorklistMock() {
   const tiles = [
-    { label: 'IN FLIGHT', n: '9', active: true },
-    { label: 'NEEDS ATTENTION', n: '1', red: true },
-    { label: 'REJECTED', n: '1', red: true },
-    { label: 'STALE 14D+', n: '0' },
-    { label: 'OUTSTANDING', n: '5' },
-    { label: 'RECEIVED', n: '3' },
+    { label: 'IN FLIGHT', n: '204', active: true },
+    { label: 'NEEDS ATTENTION', n: '15', red: true },
+    { label: 'REJECTED', n: '0', red: true },
+    { label: 'STALE 14D+', n: '15' },
+    { label: 'OUTSTANDING', n: '42' },
+    { label: 'RECEIVED', n: '26' },
   ];
   const cards: {
     type: 'strike_off' | 'lab_dip' | 'label';
-    name: string; sub: string; chips: { t: string; tone: 'red' | 'amber' | 'blue' }[];
-    exfac: string; attention?: string; multi?: boolean;
+    name: string; sub: string; chips: { t: string; tone: 'red' | 'amber' | 'blue' | 'gray' }[];
+    exfac: string; idle: string; attention?: string;
   }[] = [
-    { type: 'strike_off', name: 'CHEST PRINT — HOME KIT BLUE', sub: '2 styles · 2 POs',
-      chips: [{ t: 'Rejected', tone: 'red' }, { t: 'Outstanding', tone: 'amber' }],
-      exfac: '06/11/2026', attention: '1 needs attention', multi: true },
-    { type: 'strike_off', name: 'CHEST PRINT — HOME KIT BLUE', sub: '1 style · PO 5252 · LEVY MERCHANDISING',
-      chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '30/10/2026' },
-    { type: 'lab_dip', name: 'PEACOAT NAVY', sub: '1 style · PO 5261 · AL-HILAL',
-      chips: [{ t: 'Outstanding', tone: 'amber' }], exfac: '31/10/2026' },
-    { type: 'label', name: 'CARE LABEL — STANDARD', sub: '2 styles · 2 POs',
-      chips: [{ t: '2 Received', tone: 'blue' }], exfac: '13/10/2026', multi: true },
+    { type: 'strike_off', name: 'AOP PRINT', sub: '34 styles · PO 5279 · STICHD',
+      chips: [{ t: '34 Outstanding', tone: 'amber' }],
+      idle: '25d', exfac: '10/12/2026', attention: '12 need attention' },
+    { type: 'lab_dip', name: 'PANEL FABRIC', sub: '8 styles · PO 5282 · TK MAXX',
+      chips: [{ t: '8 Outstanding', tone: 'amber' }],
+      idle: '25d', exfac: '15/12/2026', attention: '3 need attention' },
+    { type: 'label', name: 'CARE LABEL', sub: '6 styles · PO 5261 · TK MAXX',
+      chips: [{ t: '6 Received', tone: 'blue' }], idle: '11d', exfac: '10/10/2026' },
+    { type: 'strike_off', name: 'HEAT TRANSFER LOGO', sub: '6 styles · PO 5261 · TK MAXX',
+      chips: [{ t: '6 Not started', tone: 'gray' }], idle: '2d', exfac: '10/10/2026' },
   ];
   const chipTone = {
     red: 'bg-red-50 text-red-700',
     amber: 'bg-amber-50 text-amber-700',
     blue: 'bg-blue-50 text-blue-700',
+    gray: 'bg-gray-100 text-gray-600',
   } as const;
 
   return (
@@ -2014,6 +2139,8 @@ function WorklistMock() {
           ))}
           <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Cards</span>
           <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-500 text-[9px] font-semibold">Table</span>
+          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Group by add</span>
+          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Hide shipped</span>
         </div>
 
         {/* Add-event cards */}
@@ -2038,11 +2165,9 @@ function WorklistMock() {
                 </div>
               </div>
               <div className="px-2 py-1 border-t border-gray-100 bg-gray-50/60 flex items-center gap-2">
-                <span className="text-[8.5px] text-gray-400">idle 0d</span>
+                <span className={cn('text-[8.5px]', c.attention ? 'text-red-500 font-semibold' : 'text-gray-400')}>idle {c.idle}</span>
                 <span className="text-[8.5px] text-gray-500">ex-fac {c.exfac}</span>
-                <span className="ml-auto text-[8.5px] font-semibold text-primary-600">
-                  {c.multi ? '\u203a Styles' : 'Open'}
-                </span>
+                <span className="ml-auto text-[8.5px] font-semibold text-primary-600">&#8250; Styles</span>
               </div>
             </div>
           ))}
@@ -2051,83 +2176,3 @@ function WorklistMock() {
   );
 }
 
-function CreateNewFormMock() {
-  return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden max-w-3xl mx-auto shadow-sm">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-900">Add component</p>
-            <p className="text-[10px] text-gray-500">Create a canonical component, then apply to styles.</p>
-          </div>
-          <X className="w-3.5 h-3.5 text-gray-400" />
-        </div>
-        <div className="px-5 pt-3">
-          <div className="inline-flex p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
-            <span className="px-3 py-1 rounded-md text-gray-500">From library</span>
-            <span className="px-3 py-1 rounded-md bg-white shadow-sm text-violet-700">+ Create new</span>
-          </div>
-        </div>
-        <div className="p-5 space-y-3">
-          <div className="grid grid-cols-[1fr_120px] gap-3">
-            <div>
-              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Name</p>
-              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white uppercase">CHEST PRINT — HOME KIT BLUE</div>
-            </div>
-            <div>
-              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Sample type</p>
-              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white">Strike Off</div>
-            </div>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Description <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
-            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white min-h-[36px]">Digital transfer, cotton base, 2026 crest.</div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Colour <span className="lowercase font-normal text-red-500" style={{ letterSpacing: 0 }}>(required)</span></p>
-              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white">Sky Captain</div>
-            </div>
-            <div>
-              <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Position <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
-              <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-800 bg-white flex items-center justify-between">
-                <span>CHEST POSITION – CENTRAL</span>
-                <ChevronRight className="w-3 h-3 text-gray-400 rotate-90" />
-              </div>
-            </div>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Spec <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
-            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-400 bg-white">https://…</div>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1">Supplier notes <span className="lowercase font-normal text-gray-400" style={{ letterSpacing: 0 }}>(optional)</span></p>
-            <div className="px-2 py-1.5 border border-gray-300 rounded-md text-[12px] text-gray-400 bg-white min-h-[36px]">Anything the supplier should know…</div>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-1 flex items-center justify-between">
-              <span>Apply to styles</span>
-              <span className="lowercase font-semibold text-gray-500 tracking-normal">Collapse all</span>
-            </p>
-            <div className="rounded border border-gray-200 overflow-hidden text-[10px]">
-              <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
-                <span className="font-mono font-bold">PO 5310</span>
-                <span className="text-gray-500">· AL-HILAL · 5 styles</span>
-              </div>
-              <div className="px-2 py-1 pl-8 bg-violet-50/50 flex items-center gap-2">
-                <span className="w-3 h-3 rounded border border-gray-300 bg-violet-500" />
-                <span className="font-mono">S004901A-0001</span>
-                <span className="text-gray-500">Home Kit Body · Blue</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
-          <p className="text-[10px] text-gray-500">1 style selected</p>
-          <button className="px-3 py-1.5 text-[11px] font-semibold text-white bg-violet-600 rounded-md">Create &amp; add to 1 style</button>
-        </div>
-      </div>
-    </div>
-  );
-}
