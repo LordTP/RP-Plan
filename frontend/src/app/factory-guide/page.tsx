@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShoppingBag, Truck, BookOpen, CheckCircle2, AlertTriangle, Info, Search, Calendar,
   FileSpreadsheet, Edit3, Lock, MessageSquare, X, Plus, ChevronDown, ChevronRight,
@@ -680,24 +680,40 @@ function SectionHeader({ icon: Icon, title, blurb }: { icon: any; title: string;
 /** Anchor id for a step, so the index on the left can jump to it. */
 const stepId = (n: string) => `step-${n.replace('.', '-')}`;
 
+/**
+ * One step: what to do on the left, the screen it happens on beside it.
+ *
+ * The page used to stack full-width prose above a full-width mock, which gave
+ * a wall of text with a picture dropped into it and no shared edge between
+ * them. Splitting the two means the words cannot run long — the column will
+ * not let them — and the picture sits next to the instruction it illustrates
+ * instead of interrupting it.
+ *
+ * Children are sorted rather than passed as separate props, so the ~18 call
+ * sites did not all have to change: anything visual (a MockShot or a
+ * reference Table) goes right, the words go left. A step with nothing visual
+ * just gets one readable column.
+ */
 function Step({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
+  const kids = React.Children.toArray(children) as React.ReactElement[];
+  const visual = kids.filter((c) => React.isValidElement(c) && (c.type === MockShot || c.type === Table));
+  const words = kids.filter((c) => !(React.isValidElement(c) && (c.type === MockShot || c.type === Table)));
+
   return (
-    <section id={stepId(number)} className="scroll-mt-24 bg-white rounded-xl ring-1 ring-gray-100 px-6 py-5 mb-3">
-      <div className="flex items-center gap-3 mb-3">
-        <span className="w-7 h-7 rounded-full bg-violet-600 text-white flex items-center justify-center
-                         text-[12px] font-bold flex-shrink-0 tabular-nums">
-          {number}
-        </span>
-        <h3 className="text-[17px] font-bold tracking-tight text-gray-900">{title}</h3>
+    <section id={stepId(number)} className="scroll-mt-28 bg-white rounded-xl ring-1 ring-gray-100 px-6 py-5 mb-3">
+      <div className="flex items-baseline gap-3 mb-4">
+        <span className="text-[12px] font-bold text-violet-600 tabular-nums flex-shrink-0 w-5">{number}</span>
+        <h3 className="text-[17px] font-bold tracking-tight text-gray-900 leading-snug">{title}</h3>
       </div>
-      {/* Prose is capped at a readable measure. The page is full-width, but a
-          line of body text running the whole way across a 1400px screen is
-          around 150 characters — roughly twice what anyone reads comfortably,
-          and this guide goes to people reading English as a second language.
-          Mocks and tables opt out and use the full column. */}
-      <div className="text-[14px] text-gray-700 space-y-2.5 leading-[1.65] [&>p]:max-w-[68ch]
-                      [&>ol]:max-w-[68ch] [&>ul]:max-w-[68ch]">
-        {children}
+
+      <div className={cn(
+        'gap-x-8 gap-y-4',
+        visual.length ? 'grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-start' : '',
+      )}>
+        <div className="min-w-0 text-[14px] text-gray-700 space-y-3 leading-[1.7] max-w-[62ch]">
+          {words}
+        </div>
+        {visual.length > 0 && <div className="min-w-0 space-y-4">{visual}</div>}
       </div>
     </section>
   );
