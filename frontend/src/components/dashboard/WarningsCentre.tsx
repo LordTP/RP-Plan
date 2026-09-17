@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, ChevronRight, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { analyticsApi } from '@/lib/api';
+import { FloatingCentre } from '@/components/layout/FloatingCentre';
 
 /**
  * Warnings Centre — designer-friendly multi-category view of dashboard
@@ -14,6 +16,12 @@ import { cn } from '@/lib/utils';
  *
  * Pulled out of dashboard/page.tsx so /dashboard and /dashboard-v2 can
  * both render it.
+ *
+ * FloatingWarningsCentre is the same thing on a list page: a summary strip that
+ * drops the rail and pane over the table instead of above it, because those
+ * pages are a fixed-height column and anything in the flow above the table
+ * steals its height rather than pushing it down. It fetches for itself so a
+ * page only has to mount it.
  */
 
 const WARNING_SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; dot: string }> = {
@@ -36,7 +44,7 @@ const WAITING_ON_SOURCE_LAB = new Set([
   'pps_approval',
 ]);
 
-export function WarningsCentre({ warnings }: { warnings: any[] }) {
+export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]; embedded?: boolean }) {
   const [selected, setSelected] = useState<string>(warnings[0]?.key || '');
   const [search, setSearch] = useState('');
 
@@ -119,25 +127,34 @@ export function WarningsCentre({ warnings }: { warnings: any[] }) {
   const selStyle = WARNING_SEVERITY_STYLES[selectedWarning.severity] || WARNING_SEVERITY_STYLES.amber;
 
   return (
-    <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-base font-bold text-gray-900">Warnings Centre</h3>
-            <p className="text-xs text-gray-500 truncate">
-              {search
-                ? `${totalCount} match${totalCount !== 1 ? 'es' : ''} for "${search}"`
-                : `${totalCount} items across ${filteredWarnings.length} categories need attention`}
-            </p>
-          </div>
+    <div className={cn(!embedded &&
+      'bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden')}>
+      {/* Embedded in a FloatingCentre the card chrome and title are already
+          supplied, so only the search comes with the body. */}
+      {embedded ? (
+        <div className="px-4 pt-3 flex justify-end">
+          <SearchInput value={search} onChange={setSearch} />
         </div>
-        <SearchInput value={search} onChange={setSearch} />
-      </div>
+      ) : (
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-gray-900">Warnings Centre</h3>
+              <p className="text-xs text-gray-500 truncate">
+                {search
+                  ? `${totalCount} match${totalCount !== 1 ? 'es' : ''} for "${search}"`
+                  : `${totalCount} items across ${filteredWarnings.length} categories need attention`}
+              </p>
+            </div>
+          </div>
+          <SearchInput value={search} onChange={setSearch} />
+        </div>
+      )}
 
-      <div className="grid grid-cols-[320px_1fr] h-[440px]">
+      <div className={cn('grid grid-cols-[320px_1fr]', embedded ? 'h-[calc(100%-46px)]' : 'h-[440px]')}>
         {/* Left: categories grouped by who owes the work */}
         <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 overflow-y-auto">
           {theirCourt.length > 0 && (
@@ -205,6 +222,52 @@ export function WarningsCentre({ warnings }: { warnings: any[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Warnings Centre on a list page, collapsed to a strip.
+ *
+ * It lived only on the dashboard, which meant seeing what needed attention and
+ * doing something about it were two different pages -- and the doing happens
+ * here, on the order list, where every warning deep-links to anyway. Closed by
+ * default so the list keeps its height; the strip carries the count, which is
+ * the part you need without opening anything.
+ */
+export function FloatingWarningsCentre() {
+  const [warnings, setWarnings] = useState<any[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    analyticsApi.getDashboardWarnings()
+      .then((r: any) => { if (!cancelled) setWarnings(r?.warnings || []); })
+      .catch(() => { /* silent — the strip just doesn't appear */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const total = warnings.reduce((s, w) => s + (w.count || 0), 0);
+  if (!warnings.length || total === 0) return null;
+
+  const ourCount = warnings.filter(w => WAITING_ON_SOURCE_LAB.has(w.key))
+    .reduce((s, w) => s + (w.count || 0), 0);
+  const theirCount = total - ourCount;
+
+  return (
+    <FloatingCentre
+      icon={<AlertTriangle className="w-5 h-5 text-amber-600" />}
+      tone="alert"
+      title="Warnings Centre"
+      subtitle={
+        `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
+        + (ourCount ? ` · ${ourCount} on us` : '')
+        + (theirCount ? ` · ${theirCount} on the factories` : '')
+      }
+      panelClassName="lg:h-[min(520px,calc(100vh-240px))]"
+    >
+      {/* The dashboard version already is a rail and a pane; reuse it whole
+          rather than keeping two copies of the grouping and search logic. */}
+      <WarningsCentre warnings={warnings} embedded />
+    </FloatingCentre>
   );
 }
 

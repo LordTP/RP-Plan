@@ -5,6 +5,7 @@ import { Clock, Search, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { format, parseISO, differenceInCalendarDays, formatDistanceToNowStrict } from 'date-fns';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
+import { FloatingCentre } from '@/components/layout/FloatingCentre';
 import { approvalsApi, type MyPendingChange, type MyApprovedChange, type RejectedChange } from '@/lib/api';
 
 /**
@@ -94,10 +95,6 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [cancelling, setCancelling] = useState<number | null>(null);
-  // null = never touched, so the default can depend on data that hasn't loaded
-  // yet. A factory with nothing outstanding gets one header line instead of a
-  // 400px card above the order list they actually came for.
-  const [collapsed, setCollapsed] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -255,12 +252,6 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
 
   // Collapsed by default when nothing is outstanding: a clean book costs one
   // line, not a quarter of the screen above the order list.
-  // Closed by default, always. This sits on top of the order list, and at 360px
-  // it left about five order rows visible -- the page's actual content reduced
-  // to a strip by a summary of it. The header line carries the count, in amber
-  // when something is waiting, which is the whole signal; the detail is a click
-  // away rather than permanently in the way.
-  const isCollapsed = collapsed ?? true;
 
   const TABS: { key: BucketKey; label: string; tone: 'amber' | 'green' | 'red' | 'gray'; group: string }[] = [
     { key: 'waiting', label: 'Sent, not answered', tone: 'amber', group: 'Waiting on Source Lab' },
@@ -275,64 +266,34 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
   const shown = buckets[bucket].requests;
 
   return (
-    /* The panel drops OVER the order list rather than above it.
-       This page is a hard `height: calc(100vh - 116px)` with overflow-hidden,
-       and the table takes whatever is left of that column -- so opening a 300px
-       card in the flow did not push the table down, it shrank it, and the page
-       could not scroll to compensate. Keeping the header strip in flow and
-       floating the body means the table never changes size. */
-    <div className={cn('relative mb-4', !isCollapsed && 'z-30')}>
-    <div className={cn('bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]',
-      'ring-1 ring-gray-100', isCollapsed && 'overflow-hidden')}>
-      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-            waitingStyles > 0 ? 'bg-amber-100' : 'bg-gray-100')}>
-            <Clock className={cn('w-5 h-5', waitingStyles > 0 ? 'text-amber-600' : 'text-gray-400')} />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-base font-bold text-gray-900">Requests Centre</h3>
-            <p className="text-xs text-gray-500 truncate">
-              {q
-                ? `${matching.length} match${matching.length === 1 ? '' : 'es'} for "${q}"`
-                : waitingStyles > 0
-                  ? `${waitingStyles} styles waiting on Source Lab, across `
-                    + `${waitingRequests} ${waitingRequests === 1 ? 'request' : 'requests'}`
-                    + (answeredStyles > 0 ? ` · ${answeredStyles} answered` : '')
-                  : `Nothing outstanding · ${answeredStyles} styles answered`}
-            </p>
-          </div>
+    <FloatingCentre
+      icon={<Clock className={cn('w-5 h-5', waitingStyles > 0 ? 'text-amber-600' : 'text-gray-400')} />}
+      tone={waitingStyles > 0 ? 'alert' : 'neutral'}
+      title="Requests Centre"
+      subtitle={
+        q
+          ? `${matching.length} match${matching.length === 1 ? '' : 'es'} for "${q}"`
+          : waitingStyles > 0
+            ? `${waitingStyles} styles waiting on Source Lab, across `
+              + `${waitingRequests} ${waitingRequests === 1 ? 'request' : 'requests'}`
+              + (answeredStyles > 0 ? ` · ${answeredStyles} answered` : '')
+            : `Nothing outstanding · ${answeredStyles} styles answered`
+      }
+      actions={
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search PO, style or reason…"
+            className="w-[250px] pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg
+                       focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
         </div>
-        <div className="flex items-center gap-2">
-          {!isCollapsed && (
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search PO, style or reason…"
-                className="w-[250px] pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg
-                           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-          )}
-          <button
-            /* Toggle the DERIVED value, not the raw state. `collapsed` starts
-               null so the default can be data-dependent, and !null is true --
-               so flipping the raw value moved an already-collapsed card to
-               collapsed again and the button did nothing. */
-            onClick={() => setCollapsed(!isCollapsed)}
-            className="text-xs font-semibold text-gray-500 hover:text-gray-900 px-2 py-1 inline-flex items-center gap-1"
-          >
-            {isCollapsed ? <>Show <ChevronDown className="w-3.5 h-3.5" /></> : <>Hide <ChevronRight className="w-3.5 h-3.5 rotate-90" /></>}
-          </button>
-        </div>
-      </div>
-
-      {!isCollapsed && (
-        <div className="lg:absolute lg:left-0 lg:right-0 lg:top-full lg:mt-1 bg-white lg:rounded-xl
-                        lg:ring-1 lg:ring-gray-200 lg:shadow-2xl overflow-hidden
-                        grid lg:grid-cols-[300px_1fr] lg:h-[min(520px,calc(100vh-240px))]">
+      }
+      panelClassName="lg:h-[min(520px,calc(100vh-240px))]"
+    >
+      <div className="grid lg:grid-cols-[300px_1fr] h-full">
           {/* Buckets, grouped by who owes the work */}
           <div className="lg:border-r border-b lg:border-b-0 border-gray-100 bg-gray-50/60 p-3
                           lg:h-full min-h-0 overflow-y-auto">
@@ -413,9 +374,7 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
             )}
           </div>
         </div>
-      )}
-    </div>
-    </div>
+    </FloatingCentre>
   );
 }
 

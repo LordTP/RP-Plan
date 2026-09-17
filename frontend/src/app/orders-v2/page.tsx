@@ -36,6 +36,7 @@ import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
+import { FloatingWarningsCentre } from '@/components/dashboard/WarningsCentre';
 import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope, TimelineItem, JourneyFact, ConfirmEdit } from '@/components/orders/v2-detail-helpers';
 import { StatusTile, Chip, Opt, TogglePill, Segmented, StatusBar, SortableTh, BulkBar, bulkAction } from '@/components/orders/v2-list-primitives';
 import {
@@ -1011,6 +1012,13 @@ function OrdersV2Content() {
 
         {/* ─── Order List ─── */}
         <div className="flex flex-col min-w-0 w-full">
+
+          {/* Warnings, where the work is. It lived only on the dashboard, so
+              seeing what needed attention and doing something about it were
+              two different pages -- and every warning deep-links back to this
+              one. Not on the factory views: those get the Requests Centre,
+              and dashboard warnings are Source Lab's. */}
+          {!isFactoryView && <FloatingWarningsCentre />}
 
           {/* Search + Actions */}
           <div className="flex items-center gap-3 mb-4">
