@@ -61,8 +61,7 @@ export function isNeedsAttention(inst: Instance): boolean {
   const { order, component } = inst;
   const { status } = activeSampleFor(component);
   if (HARD_ATTENTION_STATUSES.has(status)) return true;
-  const updatedDays = component.updated_at ? businessDaysBetween(component.updated_at, new Date()) : 0;
-  if (status === 'OUTSTANDING' && updatedDays >= STALE_BIZ_DAYS) return true;
+  if (status === 'OUTSTANDING' && ageDays(inst) >= STALE_BIZ_DAYS) return true;
   const exFac = order.revised_po_ex_factory || order.original_po_ex_factory;
   const daysToExFac = businessDaysUntil(exFac);
   if (daysToExFac !== null && daysToExFac <= EX_FAC_URGENT_BIZ_DAYS) return true;
@@ -82,8 +81,7 @@ export function isInFlight(inst: Instance, hideShipped: boolean): boolean {
 export function isStale(inst: Instance): boolean {
   const { status } = activeSampleFor(inst.component);
   if (status !== 'OUTSTANDING') return false;
-  const days = inst.component.updated_at ? businessDaysBetween(inst.component.updated_at, new Date()) : 0;
-  return days >= STALE_BIZ_DAYS;
+  return ageDays(inst) >= STALE_BIZ_DAYS;
 }
 
 export function isExFacUrgent(inst: Instance): boolean {
@@ -93,7 +91,48 @@ export function isExFacUrgent(inst: Instance): boolean {
 }
 
 /** Business days since the sample last moved. This is the chase clock. */
+/** The last rejection on the component's own sample lane, if it has one. */
+export function lastRejectionFor(component: OrderComponent) {
+  const t = component.sample_type;
+  return (t === 'strike_off' ? component.strike_off_last_rejection
+        : t === 'lab_dip'   ? component.lab_dip_last_rejection
+        :                     component.label_last_rejection) ?? null;
+}
+
+/**
+ * How long this sample has been sitting, in business days.
+ *
+ * Measured from the sample's own clock, not the row's updated_at. updated_at
+ * is the last time ANY field on the component changed, so renaming a component
+ * or editing its notes reset the idle counter on a sample nobody had touched —
+ * and conversely a row written today read as idle 0d no matter how long the
+ * sample had actually been outstanding. Backfilling a factory's tracking sheet
+ * made that obvious: three strike offs rejected in July imported as idle 0d.
+ *
+ * Which clock depends on who is being waited on:
+ *   RECEIVED            it is back and we owe them a decision — since it landed
+ *   OUTSTANDING on v2+  we rejected it and are waiting on the remake — since
+ *                       the rejection
+ *   OUTSTANDING on v1   never been sent — since the order went to the factory
+ * Approved and not-required samples aren't waiting on anyone, so they're 0.
+ */
 export function ageDays(inst: Instance): number {
+  const { status, received } = activeSampleFor(inst.component);
+  if (status === 'APPROVED' || status === 'NOT REQUIRED') return 0;
+
+  if (status === 'RECEIVED' && received) {
+    return businessDaysBetween(received, new Date());
+  }
+
+  const { attemptNo } = attemptFor(inst.component);
+  if (attemptNo > 1) {
+    const rejectedAt = lastRejectionFor(inst.component)?.rejected_at;
+    if (rejectedAt) return businessDaysBetween(rejectedAt, new Date());
+  }
+
+  const sentToFactory = inst.order?.order_sent_to_factory_date;
+  if (sentToFactory) return businessDaysBetween(sentToFactory, new Date());
+
   return inst.component.updated_at ? businessDaysBetween(inst.component.updated_at, new Date()) : 0;
 }
 

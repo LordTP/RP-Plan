@@ -60,6 +60,9 @@ type WorkGroup = {
   instances: Instance[];
   attention: number;
   worstIdle: number;
+  /** Highest attempt across the group's styles. >1 means somebody has been
+   *  rejected and is on a remake, which the card has to say out loud. */
+  maxAttempt: number;
   earliestExFac: string | null;
   poNumbers: string[];
   customers: string[];
@@ -97,6 +100,7 @@ function buildGroups(instances: Instance[]): WorkGroup[] {
         instances: [],
         attention: 0,
         worstIdle: 0,
+        maxAttempt: 1,
         earliestExFac: null,
         poNumbers: [],
         customers: [],
@@ -114,6 +118,7 @@ function buildGroups(instances: Instance[]): WorkGroup[] {
     for (const inst of g.instances) {
       if (isNeedsAttention(inst)) g.attention++;
       g.worstIdle = Math.max(g.worstIdle, ageDays(inst));
+      g.maxAttempt = Math.max(g.maxAttempt, attemptFor(inst.component).attemptNo);
       const ef = exFacOf(inst);
       if (ef && (!g.earliestExFac || String(ef) < String(g.earliestExFac))) g.earliestExFac = ef as string;
       if (inst.order.po_number) pos.add(inst.order.po_number);
@@ -798,6 +803,15 @@ function WorkCard({
             <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
               {sampleTypeLabel(group.sampleType)}
             </span>
+            {group.maxAttempt > 1 && (
+              <span
+                className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold tabular-nums',
+                  group.maxAttempt >= 3 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}
+                title={`On attempt ${group.maxAttempt} — this has been rejected ${group.maxAttempt - 1} time${group.maxAttempt > 2 ? 's' : ''}`}
+              >
+                v{group.maxAttempt}
+              </span>
+            )}
             {attention && (
               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white bg-red-500">
                 {group.attention} need{group.attention === 1 ? 's' : ''} attention
