@@ -25,7 +25,7 @@ function FactoryGuideContent() {
   const [section, setSection] = useState<Section>('product');
 
   return (
-    <AppShell title="Factory Guide" allowSticky>
+    <AppShell title="Factory Guide">
       <div className="pb-24">
         {/* Hero */}
         <div className="bg-white rounded-xl ring-1 ring-gray-100 px-8 py-7 mb-5 flex items-start gap-5">
@@ -84,10 +84,6 @@ function FactoryGuideContent() {
             title="Factory · Product"
             blurb="When you sign in, you land here. Your orders are grouped by PO with the styles inside. Use this page to track samples, request date changes, and stay across what Source Lab has approved."
           />
-
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
-            <StepIndex steps={PRODUCT_STEPS} />
-            <div className="min-w-0">
 
           <Step number="1" title="Finding your orders">
             <p>
@@ -233,8 +229,6 @@ function FactoryGuideContent() {
               <Tip icon={Info}>Comments save instantly. They appear in Source Lab's dashboard alongside email notifications.</Tip>
             </Tips>
           </Step>
-            </div>
-          </div>
         </section>
         )}
 
@@ -247,10 +241,6 @@ function FactoryGuideContent() {
             title="Factory · Shipping"
             blurb="When goods are ready to leave your factory, raise a shipment draft. Add the styles + quantities going out, fill in vessel info, then confirm. Source Lab gets the shipment in their tracking instantly."
           />
-
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
-            <StepIndex steps={SHIPPING_STEPS} />
-            <div className="min-w-0">
 
           <Step number="1" title="Create a new shipment draft">
             <p>
@@ -333,8 +323,6 @@ function FactoryGuideContent() {
               <TableRow label="Don't have a tracking number yet" value="Leave it blank for now. Update once the freight forwarder sends it." />
             </Table>
           </Step>
-            </div>
-          </div>
         </section>
         )}
 
@@ -347,10 +335,6 @@ function FactoryGuideContent() {
             title="Factory · Components"
             blurb="What a component is, the two views on the Components page, how adding one works, and what happens when a sample is rejected."
           />
-
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
-            <StepIndex steps={COMPONENT_STEPS} />
-            <div className="min-w-0">
 
           {/* Top-of-section key note — sets responsibility so everyone reads it before anything else. */}
           <div className="my-4 rounded-xl bg-violet-50 ring-1 ring-violet-200 border-l-4 border-violet-500 px-5 py-4 flex items-start gap-4">
@@ -616,8 +600,6 @@ function FactoryGuideContent() {
               Anything on v3+ shows on the Sourcelab Resubmissions dashboard. Usually a comms issue worth a phone call when things hit a third attempt.
             </Callout>
           </Step>
-            </div>
-          </div>
         </section>
         )}
 
@@ -628,38 +610,6 @@ function FactoryGuideContent() {
     </AppShell>
   );
 }
-
-const PRODUCT_STEPS = [
-  { n: '1', title: 'Finding your orders' },
-  { n: '2', title: 'Reading a PO and the styles inside' },
-  { n: '3', title: 'What you can and cannot change' },
-  { n: '4', title: 'Requesting a date change' },
-  { n: '5', title: 'Tracking your requests' },
-  { n: '6', title: 'Comments and questions' },
-];
-
-const SHIPPING_STEPS = [
-  { n: '1', title: 'Create a new shipment draft' },
-  { n: '2', title: 'Select which SKUs are going' },
-  { n: '3', title: 'Fill in the shipment details' },
-  { n: '4', title: 'Save vs Confirm' },
-  { n: '5', title: "After you've confirmed" },
-  { n: '6', title: 'Common situations' },
-];
-
-const COMPONENT_STEPS = [
-  { n: '1.1', title: 'Sample types — SO, LD, LB' },
-  { n: '1.2', title: 'Fit Sample and PPS are not components' },
-  { n: '2.1', title: 'The Components page — Worklist and Library' },
-  { n: '2.2', title: 'Library — browse and edit identity' },
-  { n: '3.1', title: 'Adding a component' },
-  { n: '3.2', title: 'Create new — filling the form' },
-  { n: '3.3', title: 'Target styles — pick which to apply' },
-  { n: '4.1', title: 'Worklist — the working queue' },
-  { n: '4.2', title: 'Editing a single instance' },
-  { n: '6.1', title: 'The sample lifecycle' },
-  { n: '7.1', title: 'Rejections and rework' },
-];
 
 /* ============== Layout helpers ============== */
 
@@ -716,34 +666,6 @@ function Step({ number, title, children }: { number: string; title: string; chil
         {visual.length > 0 && <div className="min-w-0 space-y-4">{visual}</div>}
       </div>
     </section>
-  );
-}
-
-/** Sticky index down the left. A factory arrives wanting one answer, not a
- *  read-through, and the page was a single unbroken scroll with no way to see
- *  what it covered or jump to it. */
-function StepIndex({ steps }: { steps: { n: string; title: string }[] }) {
-  return (
-    <nav className="hidden lg:block sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 px-3">
-        On this page
-      </p>
-      <ol className="space-y-0.5">
-        {steps.map((s) => (
-          <li key={s.n}>
-            <a
-              href={`#${stepId(s.n)}`}
-              className="flex items-start gap-2.5 px-3 py-1.5 rounded-lg text-[12.5px] text-gray-600
-                         hover:bg-white hover:text-gray-900 transition-colors group"
-            >
-              <span className="text-[11px] font-bold text-gray-400 group-hover:text-violet-600
-                               tabular-nums mt-px flex-shrink-0">{s.n}</span>
-              <span className="leading-snug">{s.title}</span>
-            </a>
-          </li>
-        ))}
-      </ol>
-    </nav>
   );
 }
 
