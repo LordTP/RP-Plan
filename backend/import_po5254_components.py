@@ -174,6 +174,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--sheet', default=DEFAULT_SHEET)
+    ap.add_argument('--force', action='store_true',
+                    help='add even though the PO already has components (see the guard below)')
     ap.add_argument('--base', default='http://localhost:8004')
     ap.add_argument('--user', default='admin')
     ap.add_argument('--password', default='admin123')
@@ -188,6 +190,20 @@ def main():
     live = load_live(base, H)
     groups = read_sheet(args.sheet)
     print(f'\n{base}\nPO {PO}: {len(live)} live styles\n')
+
+    # Every add mints a FRESH library entry by design, so this script is not
+    # idempotent: running it twice gives you two of everything rather than
+    # updating what is there. Proven, not assumed -- a second --apply against a
+    # loaded production dump took PO 5254 from 23 instances to 46 and left six
+    # canonicals named FLAT PRINT TO SLVE instead of three. The realistic way
+    # that happens on production is a retry after a partial failure, so refuse
+    # up front unless the operator has explicitly said they mean it.
+    existing = sum(len(o.get('components') or []) for o in live.values())
+    if existing and not args.force:
+        print(f'  REFUSING: PO {PO} already has {existing} component instances.\n'
+              f'  This script only ever adds -- it will not update or de-duplicate them.\n'
+              f'  Remove those entries first, or pass --force if you genuinely want more.\n')
+        return 1
 
     plan, unmatched, skipped = [], [], []
     for (name, colour, stype), per_style in sorted(groups.items()):
