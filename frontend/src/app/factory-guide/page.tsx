@@ -25,7 +25,7 @@ function FactoryGuideContent() {
   const [section, setSection] = useState<Section>('product');
 
   return (
-    <AppShell title="Factory Guide">
+    <AppShell title="Factory Guide" allowSticky>
       <div className="pb-24">
         {/* Hero */}
         <div className="bg-white rounded-xl ring-1 ring-gray-100 px-8 py-7 mb-5 flex items-start gap-5">
@@ -85,7 +85,7 @@ function FactoryGuideContent() {
             blurb="When you sign in, you land here. Your orders are grouped by PO with the styles inside. Use this page to track samples, request date changes, and stay across what Source Lab has approved."
           />
 
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
             <StepIndex steps={PRODUCT_STEPS} />
             <div className="min-w-0">
 
@@ -248,7 +248,7 @@ function FactoryGuideContent() {
             blurb="When goods are ready to leave your factory, raise a shipment draft. Add the styles + quantities going out, fill in vessel info, then confirm. Source Lab gets the shipment in their tracking instantly."
           />
 
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
             <StepIndex steps={SHIPPING_STEPS} />
             <div className="min-w-0">
 
@@ -348,7 +348,7 @@ function FactoryGuideContent() {
             blurb="What a component is, the two views on the Components page, how adding one works, and what happens when a sample is rejected."
           />
 
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6 items-start">
+          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-x-6">
             <StepIndex steps={COMPONENT_STEPS} />
             <div className="min-w-0">
 
@@ -708,7 +708,7 @@ function Step({ number, title, children }: { number: string; title: string; chil
  *  what it covered or jump to it. */
 function StepIndex({ steps }: { steps: { n: string; title: string }[] }) {
   return (
-    <nav className="hidden lg:block sticky top-24 self-start">
+    <nav className="hidden lg:block sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 px-3">
         On this page
       </p>
