@@ -25,6 +25,10 @@ import { StatusDropdown } from '@/components/orders/StatusDropdown';
 export interface BulkScopeCtx {
   poNumber: string;
   currentOrderId: number;
+  /** The style being edited. Optional so existing providers keep working; the
+   *  editor falls back to "this style" when it isn't supplied. */
+  currentStyleCode?: string | null;
+  currentDescription?: string | null;
   onAfterBulkSave: () => void;
 }
 
@@ -52,9 +56,7 @@ interface BulkSibling {
 }
 
 // Same three scopes as everywhere else — this file called the middle one
-// 'all' where the sample modals call it 'all_on_po'. The compact radios below
-// stay: this picker lives inline in a cell-editor popover, where ScopePicker's
-// bordered cards would be far too heavy.
+// 'all' where the sample modals call it 'all_on_po'.
 type ApplyMode = ApplyScope;
 
 export function InlineBulkScopeEditor({
@@ -120,7 +122,13 @@ export function InlineBulkScopeEditor({
   };
 
   const totalIfBulk = mode === 'all_on_po' ? 1 + siblings.length : 1 + selectedIds.size;
-  const prettyLabel = fieldLabel || fieldKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  // Sentence case, not title case. Humanising the field key with a
+  // capital-every-word pass turned specs_sent_to_factory into "Specs Sent To
+  // Factory", which reads like a headline rather than a field name.
+  const prettyLabel = fieldLabel || (() => {
+    const words = fieldKey.replace(/_/g, ' ').trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  })();
 
   const handleSubmit = async () => {
     if (!ctx) return;
@@ -159,114 +167,229 @@ export function InlineBulkScopeEditor({
   };
 
   const showSiblings = !loading && siblings.length > 0;
+  const styleLabel = ctx?.currentStyleCode || 'this style';
+
+  // What Save will actually do, spelled out. The old footer said "Save · 14
+  // styles" and nothing about the value, so the one irreversible detail --
+  // what you are about to write, to how many rows -- was never stated.
+  const shownValue = value
+    ? (type === 'date' ? formatDate(value) : value)
+    : 'nothing (clears it)';
+  const scopeSummary = mode === 'single'
+    ? styleLabel
+    : `${totalIfBulk} style${totalIfBulk === 1 ? '' : 's'}`;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-6"
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto"
       onClick={saving ? undefined : onCancel}
     >
+      {/* Wide enough for the style picker to be usable. At max-w-sm the list of
+          styles you were choosing between was a 384px column with a scrollbox
+          inside it, which is the one part of this that needs room. */}
       <div
-        className="w-full max-w-sm bg-white rounded-xl shadow-xl ring-1 ring-gray-200 overflow-hidden"
+        className={cn(
+          'w-full bg-white rounded-xl shadow-2xl ring-1 ring-gray-200 overflow-hidden my-auto',
+          showSiblings ? 'max-w-3xl' : 'max-w-md',
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Edit</div>
-            <h3 className="text-sm font-bold text-gray-900 truncate">{prettyLabel}</h3>
+        {/* Header — says what you are editing AND on what. */}
+        <div className="px-5 py-4 border-b border-gray-200 flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-widest text-primary-600 font-bold">Edit</div>
+            <h3 className="text-[17px] font-extrabold text-gray-900 leading-tight mt-0.5">{prettyLabel}</h3>
+            <p className="text-[12px] text-gray-500 mt-1 truncate">
+              {ctx?.currentStyleCode && <span className="font-mono">{ctx.currentStyleCode}</span>}
+              {ctx?.currentDescription && <> · {ctx.currentDescription}</>}
+              {ctx?.poNumber && <> · PO <span className="font-mono">{ctx.poNumber}</span></>}
+            </p>
           </div>
-          <button onClick={onCancel} disabled={saving} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+          <button onClick={onCancel} disabled={saving} aria-label="Close"
+                  className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 flex-shrink-0">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-4 py-3 space-y-3">
-          {/* Value input */}
-          <div>
-            <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5 block">Value</label>
-            {options ? (
-              <select
-                value={value}
-                onChange={(e) => setValue(e.target.value.toUpperCase())}
-                autoFocus
-                className="w-full text-xs border border-gray-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              >
-                <option value="">— Select —</option>
-                {options.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            ) : type === 'date' ? (
-              <DatePickerInput value={value} onChange={setValue} variant="block" size="sm" />
-            ) : (
-              <input
-                type="text"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                autoFocus
-                className="w-full text-xs border border-gray-300 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
+        <div className={cn(showSiblings && 'grid sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]')}>
+          {/* ── 1 · the value ── */}
+          <div className={cn('px-5 py-4', showSiblings && 'sm:border-r border-b sm:border-b-0 border-gray-100 bg-gray-50/40')}>
+            <EditStepHeading n={1} title="New value" />
+            <div className="mt-2.5">
+              {options ? (
+                <select
+                  value={value}
+                  onChange={(e) => setValue(e.target.value.toUpperCase())}
+                  autoFocus
+                  className="w-full text-sm bg-white border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value="">— Select —</option>
+                  {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : type === 'date' ? (
+                <DatePickerInput value={value} onChange={setValue} variant="block" />
+              ) : (
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  autoFocus
+                  className="w-full text-sm bg-white border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              )}
+            </div>
+            {initialValue && (
+              <p className="text-[11.5px] text-gray-500 mt-2">
+                Currently <b className="text-gray-700">{type === 'date' ? formatDate(initialValue) : initialValue}</b>
+              </p>
+            )}
+            {!initialValue && (
+              <p className="text-[11.5px] text-gray-400 mt-2">Not set yet.</p>
+            )}
+            {loading && (
+              <div className="flex items-center gap-2 text-[11.5px] text-gray-400 mt-3">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Checking the rest of the PO…
+              </div>
             )}
           </div>
 
-          {/* Scope picker — only shown if there are siblings on the PO */}
+          {/* ── 2 · who it applies to ── */}
           {showSiblings && (
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5 block">Apply to</label>
-              <div className="space-y-1">
-                <ScopeRadio checked={mode === 'single'} onChange={() => setMode('single')} title="This style only" />
-                <ScopeRadio checked={mode === 'all_on_po'} onChange={() => setMode('all_on_po')} title={`All styles on this PO (${1 + siblings.length})`} />
-                <ScopeRadio checked={mode === 'selected'} onChange={() => setMode('selected')} title={`Select specific styles (${selectedIds.size + 1} of ${siblings.length + 1})`} />
-                {mode === 'selected' && (
-                  <div className="ml-5 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-gray-50/40 divide-y divide-gray-100">
-                    {siblings.map((s) => (
-                      <label key={s.id} className="flex items-center gap-2 px-2 py-1 text-[11px] hover:bg-white cursor-pointer">
+            <div className="px-5 py-4 min-w-0">
+              <EditStepHeading n={2} title="Apply to" />
+              <div className="mt-2.5 space-y-1.5">
+                <ScopeCard
+                  on={mode === 'single'} onPick={() => setMode('single')}
+                  title="This style only"
+                  sub={ctx?.currentStyleCode || undefined}
+                />
+                <ScopeCard
+                  on={mode === 'all_on_po'} onPick={() => setMode('all_on_po')}
+                  title={`Every style on PO ${ctx?.poNumber ?? ''}`.trim()}
+                  sub={`${1 + siblings.length} styles`}
+                />
+                <ScopeCard
+                  on={mode === 'selected'} onPick={() => setMode('selected')}
+                  title="Pick the styles"
+                  sub={mode === 'selected'
+                    ? `${selectedIds.size + 1} of ${siblings.length + 1} chosen`
+                    : 'choose from the PO'}
+                />
+              </div>
+
+              {mode === 'selected' && (
+                <div className="mt-2.5 rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                      {siblings.length} other styles on this PO
+                    </span>
+                    <button
+                      onClick={() => setSelectedIds(selectedIds.size === siblings.length
+                        ? new Set() : new Set(siblings.map(x => x.id)))}
+                      className="ml-auto text-[11px] font-semibold text-primary-600 hover:text-primary-700"
+                    >
+                      {selectedIds.size === siblings.length ? 'Clear' : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto divide-y divide-gray-50">
+                    {/* The style being edited is always in scope, so it shows
+                        as a fixed row rather than a checkbox you could untick
+                        into a no-op. */}
+                    <div className="flex items-center gap-2.5 px-3 py-1.5 bg-primary-50/50 text-[12px]">
+                      <span className="w-3.5 h-3.5 rounded bg-primary-600 flex-shrink-0" />
+                      <span className="font-mono text-gray-800">{ctx?.currentStyleCode || 'This style'}</span>
+                      <span className="ml-auto text-[10.5px] font-semibold text-primary-700">always</span>
+                    </div>
+                    {siblings.map((sib) => (
+                      <label key={sib.id}
+                             className="flex items-center gap-2.5 px-3 py-1.5 text-[12px] hover:bg-gray-50 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(s.id)}
-                          onChange={() => toggleSelected(s.id)}
-                          className="w-3 h-3"
+                          checked={selectedIds.has(sib.id)}
+                          onChange={() => toggleSelected(sib.id)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0"
                         />
-                        <span className="font-mono text-gray-700">{s.style_code}</span>
-                        <span className="text-gray-500 truncate">{s.description}</span>
-                        <span className="text-gray-400 ml-auto">{s.colour}</span>
+                        <span className="font-mono text-gray-700 flex-shrink-0">{sib.style_code}</span>
+                        <span className="text-gray-500 truncate">{sib.description}</span>
+                        {sib.colour && <span className="ml-auto text-[11px] text-gray-400 flex-shrink-0">{sib.colour}</span>}
                       </label>
                     ))}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {loading && (
-            <div className="flex items-center gap-2 text-[11px] text-gray-400">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Checking sibling styles…
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-end gap-2 bg-gray-50/40">
-          <button
-            onClick={onCancel}
-            disabled={saving}
-            className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-md flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-            {mode === 'single' ? 'Save' : `Save · ${totalIfBulk} style${totalIfBulk === 1 ? '' : 's'}`}
-          </button>
+        {/* Footer — states the whole action before you commit it. */}
+        <div className="px-5 py-3 border-t border-gray-200 bg-gray-50/70 flex items-center gap-3 flex-wrap">
+          <p className="text-[12px] text-gray-600 min-w-0">
+            Sets <b className="text-gray-800">{prettyLabel.toLowerCase()}</b> to{' '}
+            <b className="text-gray-800">{shownValue}</b> on <b className="text-gray-800">{scopeSummary}</b>
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={onCancel}
+              disabled={saving}
+              className="px-3 py-1.5 text-[12px] font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="px-4 py-1.5 text-[12px] font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+function EditStepHeading({ n, title }: { n: number; title: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-[18px] h-[18px] rounded-full bg-gray-200 text-gray-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+        {n}
+      </span>
+      <span className="text-[11.5px] uppercase tracking-widest text-gray-500 font-bold">{title}</span>
+    </div>
+  );
+}
+
+/** A scope choice with room to say what it means. The three tiny radios these
+ *  replace made the most consequential decision in the modal -- how many rows
+ *  this writes to -- its smallest element. */
+function ScopeCard({ on, onPick, title, sub }: {
+  on: boolean; onPick: () => void; title: string; sub?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className={cn(
+        'w-full text-left px-3 py-2 rounded-lg border transition-all flex items-center gap-2.5',
+        on ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-200'
+           : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
+      )}
+    >
+      <span className={cn('w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center',
+        on ? 'border-primary-600' : 'border-gray-300')}>
+        {on && <span className="w-1.5 h-1.5 rounded-full bg-primary-600" />}
+      </span>
+      <span className="min-w-0">
+        <span className={cn('block text-[12.5px] font-semibold', on ? 'text-primary-900' : 'text-gray-800')}>{title}</span>
+        {sub && <span className="block text-[11px] text-gray-500 truncate">{sub}</span>}
+      </span>
+    </button>
+  );
+}
+
 
 function ScopeRadio({ checked, onChange, title }: {
   checked: boolean;

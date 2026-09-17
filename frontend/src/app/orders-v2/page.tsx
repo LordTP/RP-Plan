@@ -2171,6 +2171,8 @@ function DetailBody({
       <BulkScopeProvider
         poNumber={order.po_number}
         currentOrderId={order.id}
+        currentStyleCode={order.style_code}
+        currentDescription={order.description}
         onAfterBulkSave={() => onSave?.(order.id, '__refresh__', null)}
       >
       {/* Two columns, not one long scroll.
