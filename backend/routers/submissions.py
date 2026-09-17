@@ -42,6 +42,13 @@ class RejectRequest(BaseModel):
     reason: str = Field(..., min_length=1, description="Reason code from SAMPLE_REJECT_REASONS")
     notes: Optional[str] = None
     photo_url: Optional[str] = None
+    # ISO date string; defaults to now if omitted. The mirror of approved_at on
+    # ApproveRequest, added for the same reason: onboarding a factory's own
+    # tracking sheet means replaying an attempt history that already happened.
+    # Without it a rejection from July could only be recorded as happening
+    # today, which collapses the gap between attempts and poisons every idle /
+    # stale-days calculation that reads resolved_at.
+    rejected_at: Optional[str] = None
     # Multi-style apply scope. 'single' = just this (order, component) tuple.
     # 'all_on_po' = find every sibling component with the same name on the same PO and reject each.
     # 'selected' = only the orders listed in apply_to_order_ids (names matched).
@@ -258,10 +265,21 @@ def _reject_one_target(
     photo_url: Optional[str],
     actioned_by_id: int,
     now: datetime,
+    rejected_on: Optional[datetime] = None,
 ) -> int:
     """Reject the current attempt on a single (order, component) pair and open
     the next attempt. Returns the new attempt number. Caller is responsible for
-    committing the transaction once all targets are processed."""
+    committing the transaction once all targets are processed.
+
+    `now` and `rejected_on` split the same way they do in _approve_one_target:
+    `now` is the audit timestamp and stays real, while `rejected_on` is the
+    business date the sample was actually turned down. They differ only when
+    back-filling a factory's own tracking sheet, where the rejection happened
+    weeks ago; the closed attempt's resolved_at and the next attempt's
+    requested_at both take the business date, because those are what every
+    idle- and stale-days calculation reads.
+    """
+    rejected_on = rejected_on or now
     target = component if component is not None else order
     state = _read_target_state(target, sample_type)
     component_id = component.id if component else None
@@ -276,7 +294,7 @@ def _reject_one_target(
             attempt_no=1,
             requested_at=order.order_sent_to_factory_date,
             submitted_at=state['received'],
-            resolved_at=now,
+            resolved_at=rejected_on,
             outcome='REJECTED',
             reason=reason,
             notes=notes,
@@ -286,7 +304,7 @@ def _reject_one_target(
         next_attempt = 2
     elif latest.outcome is None:
         latest.outcome = 'REJECTED'
-        latest.resolved_at = now
+        latest.resolved_at = rejected_on
         latest.reason = reason
         latest.notes = notes
         latest.photo_url = photo_url
@@ -302,7 +320,7 @@ def _reject_one_target(
         component_id=component_id,
         sample_type=sample_type,
         attempt_no=next_attempt,
-        requested_at=now,
+        requested_at=rejected_on,
         outcome=None,
         actioned_by_id=actioned_by_id,
     ))
@@ -350,6 +368,13 @@ async def reject_sample(
         body.apply_scope, body.apply_to_order_ids,
     )
     now = datetime.utcnow()
+    if body.rejected_at:
+        try:
+            rejected_on = datetime.fromisoformat(body.rejected_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(400, f"Invalid rejected_at '{body.rejected_at}'")
+    else:
+        rejected_on = now
 
     primary_attempt_no = None
     applied_to = []
@@ -357,7 +382,7 @@ async def reject_sample(
         new_attempt = _reject_one_target(
             db, order, component, body.sample_type,
             body.reason, body.notes, body.photo_url,
-            current_user.id, now,
+            current_user.id, now, rejected_on,
         )
         if order.id == body.order_id and (component.id if component else None) == body.component_id:
             primary_attempt_no = new_attempt
