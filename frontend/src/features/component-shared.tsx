@@ -136,13 +136,22 @@ export function ageDays(inst: Instance): number {
   return inst.component.updated_at ? businessDaysBetween(inst.component.updated_at, new Date()) : 0;
 }
 
-export function statusPillStyle(status: string | null | undefined) {
+/**
+ * `factory` swaps the labels that only make sense from Source Lab's desk.
+ *
+ * RECEIVED is the one that misleads: it means Source Lab have the sample, so to
+ * the factory that posted it the interesting fact is not that it arrived, it is
+ * that the ball is no longer in their court. "Received" reads like something
+ * they still owe. The stored value is unchanged -- this is a caption.
+ */
+export function statusPillStyle(status: string | null | undefined, opts?: { factory?: boolean }) {
   const s = (status || '').trim().toUpperCase();
   switch (s) {
     case 'APPROVED':          return { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Approved' };
     case 'NOT REQUIRED':      return { bg: 'bg-gray-100',   text: 'text-gray-500',   label: 'Not required' };
     case 'OUTSTANDING':       return { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Outstanding' };
-    case 'RECEIVED':          return { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Received' };
+    case 'RECEIVED':          return { bg: 'bg-blue-100',   text: 'text-blue-700',
+                                       label: opts?.factory ? 'With Source Lab' : 'Received' };
     case 'REJECTED':          return { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Rejected' };
     case 'LATE':              return { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Late' };
     case 'P23 ADVISE UPDATE': return { bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'Advise update' };

@@ -151,8 +151,9 @@ function buildGroups(instances: Instance[]): WorkGroup[] {
  * components, and the table's header cell and body cells have to appear and
  * disappear together or the columns misalign.
  */
-const SelectionEnabled = createContext(true);
-const useSelectable = () => useContext(SelectionEnabled);
+type Audience = { selectable: boolean; factory: boolean };
+const AudienceContext = createContext<Audience>({ selectable: true, factory: false });
+const useAudience = () => useContext(AudienceContext);
 
 export function ComponentWorklist({
   orders, loading, isSupplier, onEditInstance, onOpenStyle, onBulkEditDone, onAddForOrders,
@@ -312,7 +313,7 @@ export function ComponentWorklist({
   }));
 
   return (
-    <SelectionEnabled.Provider value={!isSupplier}>
+    <AudienceContext.Provider value={{ selectable: !isSupplier, factory: isSupplier }}>
     <div className="flex flex-col gap-3 min-h-0 flex-1">
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         {TILES.map((t) => (
@@ -380,7 +381,7 @@ export function ComponentWorklist({
         />
       ) : (
       <div className="flex-1 min-h-0 rounded-t-xl border border-b-0 border-gray-200 bg-white overflow-auto">
-        <table className="w-full text-xs">
+        <table className="w-full text-[13px]">
           <thead className="sticky top-0 z-[2] bg-gray-50 border-b border-gray-200">
             <tr className="text-left text-gray-500">
               {!isSupplier && (
@@ -511,7 +512,7 @@ export function ComponentWorklist({
         />
       )}
     </div>
-    </SelectionEnabled.Provider>
+    </AudienceContext.Provider>
   );
 }
 
@@ -532,7 +533,7 @@ function GroupRows({
   onEditInstance: (order: Order, component: OrderComponent) => void;
   onOpenStyle: (orderId: number) => void;
 }) {
-  const selectable = useSelectable();
+  const { selectable, factory } = useAudience();
   // A group of one IS the sample — no value in a disclosure triangle hiding a
   // single row behind an extra click.
   if (group.instances.length === 1) {
@@ -562,7 +563,7 @@ function GroupRows({
         )}
       >
         {selectable && (
-          <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
               checked={checked}
@@ -572,7 +573,7 @@ function GroupRows({
             />
           </td>
         )}
-        <td className="px-3 py-1.5 max-w-[260px]">
+        <td className="px-3 py-2 max-w-[260px]">
           <div className="flex items-center gap-1.5 min-w-0">
             {group.attention > 0 && <span className="w-1 h-4 rounded-full bg-red-500 flex-shrink-0" />}
             {open
@@ -584,28 +585,28 @@ function GroupRows({
             </span>
           </div>
         </td>
-        <td className="px-3 py-1.5">
-          <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
+        <td className="px-3 py-2">
+          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
             {sampleTypeLabel(group.sampleType)}
           </span>
         </td>
-        <td className="px-3 py-1.5 text-gray-600 tabular-nums whitespace-nowrap">{n} styles</td>
-        <td className="px-3 py-1.5 font-mono tabular-nums text-gray-700 whitespace-nowrap">
+        <td className="px-3 py-2 text-gray-600 tabular-nums whitespace-nowrap">{n} styles</td>
+        <td className="px-3 py-2 font-mono tabular-nums text-gray-700 whitespace-nowrap">
           {group.poNumbers.length === 1 ? group.poNumbers[0] : `${group.poNumbers.length} POs`}
         </td>
-        <td className="px-3 py-1.5 text-gray-600 max-w-[140px] truncate">
+        <td className="px-3 py-2 text-gray-600 max-w-[140px] truncate">
           {group.customers.length === 0 ? '—'
             : group.customers.length === 1 ? group.customers[0]
             : `${group.customers.length} customers`}
         </td>
-        <td className="px-3 py-1.5">
+        <td className="px-3 py-2">
           {/* Rolled up, worst first — a single rejection has to read from the
               collapsed row, or grouping hides the thing you came here for. */}
           <div className="flex items-center gap-1 flex-wrap">
             {group.statusCounts.slice(0, 3).map(([st, c]) => {
-              const pill = statusPillStyle(st);
+              const pill = statusPillStyle(st, { factory });
               return (
-                <span key={st} className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
+                <span key={st} className={cn('px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
                   {c > 1 && <span className="tabular-nums">{c} </span>}{pill.label}
                 </span>
               );
@@ -615,13 +616,13 @@ function GroupRows({
             )}
           </div>
         </td>
-        <td className="px-3 py-1.5 tabular-nums whitespace-nowrap text-gray-500">
+        <td className="px-3 py-2 tabular-nums whitespace-nowrap text-gray-500">
           {group.earliestExFac ? relativeTimeShort(group.earliestExFac) : '—'}
         </td>
-        <td className={cn('px-3 py-1.5 tabular-nums whitespace-nowrap', group.worstIdle >= 14 ? 'text-amber-700 font-semibold' : 'text-gray-500')}>
+        <td className={cn('px-3 py-2 tabular-nums whitespace-nowrap', group.worstIdle >= 14 ? 'text-amber-700 font-semibold' : 'text-gray-500')}>
           {group.worstIdle}d
         </td>
-        <td className="px-2 py-1.5" />
+        <td className="px-2 py-2" />
       </tr>
 
       {open && group.instances.map((inst) => (
@@ -651,10 +652,10 @@ function StyleRow({
   onOpenStyle: () => void;
   showComponent: boolean;
 }) {
-  const selectable = useSelectable();
+  const { selectable, factory } = useAudience();
   const { order, component } = inst;
   const { status } = activeSampleFor(component);
-  const pill = statusPillStyle(status);
+  const pill = statusPillStyle(status, { factory });
   const attention = isNeedsAttention(inst);
   const attempt = attemptFor(component);
   const age = ageDays(inst);
@@ -670,7 +671,7 @@ function StyleRow({
       )}
     >
       {selectable && (
-        <td className={cn('py-1.5', indent ? 'pl-8 pr-3' : 'px-3')} onClick={(e) => e.stopPropagation()}>
+        <td className={cn('py-2', indent ? 'pl-8 pr-3' : 'px-3')} onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={checked}
@@ -679,7 +680,7 @@ function StyleRow({
           />
         </td>
       )}
-      <td className={cn('py-1.5 max-w-[260px]', indent ? 'pl-6 pr-3' : 'px-3')}>
+      <td className={cn('py-2 max-w-[260px]', indent ? 'pl-6 pr-3' : 'px-3')}>
         <div className="flex items-center gap-1.5 min-w-0">
           {attention && <span className="w-1 h-4 rounded-full bg-red-500 flex-shrink-0" />}
           {showComponent ? (
@@ -687,35 +688,35 @@ function StyleRow({
           ) : (
             /* Inside a group the name sits on the parent row, so this slot
                carries the style's description instead of repeating it. */
-            <span className="text-[11px] text-gray-400 truncate">{order.description || '—'}</span>
+            <span className="text-[12px] text-gray-400 truncate">{order.description || '—'}</span>
           )}
           <AttemptBadge attemptNo={attempt.attemptNo} rejectionCount={attempt.rejectionCount} />
         </div>
       </td>
-      <td className="px-3 py-1.5">
+      <td className="px-3 py-2">
         {showComponent && (
-          <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(component.sample_type))}>
+          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider', sampleTypeChipBg(component.sample_type))}>
             {sampleTypeLabel(component.sample_type)}
           </span>
         )}
       </td>
-      <td className="px-3 py-1.5 font-mono tabular-nums text-gray-700 max-w-[160px] truncate">
+      <td className="px-3 py-2 font-mono tabular-nums text-gray-700 max-w-[160px] truncate">
         {order.style_code || `#${order.id}`}
       </td>
-      <td className="px-3 py-1.5 font-mono tabular-nums text-gray-700">{order.po_number || '—'}</td>
-      <td className="px-3 py-1.5 text-gray-600 max-w-[140px] truncate">{order.customer || '—'}</td>
-      <td className="px-3 py-1.5">
-        <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
+      <td className="px-3 py-2 font-mono tabular-nums text-gray-700">{order.po_number || '—'}</td>
+      <td className="px-3 py-2 text-gray-600 max-w-[140px] truncate">{order.customer || '—'}</td>
+      <td className="px-3 py-2">
+        <span className={cn('px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
           {pill.label}
         </span>
       </td>
-      <td className={cn('px-3 py-1.5 tabular-nums whitespace-nowrap', urgent ? 'text-red-600 font-semibold' : 'text-gray-500')}>
+      <td className={cn('px-3 py-2 tabular-nums whitespace-nowrap', urgent ? 'text-red-600 font-semibold' : 'text-gray-500')}>
         {exFac ? relativeTimeShort(exFac) : '—'}
       </td>
-      <td className={cn('px-3 py-1.5 tabular-nums whitespace-nowrap', age >= 14 ? 'text-amber-700 font-semibold' : 'text-gray-500')}>
+      <td className={cn('px-3 py-2 tabular-nums whitespace-nowrap', age >= 14 ? 'text-amber-700 font-semibold' : 'text-gray-500')}>
         {age}d
       </td>
-      <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+      <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={onOpenStyle}
           title="Open the full style"
@@ -805,7 +806,7 @@ function WorkCard({
   onEditInstance: (order: Order, component: OrderComponent) => void;
   onOpenStyle: (orderId: number) => void;
 }) {
-  const selectable = useSelectable();
+  const { selectable, factory } = useAudience();
   const [open, setOpen] = useState(false);
   const ids = group.instances.map((i) => i.component.id);
   const allOn = ids.every((id) => selected.has(id));
@@ -833,7 +834,7 @@ function WorkCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
+            <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
               {sampleTypeLabel(group.sampleType)}
             </span>
             {group.maxAttempt > 1 && (
@@ -863,9 +864,9 @@ function WorkCard({
 
       <div className="px-3 pb-2 flex items-center gap-1 flex-wrap">
         {group.statusCounts.slice(0, 3).map(([st, c]) => {
-          const pill = statusPillStyle(st);
+          const pill = statusPillStyle(st, { factory });
           return (
-            <span key={st} className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
+            <span key={st} className={cn('px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
               {c > 1 && <span className="tabular-nums">{c} </span>}{pill.label}
             </span>
           );
@@ -904,7 +905,7 @@ function WorkCard({
       {open && n > 1 && (
         <div className="border-t border-gray-100 max-h-52 overflow-y-auto">
           {group.instances.map((inst) => {
-            const pill = statusPillStyle(activeSampleFor(inst.component).status);
+            const pill = statusPillStyle(activeSampleFor(inst.component).status, { factory });
             const checked = selected.has(inst.component.id);
             return (
               <div
