@@ -2528,7 +2528,23 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
   };
 
   return (
-    <div className="flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0">
+    // Whole row is the target when editable -- the value span alone was a tiny
+    // hit area, and on an empty field it was a single grey em-dash that read as
+    // punctuation rather than a control.
+    <div
+      onClick={() => { if (editable && !editing) startEdit(); }}
+      onKeyDown={(e) => {
+        if (!editable || editing) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(); }
+      }}
+      role={editable && !editing ? 'button' : undefined}
+      tabIndex={editable && !editing ? 0 : undefined}
+      aria-label={editable && !editing ? `Edit ${label}` : undefined}
+      className={cn(
+        'group flex items-baseline justify-between gap-4 px-4 py-2.5 border-b border-gray-50 last:border-0 transition-colors',
+        editable && !editing && 'cursor-pointer hover:bg-primary-50/70 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-300',
+      )}
+    >
       <span className="text-xs text-gray-500 flex items-center gap-1 flex-shrink-0">{label}{extra}</span>
       {/* When bulkable, the editor is a floating modal — show the row's value
           underneath while the modal is open so the layout doesn't collapse. */}
@@ -2574,11 +2590,10 @@ function DetailRow({ label, value, editable, onSave, options, extra, type, rawVa
       ) : (
         <span
           className={cn(
-            'text-xs font-medium text-gray-800 text-right break-words min-w-0',
-            editable && 'cursor-pointer hover:text-primary-600'
+            'text-xs font-medium text-gray-800 text-right break-words min-w-0 inline-flex items-baseline gap-1.5',
+            editable && 'group-hover:text-primary-700',
           )}
-          onClick={() => { if (editable) startEdit(); }}
-          title={editable ? `${value || '—'} · click to edit` : (typeof value === 'string' ? value : undefined)}
+          title={editable ? `${value || '—'} · click the row to edit` : (typeof value === 'string' ? value : undefined)}
         >
           {value || '—'}
         </span>

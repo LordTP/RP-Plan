@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseISO } from 'date-fns';
 import { cn, formatDate } from '@/lib/utils';
@@ -503,9 +503,30 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
         ? 'bg-emerald-500 border-emerald-500'
         : 'bg-white border-primary-300';
 
+  // The whole row is the target when the field is editable. It used to be the
+  // value span alone, which on an unset date is a single grey em-dash -- a
+  // ~10px hit area that reads as punctuation rather than a control, so the
+  // commonest edit on this panel was also its best-hidden one.
+  const openEditor = () => { if (editable && !editing) setEditing(true); };
+
   return (
     <div className="relative">
-    <div className="flex items-center gap-3 py-2 relative group rounded-lg hover:bg-gray-100 px-1 -mx-1 transition-colors">
+    <div
+      onClick={openEditor}
+      onKeyDown={(e) => {
+        if (!editable || editing) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditing(true); }
+      }}
+      role={editable && !editing ? 'button' : undefined}
+      tabIndex={editable && !editing ? 0 : undefined}
+      aria-label={editable && !editing ? `Edit ${label}` : undefined}
+      className={cn(
+        'flex items-center gap-3 py-2 relative group rounded-lg px-1 -mx-1 transition-colors',
+        editable && !editing
+          ? 'cursor-pointer hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-300'
+          : 'hover:bg-gray-100',
+      )}
+    >
       <div className={cn('w-[15px] h-[15px] rounded-full border-2 flex-shrink-0 z-10', dotClass)}>
         {hasDate && !highlight && !past && <div className="w-full h-full rounded-full bg-primary-50" />}
       </div>
@@ -533,14 +554,22 @@ export function TimelineItem({ label, date, note, highlight, editable, onSave, f
         ) : (
           <span
             className={cn(
-              'text-xs flex-shrink-0 ml-2',
+              'text-xs flex-shrink-0 ml-2 inline-flex items-center gap-1.5',
               hasDate ? 'text-gray-900 font-medium' : 'text-gray-300',
-              editable && 'cursor-pointer hover:text-primary-600'
+              editable && 'group-hover:text-primary-700',
             )}
-            onClick={() => editable && setEditing(true)}
-            title={editable ? 'Click to edit' : undefined}
           >
-            {note || formatDate(date ?? null)}
+            {/* An unset editable field says so on hover. A bare em-dash gave no
+                hint that anything could be done with the row. */}
+            {!hasDate && editable
+              ? <span className="text-gray-300 group-hover:text-primary-700">
+                  <span className="group-hover:hidden">—</span>
+                  <span className="hidden group-hover:inline font-semibold">Set date</span>
+                </span>
+              : (note || formatDate(date ?? null))}
+            {editable && (
+              <Pencil className="w-3 h-3 text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            )}
           </span>
         )}
       </div>
