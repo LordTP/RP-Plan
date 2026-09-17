@@ -44,13 +44,17 @@ interface Props {
   onAddForOrders?: (orderIds: number[], poNumber: string) => void;
 }
 
-const TILES: { key: Tile; label: string; tone: 'primary' | 'danger' }[] = [
+const TILES: { key: Tile; label: string; factoryLabel?: string; tone: 'primary' | 'danger' }[] = [
   { key: 'all', label: 'In flight', tone: 'primary' },
   { key: 'attention', label: 'Needs attention', tone: 'danger' },
   { key: 'rejected', label: 'Rejected', tone: 'danger' },
   { key: 'stale', label: 'Stale 14d+', tone: 'primary' },
   { key: 'outstanding', label: 'Outstanding', tone: 'primary' },
-  { key: 'received', label: 'Received', tone: 'primary' },
+  // Same rename as the status pill: RECEIVED means Source Lab have it, so to
+  // the factory that sent it the fact is that the ball is in our court. A tile
+  // reading "Received" next to a row reading "With Source Lab" was also just
+  // two names for one number.
+  { key: 'received', label: 'Received', factoryLabel: 'With Source Lab', tone: 'primary' },
 ];
 
 type WorkGroup = {
@@ -376,7 +380,7 @@ export function ComponentWorklist({
         {TILES.map((t) => (
           <StatusTile
             key={t.key}
-            label={t.label}
+            label={(isSupplier && t.factoryLabel) || t.label}
             count={counts[t.key]}
             tone={t.tone}
             active={tile === t.key}

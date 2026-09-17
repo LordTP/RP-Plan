@@ -176,7 +176,10 @@ export function FactoryComponentModal({
             <Facts rows={[
               ['Sample type', SAMPLE_LABEL[component.sample_type] || component.sample_type, false],
               ['Colour', order.colour, false],
-              ['Received', fmt(lane.received), false],
+              // "Received" on its own is ambiguous in a factory-facing view --
+              // received by whom. The journey step beside it already says
+              // "received by Source Lab", so this matches it.
+              ['Received by Source Lab', fmt(lane.received), false],
               ['Approved', fmt(lane.approved), false],
             ]} />
 
