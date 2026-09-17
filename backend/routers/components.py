@@ -1796,6 +1796,91 @@ async def update_component_library_entry(
     }
 
 
+@router.post("/api/components/library/{canonical_id}/split")
+async def split_component_library_entry(
+    canonical_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_full_internal_user),
+):
+    """Move some of an entry's instances onto a new entry of their own.
+
+    One add-event is one library entry, and its styles are meant to move
+    together -- that's what OUT OF STEP measures. Sometimes they genuinely
+    stop being one decision: a strike off approved on five styles and still
+    outstanding on a sixth is two conversations, and holding them in one entry
+    keeps the flag lit on something nobody can action as a unit.
+
+    The obvious way to do this in the UI is to remove the instance and add it
+    again, and that quietly destroys the thing you most want to keep:
+    DELETE /api/components/{id} cascades sample_submissions, so the attempt
+    history -- when it was rejected, why, how many times -- goes with it. This
+    only rewrites canonical_id, so every submission row stays attached to the
+    instance it belongs to.
+
+    The new entry copies the identity of the old one. It is a separation, not
+    an edit; renaming afterwards is a normal PATCH.
+
+    Internal / admin only, matching the other library-level operations.
+    """
+    instance_ids = data.get("instance_ids") or []
+    if not isinstance(instance_ids, list) or not instance_ids:
+        raise HTTPException(status_code=400, detail="instance_ids must be a non-empty list")
+
+    canonical = db.query(Component).filter(Component.id == canonical_id).first()
+    if not canonical:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    moving = (
+        db.query(OrderComponent)
+        .filter(OrderComponent.canonical_id == canonical_id,
+                OrderComponent.id.in_(instance_ids))
+        .all()
+    )
+    if not moving:
+        raise HTTPException(
+            status_code=400,
+            detail="None of those instances belong to this library entry.",
+        )
+    total = (
+        db.query(OrderComponent)
+        .filter(OrderComponent.canonical_id == canonical_id)
+        .count()
+    )
+    if len(moving) >= total:
+        # Splitting everything off leaves an empty entry behind and achieves
+        # nothing -- the caller almost certainly picked the wrong set.
+        raise HTTPException(
+            status_code=400,
+            detail="That would move every style off the entry, leaving it empty. "
+                   "Split off the ones that differ, not all of them.",
+        )
+
+    fresh = Component(
+        name=canonical.name,
+        sample_type=canonical.sample_type,
+        description=canonical.description,
+        colour=canonical.colour,
+        position=canonical.position,
+        spec_url=canonical.spec_url,
+        supplier_notes=canonical.supplier_notes,
+    )
+    db.add(fresh)
+    db.flush()
+
+    for inst in moving:
+        inst.canonical_id = fresh.id
+
+    db.commit()
+    return {
+        "ok": True,
+        "from_canonical_id": canonical_id,
+        "new_canonical_id": fresh.id,
+        "moved": len(moving),
+        "left_behind": total - len(moving),
+    }
+
+
 @router.delete("/api/components/library/{canonical_id}")
 async def delete_component_library_entry(
     canonical_id: int,
