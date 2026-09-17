@@ -15,7 +15,7 @@
  * otherwise grouping hides the one rejection you opened the page to find.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Loader2, Search, Package, ExternalLink, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { relativeTimeShort } from '@/lib/sampleStatus';
@@ -25,7 +25,7 @@ import { StatusTile, TogglePill, Segmented, SortableTh, BulkBar, bulkActionPrima
 import {
   type Instance, type TypeFilter,
   activeSampleFor, attemptFor, isNeedsAttention, isInFlight, isStale, isExFacUrgent, ageDays,
-  statusPillStyle, sampleTypeLabel, sampleTypeChipBg, sampleTypeFullLabel,
+  statusPillStyle, sampleTypeLabel, sampleTypeChipBg, sampleTypeFullLabel, SHIPPED_STATUSES,
 } from './component-shared';
 import { NoComponentsPanel } from '@/features/NoComponentsPanel';
 import type { Order, OrderComponent, ComponentSampleType } from '@/types';
@@ -175,6 +175,11 @@ export function ComponentWorklist({
   const [sortKey, setSortKey] = useState<SortKey>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [showAllBlank, setShowAllBlank] = useState(false);
+  // Component, Type, Styles, Status, Ex-fac, Idle, open-icon — plus the
+  // checkbox for internal users. The PO bands span the lot, so this has to
+  // track the header or the bands come up short.
+  const colCount = isSupplier ? 7 : 8;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
 
@@ -266,6 +271,58 @@ export function ComponentWorklist({
     });
     return list;
   }, [matching, sortKey, dir]);
+
+  /**
+   * The table is organised by PO rather than carrying PO as a column.
+   *
+   * The PO is the unit everything else in the app already works in -- the add
+   * modal's style picker groups by it, so did the old Not started panel -- and
+   * repeating "5254 · STICHD" on every row to say so was the widest pair of
+   * columns on the table. As a heading it is stated once.
+   *
+   * It also collapses the two lists this page used to stack. A PO either has
+   * components or it hasn't; "nothing added yet" is the same list further down
+   * rather than a separate slab pinned to the bottom of the frame.
+   */
+  const poSections = useMemo(() => {
+    const byPO = new Map<string, { po: string; customer: string; ref: string; groups: WorkGroup[];
+                                   styles: number; attention: number; exFac: string | null }>();
+    for (const g of groups) {
+      // A group spanning POs (possible via cross-PO add, though it does not
+      // happen in practice) is listed under each one it touches.
+      for (const po of (g.poNumbers.length ? g.poNumbers : ['—'])) {
+        const first = g.instances.find((i) => i.order.po_number === po) || g.instances[0];
+        const e = byPO.get(po) || {
+          po, customer: first.order.customer || '', ref: first.order.china_orderbook_ref || '',
+          groups: [], styles: 0, attention: 0, exFac: null,
+        };
+        e.groups.push(g);
+        e.styles += g.instances.filter((i) => i.order.po_number === po).length || g.instances.length;
+        e.attention += g.attention;
+        if (g.earliestExFac && (!e.exFac || g.earliestExFac < e.exFac)) e.exFac = g.earliestExFac;
+        byPO.set(po, e);
+      }
+    }
+    // Worst first: the PO with something stuck is the one to open.
+    return Array.from(byPO.values()).sort((a, b) =>
+      b.attention - a.attention || (a.exFac || '9999').localeCompare(b.exFac || '9999'));
+  }, [groups]);
+
+  /** POs where nothing has been added at all. */
+  const blankPOs = useMemo(() => {
+    const byPO = new Map<string, { po: string; customer: string; ref: string; styles: Order[] }>();
+    for (const o of orders) {
+      if ((o.components || []).length) continue;
+      if (hideShipped && SHIPPED_STATUSES.has(o.status || '')) continue;
+      const key = o.po_number || '—';
+      const e = byPO.get(key) || { po: key, customer: o.customer || '', ref: o.china_orderbook_ref || '', styles: [] };
+      e.styles.push(o);
+      byPO.set(key, e);
+    }
+    // Biggest first -- the PO with 34 styles is where an hour goes.
+    return Array.from(byPO.values()).sort((a, b) => b.styles.length - a.styles.length);
+  }, [orders, hideShipped]);
+
 
   // Drop selections that have fallen out of the current filter — bulk editing
   // something you can no longer see is how surprise edits happen.
@@ -398,8 +455,6 @@ export function ComponentWorklist({
               <SortableTh label="Component" sortKey="component" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
               <th className="px-3 py-2 font-semibold uppercase tracking-wider text-[10px]">Type</th>
               <SortableTh label={grouped ? 'Styles' : 'Style'} sortKey="style" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
-              <SortableTh label="PO" sortKey="po" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
-              <th className="px-3 py-2 font-semibold uppercase tracking-wider text-[10px]">Customer</th>
               <SortableTh label="Status" sortKey="status" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
               <SortableTh label="Ex-fac" sortKey="exfac" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
               <SortableTh label="Idle" sortKey="age" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
@@ -408,11 +463,11 @@ export function ComponentWorklist({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading && matching.length === 0 ? (
-              <tr><td colSpan={10} className="py-14 text-center text-gray-400">
+              <tr><td colSpan={colCount} className="py-14 text-center text-gray-400">
                 <Loader2 className="w-4 h-4 animate-spin inline" />
               </td></tr>
             ) : matching.length === 0 ? (
-              <tr><td colSpan={10} className="py-14 text-center">
+              <tr><td colSpan={colCount} className="py-14 text-center">
                 <Package className="w-6 h-6 text-gray-300 mx-auto mb-2" />
                 <p className="text-xs text-gray-400">
                   {counts.all === 0
@@ -422,43 +477,114 @@ export function ComponentWorklist({
                     : 'No samples match these filters.'}
                 </p>
               </td></tr>
-            ) : grouped ? (
-              groups.map((g) => {
-                const ids = g.instances.map((i) => i.component.id);
-                const on = ids.every((id) => selected.has(id));
-                return (
-                  <GroupRows
-                    key={g.key}
-                    group={g}
-                    open={expanded.has(g.key)}
-                    checked={on}
-                    indeterminate={!on && ids.some((id) => selected.has(id))}
-                    onToggleOpen={() => setExpanded((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
-                      return next;
-                    })}
-                    onToggleCheck={() => setMany(ids, !on)}
-                    selected={selected}
-                    onToggleRow={(id) => setMany([id], !selected.has(id))}
-                    onEditInstance={onEditInstance}
-                    onOpenStyle={onOpenStyle}
-                  />
-                );
-              })
             ) : (
-              flatRows.map((inst) => (
-                <StyleRow
-                  key={inst.component.id}
-                  inst={inst}
-                  indent={false}
-                  checked={selected.has(inst.component.id)}
-                  onToggle={() => setMany([inst.component.id], !selected.has(inst.component.id))}
-                  onOpen={() => onEditInstance(inst.order, inst.component)}
-                  onOpenStyle={() => onOpenStyle(inst.order.id)}
-                  showComponent
-                />
+              poSections.map((sec) => (
+                <Fragment key={sec.po}>
+                  <POBand
+                    po={sec.po} customer={sec.customer} ref_={sec.ref}
+                    styles={sec.styles} attention={sec.attention} exFac={sec.exFac}
+                    colSpan={colCount}
+                  />
+                  {grouped
+                    ? sec.groups.map((g) => {
+                        const ids = g.instances.map((i) => i.component.id);
+                        const on = ids.every((id) => selected.has(id));
+                        return (
+                          <GroupRows
+                            key={`${sec.po}:${g.key}`}
+                            group={g}
+                            open={expanded.has(g.key)}
+                            checked={on}
+                            indeterminate={!on && ids.some((id) => selected.has(id))}
+                            onToggleOpen={() => setExpanded((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+                              return next;
+                            })}
+                            onToggleCheck={() => setMany(ids, !on)}
+                            selected={selected}
+                            onToggleRow={(id) => setMany([id], !selected.has(id))}
+                            onEditInstance={onEditInstance}
+                            onOpenStyle={onOpenStyle}
+                          />
+                        );
+                      })
+                    : sec.groups.flatMap((g) => g.instances)
+                        .filter((inst) => inst.order.po_number === sec.po)
+                        .map((inst) => (
+                          <StyleRow
+                            key={inst.component.id}
+                            inst={inst}
+                            indent={false}
+                            checked={selected.has(inst.component.id)}
+                            onToggle={() => setMany([inst.component.id], !selected.has(inst.component.id))}
+                            onOpen={() => onEditInstance(inst.order, inst.component)}
+                            onOpenStyle={() => onOpenStyle(inst.order.id)}
+                            showComponent
+                          />
+                        ))}
+                </Fragment>
               ))
+            )}
+
+            {/* The POs with nothing on them, in the same list rather than a
+                separate panel below it. They are the biggest number on this
+                page and the least urgent -- nothing is waiting on anyone
+                until somebody adds a component -- so they sit at the bottom,
+                biggest first, each one click from the add modal. */}
+            {blankPOs.length > 0 && (
+              <>
+                <tr>
+                  <td colSpan={colCount} className="px-3 pt-5 pb-1.5 bg-white">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                        Nothing added yet
+                      </span>
+                      <span className="flex-1 h-px bg-gray-200" />
+                      <span className="text-[11px] text-gray-400 tabular-nums">
+                        {blankPOs.length} {blankPOs.length === 1 ? 'PO' : 'POs'} ·{' '}
+                        {blankPOs.reduce((n, b) => n + b.styles.length, 0)} styles
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+                {(showAllBlank ? blankPOs : blankPOs.slice(0, 8)).map((b) => (
+                  <tr key={`blank:${b.po}`} className="hover:bg-gray-50 transition-colors">
+                    <td colSpan={colCount} className="px-3 py-2">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="font-mono font-bold tabular-nums text-gray-900">{b.po}</span>
+                        {b.customer && <span className="text-gray-500">{b.customer}</span>}
+                        {b.ref && <span className="text-[11.5px] text-gray-400 truncate">{b.ref}</span>}
+                        <span className="ml-auto text-[11.5px] text-gray-400 tabular-nums whitespace-nowrap">
+                          {b.styles.length} {b.styles.length === 1 ? 'style' : 'styles'}
+                        </span>
+                        {onAddForOrders && (
+                          <button
+                            onClick={() => onAddForOrders(b.styles.map((x) => x.id), b.po)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11.5px] font-semibold
+                                       text-primary-700 bg-primary-50 ring-1 ring-primary-200 hover:bg-primary-100
+                                       transition-colors flex-shrink-0"
+                          >
+                            + Add components
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {blankPOs.length > 8 && !showAllBlank && (
+                  <tr>
+                    <td colSpan={colCount} className="px-3 py-2 text-center">
+                      <button
+                        onClick={() => setShowAllBlank(true)}
+                        className="text-[11.5px] font-semibold text-gray-500 hover:text-gray-900"
+                      >
+                        Show {blankPOs.length - 8} more {blankPOs.length - 8 === 1 ? 'PO' : 'POs'}
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
@@ -466,7 +592,11 @@ export function ComponentWorklist({
       )}
 
 
-      {!isSupplier && onAddForOrders && (
+      {/* Table view folds the empty POs into the list itself, so the separate
+          panel would be the same information twice -- and it was the thing
+          squeezing the table into the top half of the frame. Cards still use
+          it until that view gets the same treatment. */}
+      {layout === 'cards' && !isSupplier && onAddForOrders && (
         <NoComponentsPanel
           orders={orders}
           onAddForOrders={onAddForOrders}
@@ -517,6 +647,36 @@ export function ComponentWorklist({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+
+/** The PO heading the rows hang off. Says the things that used to repeat on
+ *  every row -- PO, customer, orderbook reference -- once, plus the two facts
+ *  that decide whether you open it: how much needs attention, and when it
+ *  ships. */
+function POBand({ po, customer, ref_, styles, attention, exFac, colSpan }: {
+  po: string; customer: string; ref_: string;
+  styles: number; attention: number; exFac: string | null; colSpan: number;
+}) {
+  return (
+    <tr className={cn('border-y', attention > 0 ? 'bg-red-50/60 border-red-100' : 'bg-gray-50 border-gray-200')}>
+      <td colSpan={colSpan} className="px-3 py-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="font-mono font-extrabold tabular-nums text-[14px] text-gray-900">{po}</span>
+          {customer && <span className="text-[12.5px] text-gray-600">{customer}</span>}
+          {ref_ && <span className="text-[11.5px] text-gray-400 truncate max-w-[220px]">{ref_}</span>}
+          {attention > 0 && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-600 text-white whitespace-nowrap">
+              {attention} need{attention === 1 ? 's' : ''} attention
+            </span>
+          )}
+          <span className="ml-auto text-[11.5px] text-gray-500 tabular-nums whitespace-nowrap">
+            {styles} {styles === 1 ? 'style' : 'styles'}
+            {exFac && <> · ex-fac {relativeTimeShort(exFac)}</>}
+          </span>
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 function GroupRows({
   group, open, checked, indeterminate,
@@ -590,14 +750,12 @@ function GroupRows({
             {sampleTypeLabel(group.sampleType)}
           </span>
         </td>
-        <td className="px-3 py-2 text-gray-600 tabular-nums whitespace-nowrap">{n} styles</td>
-        <td className="px-3 py-2 font-mono tabular-nums text-gray-700 whitespace-nowrap">
-          {group.poNumbers.length === 1 ? group.poNumbers[0] : `${group.poNumbers.length} POs`}
-        </td>
-        <td className="px-3 py-2 text-gray-600 max-w-[140px] truncate">
-          {group.customers.length === 0 ? '—'
-            : group.customers.length === 1 ? group.customers[0]
-            : `${group.customers.length} customers`}
+        <td className="px-3 py-2 text-gray-600 tabular-nums whitespace-nowrap">
+          {n} styles
+          {/* Only worth saying when it is true, which in practice it never is. */}
+          {group.poNumbers.length > 1 && (
+            <span className="ml-1.5 text-[10.5px] text-amber-700">· {group.poNumbers.length} POs</span>
+          )}
         </td>
         <td className="px-3 py-2">
           {/* Rolled up, worst first — a single rejection has to read from the
@@ -700,11 +858,9 @@ function StyleRow({
           </span>
         )}
       </td>
-      <td className="px-3 py-2 font-mono tabular-nums text-gray-700 max-w-[160px] truncate">
+      <td className="px-3 py-2 font-mono tabular-nums text-gray-700 max-w-[190px] truncate">
         {order.style_code || `#${order.id}`}
       </td>
-      <td className="px-3 py-2 font-mono tabular-nums text-gray-700">{order.po_number || '—'}</td>
-      <td className="px-3 py-2 text-gray-600 max-w-[140px] truncate">{order.customer || '—'}</td>
       <td className="px-3 py-2">
         <span className={cn('px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
           {pill.label}
