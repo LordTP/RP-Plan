@@ -485,24 +485,29 @@ function FactoryGuideContent() {
           {/* 3. Tracking what you added */}
           <Step number="3.1" title="Worklist — chasing what you added">
             <p>
-              Once components exist, the <strong>Worklist</strong> tab is where you live. One card per{' '}
-              <strong>add-event</strong> — the group of styles you created together in a single Add
-              Component action — showing the name, sample type, which PO and customer it&apos;s on, how
-              many styles it covers, how long it&apos;s been idle and the ex-factory date it&apos;s
-              working towards.
+              Once components exist, the <strong>Worklist</strong> tab is where you live. It opens as a{' '}
+              <strong>table</strong>: one row per component, with its sample type, PO, customer, status,
+              how long it&apos;s been idle and the ex-factory date it&apos;s working towards. A{' '}
+              <strong>v2</strong> badge on a row means that sample has been rejected once and you&apos;re
+              on the remake.
             </p>
             <p>
               Status tiles run across the top. They are filters, not just counts: click{' '}
               <strong>Needs attention</strong> to cut the list to the urgent ones, click it again to
-              clear. Expand any card to see every style in that group with its own status.
+              clear.
             </p>
-            <MockShot caption="Worklist — one card per add-event, with idle days and ex-factory on each. The tiles across the top double as filters.">
+            <p>
+              <strong>Click any row</strong> to open that component in full — where it&apos;s up to, the
+              dates, and the whole history including why anything was rejected. That&apos;s covered in
+              3.3.
+            </p>
+            <MockShot caption="Worklist — the table you land on. A red idle figure and a v2 badge are the two things worth looking for.">
               <WorklistMock />
             </MockShot>
             <Tips>
-              <Tip icon={Tag}>Cards / Table toggle — cards to scan, table when you want a dense list.</Tip>
+              <Tip icon={Tag}>Cards / Table toggle — you start on Table, which fits far more on screen. Switch to Cards if you&apos;d rather scan than look things up.</Tip>
               <Tip icon={Tag}>Type filter (All / Strike Off / Lab Dip / Label) scopes the whole tab.</Tip>
-              <Tip icon={Tag}><strong>Group by add</strong> is on by default. Turn it off and you get one row per style instead of one card per add.</Tip>
+              <Tip icon={Tag}><strong>Group by add</strong> is on by default: styles created together sit under one heading. Turn it off for a flat row-per-style list.</Tip>
               <Tip icon={Tag}><strong>Hide shipped</strong> keeps orders that have already gone out of the way.</Tip>
               <Tip icon={Search}>Search narrows to a PO number, style code or component name.</Tip>
             </Tips>
@@ -560,20 +565,20 @@ function FactoryGuideContent() {
                 value="Marks a sample Received when it lands, then Approved or Rejected. Renames a library entry, or removes one added by mistake. Decides whether a sample is NOT REQUIRED."
               />
             </Table>
-            <MockShot caption="Click any style on a worklist card and this opens — status, dates and attempt history, so you can see exactly where a sample is up to.">
-              <ComponentCardMock
-                name="CHEST PRINT — HOME KIT BLUE"
-                type="strike_off"
-                status="APPROVED"
-                received="14 May 2026"
-                approved="20 May 2026"
-              />
+            <MockShot caption="Click a row on the Worklist and this opens: where the sample is, the facts on the left, the full history on the right.">
+              <FactoryDetailMock />
             </MockShot>
-            <Callout type="info" title="Greyed-out dates are not a bug">
-              Click a style and the <strong>Status</strong>, <strong>Received</strong> and{' '}
-              <strong>Approved</strong> fields show as plain text rather than editable boxes. That is
-              deliberate — Source Lab sets those. You open this to <em>read</em> where a sample is up
-              to, and to see the attempt history and any rejection reason.
+            <Callout type="info" title="What the detail view tells you">
+              It opens with the one line that matters — <em>Waiting on your remake</em>,{' '}
+              <em>With Source Lab</em>, <em>Signed off</em> — and how many working days it&apos;s been
+              sitting there. The <strong>journey</strong> down the right is every step the sample has
+              taken, including the reason and note for anything rejected, and who rejected it. There is
+              nothing to fill in: Source Lab set the status and dates, so this is a read.
+            </Callout>
+            <Callout type="warn" title="Rejected? Don&apos;t add a new component">
+              The next attempt is already open on the same component — that&apos;s what the{' '}
+              <strong>v2</strong> badge means. Remake against the reason and send it in against the one
+              that&apos;s there. Adding a duplicate splits the history and loses the attempt count.
             </Callout>
             <Callout type="info" title="Several of your styles can change at the same time">
               Source Lab can approve a component across every style carrying it in one action. So if
@@ -1610,6 +1615,93 @@ function AddFormMock() {
   );
 }
 
+/* The read-only detail a factory gets when they click a Worklist row. Drawn
+   from the real thing: facts pinned left, journey right. */
+function FactoryDetailMock() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl ring-1 ring-gray-200 overflow-hidden shadow-sm">
+        <div className="px-4 py-2.5 border-b border-gray-100 flex items-start gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <TypeBadge type="strike_off" />
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">v2</span>
+              <span className="text-[13px] font-extrabold text-gray-900">FLAT PRINT TO SLVE</span>
+            </div>
+            <p className="text-[9.5px] text-gray-500 mt-0.5 font-mono">S004780K-0211-MCI · MCI KIDS CREW NECK · SKYWAY</p>
+          </div>
+          <X className="w-3 h-3 text-gray-400 ml-auto flex-shrink-0" />
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+          <div className="p-3 border-r border-gray-100 bg-gray-50/50">
+            <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 px-2.5 py-2 flex items-center gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-extrabold text-amber-900 leading-tight">Waiting on your remake</p>
+                <p className="text-[8.5px] text-amber-800/80 mt-0.5">We rejected v1 on 22 Jul. v2 hasn&apos;t arrived.</p>
+              </div>
+              <div className="ml-auto text-right flex-shrink-0">
+                <div className="text-[15px] font-extrabold text-amber-700 tabular-nums leading-none">41</div>
+                <div className="text-[7px] uppercase tracking-wider text-amber-700/80">days</div>
+              </div>
+            </div>
+            {[['This style', [['PO', '5254'], ['Customer', 'STICHD'], ['Ex-factory', '30 Oct 2026']]],
+              ['Component', [['Sample type', 'Strike Off'], ['Colour', 'SKYWAY'], ['Received', '—'], ['Approved', '—']]]]
+              .map(([title, rows]) => (
+              <div key={title as string}>
+                <p className="text-[7.5px] font-bold uppercase tracking-widest text-gray-400 mt-3 mb-1">{title as string}</p>
+                {(rows as string[][]).map(([k, v]) => (
+                  <div key={k} className="flex text-[9.5px] py-0.5">
+                    <span className="text-gray-400 w-[46%]">{k}</span>
+                    <span className={cn('font-semibold', v === '—' ? 'text-gray-300' : 'text-gray-800')}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div className="mt-3 rounded-lg bg-primary-50 ring-1 ring-primary-200 px-2.5 py-2">
+              <p className="text-[7.5px] font-bold uppercase tracking-widest text-primary-700">Next</p>
+              <p className="text-[9.5px] text-primary-900/90 mt-1 leading-snug">
+                Remake and send it in. <b>v2 is already open</b> — don&apos;t add a new component.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3">
+            <p className="text-[7.5px] font-bold uppercase tracking-widest text-gray-400 mb-2">The journey</p>
+            <ol className="ml-1 border-l-2 border-gray-100 pl-3.5 space-y-2.5">
+              {[['11 Jun 2026', 'Order sent to you', 'plain'],
+                ['14 Jul 2026', 'v1 received by Source Lab', 'plain'],
+                ['22 Jul 2026', 'v1 rejected', 'bad'],
+                ['Now · 41 working days', 'v2 outstanding', 'now']].map(([when, what, tone], i) => (
+                <li key={i} className="relative list-none">
+                  <span className={cn('absolute -left-[18px] top-1 w-2 h-2 rounded-full border-2',
+                    tone === 'bad' ? 'bg-red-500 border-red-500'
+                    : tone === 'now' ? 'bg-amber-500 border-amber-500 ring-2 ring-amber-100'
+                    : 'bg-white border-gray-300')} />
+                  <div className="text-[8px] text-gray-400 tabular-nums">{when}</div>
+                  <div className="text-[10px] font-semibold text-gray-800">{what}</div>
+                  {tone === 'bad' && (
+                    <div className="mt-1 rounded bg-red-50 ring-1 ring-red-100 px-2 py-1.5">
+                      <p className="text-[7.5px] font-bold uppercase tracking-wider text-red-700">Placement wrong</p>
+                      <p className="text-[9px] text-gray-700 mt-0.5 leading-snug">Logo sitting 2cm low — raise to the spec position.</p>
+                      <p className="text-[8px] text-gray-400 mt-1">Source Lab · Charlotte Makinson</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/60 flex items-center">
+          <span className="text-[8.5px] text-gray-500">Status and dates are set by Source Lab.</span>
+          <span className="ml-auto text-[9px] font-semibold px-2 py-0.5 rounded bg-white ring-1 ring-gray-200 text-gray-600">Open style</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ComponentCardMock({ name, type, attempt, status, received, approved, rejected }: {
   name: string;
   type: 'strike_off' | 'lab_dip';
@@ -2069,109 +2161,103 @@ function CreateNewFormMock() {
  * only the tab label changed, which is arguably worse than not having a
  * picture at all.
  */
+/* The Worklist as a factory sees it: table first, no tick boxes, a v2 badge on
+   anything that has been rejected once. Source Lab get the same page as cards. */
 function WorklistMock() {
   const tiles = [
-    { label: 'IN FLIGHT', n: '204', active: true },
-    { label: 'NEEDS ATTENTION', n: '15', red: true },
-    { label: 'REJECTED', n: '0', red: true },
-    { label: 'STALE 14D+', n: '15' },
-    { label: 'OUTSTANDING', n: '42' },
-    { label: 'RECEIVED', n: '26' },
+    { label: 'IN FLIGHT', n: '3', active: true },
+    { label: 'NEEDS ATTENTION', n: '3', red: true },
+    { label: 'REJECTED', n: '0' },
+    { label: 'STALE 14D+', n: '3' },
+    { label: 'OUTSTANDING', n: '3' },
+    { label: 'RECEIVED', n: '0' },
   ];
-  const cards: {
-    type: 'strike_off' | 'lab_dip' | 'label';
-    name: string; sub: string; chips: { t: string; tone: 'red' | 'amber' | 'blue' | 'gray' }[];
-    exfac: string; idle: string; attention?: string;
-  }[] = [
-    { type: 'strike_off', name: 'AOP PRINT', sub: '34 styles · PO 5279 · STICHD',
-      chips: [{ t: '34 Outstanding', tone: 'amber' }],
-      idle: '25d', exfac: '10/12/2026', attention: '12 need attention' },
-    { type: 'lab_dip', name: 'PANEL FABRIC', sub: '8 styles · PO 5282 · TK MAXX',
-      chips: [{ t: '8 Outstanding', tone: 'amber' }],
-      idle: '25d', exfac: '15/12/2026', attention: '3 need attention' },
-    { type: 'label', name: 'CARE LABEL', sub: '6 styles · PO 5261 · TK MAXX',
-      chips: [{ t: '6 Received', tone: 'blue' }], idle: '11d', exfac: '10/10/2026' },
-    { type: 'strike_off', name: 'HEAT TRANSFER LOGO', sub: '6 styles · PO 5261 · TK MAXX',
-      chips: [{ t: '6 Not started', tone: 'gray' }], idle: '2d', exfac: '10/10/2026' },
+  const rows: { name: string; v?: string; type: 'strike_off' | 'lab_dip' | 'label';
+                style: string; po: string; cust: string; status: string;
+                tone: string; exfac: string; idle: string; hot?: boolean }[] = [
+    { name: 'FLAT PRINT TO SLVE', v: 'v2', type: 'strike_off', style: 'S004780K-0211-MCI',
+      po: '5254', cust: 'STICHD', status: 'Outstanding', tone: 'bg-amber-100 text-amber-700',
+      exfac: '30/10/2026', idle: '41d', hot: true },
+    { name: 'PUFF PRINT FRONT AND BACK', v: 'v2', type: 'strike_off', style: 'S004808A-0833-MCI',
+      po: '5254', cust: 'STICHD', status: 'Outstanding', tone: 'bg-amber-100 text-amber-700',
+      exfac: '30/10/2026', idle: '41d', hot: true },
+    { name: 'GLACIER MARL', type: 'lab_dip', style: 'S004805A-0220-MCI',
+      po: '5254', cust: 'STICHD', status: 'Approved', tone: 'bg-green-100 text-green-700',
+      exfac: '30/10/2026', idle: '—' },
+    { name: 'CARE LABEL', type: 'label', style: 'S004901B-0126-NRO',
+      po: '5252', cust: 'LEVY', status: 'Received', tone: 'bg-blue-100 text-blue-700',
+      exfac: '30/10/2026', idle: '4d' },
   ];
-  const chipTone = {
-    red: 'bg-red-50 text-red-700',
-    amber: 'bg-amber-50 text-amber-700',
-    blue: 'bg-blue-50 text-blue-700',
-    gray: 'bg-gray-100 text-gray-600',
-  } as const;
-
   return (
     <div className="p-3 bg-gray-50">
-      {/* Tabs */}
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-sm font-extrabold text-gray-900">Components</p>
-          <span className="text-[10px] text-gray-400">Every sample still in flight</span>
-          <span className="ml-auto inline-flex rounded-md border border-gray-200 bg-white overflow-hidden">
-            <span className="px-2 py-1 text-[10px] font-bold text-violet-700 bg-violet-50">Worklist</span>
-            <span className="px-2 py-1 text-[10px] font-medium text-gray-500">Library</span>
-          </span>
-          <span className="px-2 py-1 rounded-md bg-primary-600 text-white text-[10px] font-semibold">+ Add component</span>
-        </div>
-
-        {/* Status tiles — these are the filters */}
-        <div className="grid grid-cols-6 gap-1.5 mb-2">
-          {tiles.map(t => (
-            <div key={t.label} className={cn(
-              'rounded-md border bg-white px-2 py-1.5',
-              t.active ? 'border-primary-400 ring-1 ring-primary-200' : 'border-gray-200',
-            )}>
-              <p className="text-[7.5px] font-bold tracking-wide text-gray-500">{t.label}</p>
-              <p className={cn('text-sm font-extrabold', t.red ? 'text-red-600' : 'text-gray-900')}>{t.n}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Filter row */}
-        <div className="flex items-center gap-1.5 mb-2">
-          <div className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[9px] text-gray-400">
-            Search component, style, PO, customer…
-          </div>
-          <span className="text-[8px] font-bold text-gray-400">TYPE</span>
-          {['All', 'Strike Off', 'Lab Dip', 'Label'].map((x, i) => (
-            <span key={x} className={cn('px-1.5 py-0.5 rounded-full border text-[9px] font-semibold',
-              i === 0 ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-500')}>{x}</span>
-          ))}
-          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Cards</span>
-          <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-500 text-[9px] font-semibold">Table</span>
-          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Group by add</span>
-          <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Hide shipped</span>
-        </div>
-
-        {/* Add-event cards */}
-        <div className="grid grid-cols-2 gap-1.5">
-          {cards.map((c, i) => (
-            <div key={i} className={cn('rounded-lg border bg-white overflow-hidden',
-              c.attention ? 'border-red-200' : 'border-gray-200')}>
-              <div className="p-2">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-2.5 h-2.5 rounded-sm border border-gray-300" />
-                  <TypeBadge type={c.type} />
-                  {c.attention && (
-                    <span className="text-[8px] font-bold text-white bg-red-500 px-1 py-0.5 rounded-full">{c.attention}</span>
-                  )}
-                </div>
-                <p className="text-[11px] font-extrabold text-gray-900 leading-tight">{c.name}</p>
-                <p className="text-[9px] text-gray-500 mt-0.5">{c.sub}</p>
-                <div className="flex gap-1 mt-1">
-                  {c.chips.map(ch => (
-                    <span key={ch.t} className={cn('text-[8.5px] font-semibold px-1.5 py-0.5 rounded', chipTone[ch.tone])}>{ch.t}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="px-2 py-1 border-t border-gray-100 bg-gray-50/60 flex items-center gap-2">
-                <span className={cn('text-[8.5px]', c.attention ? 'text-red-500 font-semibold' : 'text-gray-400')}>idle {c.idle}</span>
-                <span className="text-[8.5px] text-gray-500">ex-fac {c.exfac}</span>
-                <span className="ml-auto text-[8.5px] font-semibold text-primary-600">&#8250; Styles</span>
-              </div>
-            </div>
-          ))}
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-sm font-extrabold text-gray-900">Components</p>
+        <span className="text-[9px] text-gray-400">Every sample still in flight</span>
+        <span className="ml-auto inline-flex rounded-md border border-gray-200 bg-white overflow-hidden">
+          <span className="px-2 py-1 text-[10px] font-bold text-primary-700 bg-primary-50">Worklist</span>
+          <span className="px-2 py-1 text-[10px] font-medium text-gray-500">Library</span>
+        </span>
+        <span className="px-2 py-1 rounded-md bg-primary-600 text-white text-[10px] font-semibold">+ Add component</span>
       </div>
+
+      <div className="grid grid-cols-6 gap-1.5 mb-2">
+        {tiles.map(t => (
+          <div key={t.label} className={cn('rounded-md border bg-white px-2 py-1.5',
+            t.active ? 'border-primary-400 ring-1 ring-primary-200' : 'border-gray-200')}>
+            <p className="text-[7px] font-bold tracking-wide text-gray-500">{t.label}</p>
+            <p className={cn('text-sm font-extrabold', t.red ? 'text-red-600' : 'text-gray-900')}>{t.n}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-2">
+        <div className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[9px] text-gray-400">
+          Search component, style, PO, customer…
+        </div>
+        <span className="text-[8px] font-bold text-gray-400">TYPE</span>
+        {['All', 'Strike Off', 'Lab Dip', 'Label'].map((x, i) => (
+          <span key={x} className={cn('px-1.5 py-0.5 rounded-full border text-[9px] font-semibold',
+            i === 0 ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-500')}>{x}</span>
+        ))}
+        <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-500 text-[9px] font-semibold">Cards</span>
+        <span className="px-1.5 py-0.5 rounded-full border border-primary-300 bg-primary-50 text-primary-700 text-[9px] font-semibold">Table</span>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <table className="w-full text-[9.5px]">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr className="text-left text-gray-500">
+              {['Component', 'Type', 'Style', 'PO', 'Customer', 'Status', 'Ex-fac', 'Idle'].map(h => (
+                <th key={h} className="px-2 py-1.5 font-bold uppercase tracking-wider text-[7.5px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-2 py-1.5">
+                  <div className="flex items-center gap-1">
+                    {r.hot && <span className="w-0.5 h-3 rounded-full bg-red-500 flex-shrink-0" />}
+                    <span className="font-bold text-gray-900">{r.name}</span>
+                    {r.v && <span className="text-[7.5px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700">{r.v}</span>}
+                  </div>
+                </td>
+                <td className="px-2 py-1.5"><TypeBadge type={r.type} /></td>
+                <td className="px-2 py-1.5 font-mono text-gray-600">{r.style}</td>
+                <td className="px-2 py-1.5 font-mono font-bold text-gray-700">{r.po}</td>
+                <td className="px-2 py-1.5 text-gray-500">{r.cust}</td>
+                <td className="px-2 py-1.5">
+                  <span className={cn('px-1.5 py-0.5 rounded font-semibold', r.tone)}>{r.status}</span>
+                </td>
+                <td className="px-2 py-1.5 text-gray-500 tabular-nums">{r.exfac}</td>
+                <td className={cn('px-2 py-1.5 tabular-nums font-semibold',
+                  r.hot ? 'text-red-600' : 'text-gray-400')}>{r.idle}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1.5 text-[8px] text-gray-400">Click any row to open the component in full.</p>
     </div>
   );
 }

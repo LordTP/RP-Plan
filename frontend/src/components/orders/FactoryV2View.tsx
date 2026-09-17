@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
   RefreshCw,
@@ -130,6 +130,13 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  // Deep link in: ?openStyle=<id>. The components page sends factories here
+  // from the sample detail modal's "Open style", and without this the param
+  // was simply ignored -- you landed on the PO list with nothing opened,
+  // which reads as a broken link rather than a filter that found nothing.
+  // Mirrors the handling orders-v2 already has for the warnings centre.
+  const searchParams = useSearchParams();
+  const openStyleParam = searchParams.get('openStyle');
   const [supplierColumnSettings, setSupplierColumnSettings] = useState<{ column_key: string; is_visible: boolean; is_editable: boolean }[]>([]);
 
   // Reason modal state for supplier date edits (existing inline-edit flow)
@@ -507,6 +514,21 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
     }
     ordersApi.markCommentsRead(order.id).catch(console.error);
   };
+
+  // Open the deep-linked style once the orders it needs are actually loaded,
+  // and expand its PO so the detail panel is reachable rather than hidden
+  // behind a collapsed group.
+  useEffect(() => {
+    if (!openStyleParam || !orders.length) return;
+    const id = parseInt(openStyleParam, 10);
+    const found = orders.find(o => o.id === id);
+    if (!found) return;
+    setExpandedPOs(prev => new Set(prev).add(found.po_number));
+    setSelectedStyleId(id);
+    // Drop the param so a refresh, or closing and reopening the panel, doesn't
+    // yank it back open.
+    router.replace(window.location.pathname, { scroll: false });
+  }, [openStyleParam, orders, router]);
 
   const selectedStyle = useMemo(() => {
     if (!selectedStyleId) return null;
