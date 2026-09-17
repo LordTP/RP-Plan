@@ -782,7 +782,7 @@ function StatusPill({ children, tone }: { children: React.ReactNode; tone: 'gree
 }
 
 /**
- * Mini tracker that mirrors SupplierChangeTracker — three columns of date-
+ * Mini tracker that mirrors the Requests Centre — the factory's own date-
  * change requests by status. Used in the page-level mock and standalone in
  * step 3.
  */

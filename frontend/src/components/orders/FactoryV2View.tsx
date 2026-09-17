@@ -63,7 +63,7 @@ import { AttemptBadge } from '@/components/samples/AttemptBadge';
 import { RejectionContextBanner } from '@/components/samples/RejectionContextBanner';
 import { AttemptHistory } from '@/components/samples/AttemptHistory';
 import { submissionsApi, type SampleSubmission, type SampleType } from '@/lib/api';
-import { SupplierChangeTracker } from '@/components/supplier/SupplierChangeTracker';
+import { RequestsCentre } from '@/components/supplier/RequestsCentre';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       return k;
     });
   }, []);
-  // Bumped after every successful date request, to nudge SupplierChangeTracker
+  // Bumped after every successful date request, to nudge the Requests Centre
   // to re-fetch and show the new pending entry.
   const [trackerRefreshKey, setTrackerRefreshKey] = useState(0);
 
@@ -1053,7 +1053,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           {/* Supplier date-change tracker — three columns (pending / approved /
               rejected). Bumps refreshKey after each successful date request so
               the supplier sees their submission appear immediately. */}
-          {isSupplier && <SupplierChangeTracker refreshKey={trackerRefreshKey} />}
+          {isSupplier && <RequestsCentre refreshKey={trackerRefreshKey} />}
 
           {/* Search + Actions */}
           <div className="flex items-center gap-3 mb-4">
