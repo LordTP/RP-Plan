@@ -44,20 +44,9 @@ const WAITING_ON_SOURCE_LAB = new Set([
   'pps_approval',
 ]);
 
-export function WarningsCentre({
-  warnings, embedded = false, search: searchProp, onSearchChange,
-}: {
-  warnings: any[];
-  embedded?: boolean;
-  /** Lift the search out when the box belongs in a host header rather than
-   *  inside the panel — see FloatingWarningsCentre. */
-  search?: string;
-  onSearchChange?: (v: string) => void;
-}) {
+export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]; embedded?: boolean }) {
   const [selected, setSelected] = useState<string>(warnings[0]?.key || '');
-  const [ownSearch, setOwnSearch] = useState('');
-  const search = searchProp ?? ownSearch;
-  const setSearch = onSearchChange ?? setOwnSearch;
+  const [search, setSearch] = useState('');
 
   const filteredWarnings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -138,14 +127,15 @@ export function WarningsCentre({
   const selStyle = WARNING_SEVERITY_STYLES[selectedWarning.severity] || WARNING_SEVERITY_STYLES.amber;
 
   return (
-    <div className={cn(embedded ? 'h-full min-h-0' :
+    <div className={cn(!embedded &&
       'bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden')}>
       {/* Embedded in a FloatingCentre the card chrome and title are already
           supplied, so only the search comes with the body. */}
-      {/* Embedded, the host header carries both the title and the search, so
-          nothing goes here — a search row of its own left a band of empty space
-          across the top of the panel. */}
-      {embedded ? null : (
+      {embedded ? (
+        <div className="px-4 pt-3 flex justify-end">
+          <SearchInput value={search} onChange={setSearch} />
+        </div>
+      ) : (
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -164,23 +154,9 @@ export function WarningsCentre({
         </div>
       )}
 
-      {/* Two things have to hold for the columns to scroll rather than grow,
-          and embedded mode broke both.
-          1. h-full needs a definite height to be a percentage OF. The chain is
-             panel (a fixed 520px) -> this wrapper -> grid -> column, and the
-             wrapper carried no classes at all when embedded, so h-full here
-             resolved against auto and the grid stretched to its content: 4463px
-             for the 109 fit samples, which the panel's overflow-hidden then
-             clipped with no way to reach the rest.
-          2. A grid child's default min-height is auto, so it refuses to shrink
-             below its content and overflow-y-auto never engages -- min-h-0 on
-             each column is what lets them scroll inside the track.
-          Stretching the columns to the full height is also what keeps the left
-          rail's grey running the depth of the panel when a search filters it
-          down to two rows, rather than stopping short over white. */}
-      <div className={cn('grid grid-cols-[320px_1fr] min-h-0', embedded ? 'h-full' : 'h-[440px]')}>
+      <div className={cn('grid grid-cols-[320px_1fr]', embedded ? 'h-[calc(100%-46px)]' : 'h-[440px]')}>
         {/* Left: categories grouped by who owes the work */}
-        <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 min-h-0 overflow-y-auto">
+        <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 overflow-y-auto">
           {theirCourt.length > 0 && (
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 px-2">
@@ -200,7 +176,7 @@ export function WarningsCentre({
         </div>
 
         {/* Right: detail */}
-        <div className="p-5 min-h-0 overflow-y-auto">
+        <div className="p-5 overflow-y-auto">
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
             <div>
               <h4 className="text-sm font-bold text-gray-900">{selectedWarning.title}</h4>
@@ -260,7 +236,6 @@ export function WarningsCentre({
  */
 export function FloatingWarningsCentre() {
   const [warnings, setWarnings] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -283,18 +258,15 @@ export function FloatingWarningsCentre() {
       tone="alert"
       title="Warnings Centre"
       subtitle={
-        search
-          ? `Filtering on "${search}"`
-          : `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
-            + (ourCount ? ` · ${ourCount} on us` : '')
-            + (theirCount ? ` · ${theirCount} on the factories` : '')
+        `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
+        + (ourCount ? ` · ${ourCount} on us` : '')
+        + (theirCount ? ` · ${theirCount} on the factories` : '')
       }
-      actions={<SearchInput value={search} onChange={setSearch} />}
       panelClassName="lg:h-[min(520px,calc(100vh-240px))]"
     >
       {/* The dashboard version already is a rail and a pane; reuse it whole
           rather than keeping two copies of the grouping and search logic. */}
-      <WarningsCentre warnings={warnings} embedded search={search} onSearchChange={setSearch} />
+      <WarningsCentre warnings={warnings} embedded />
     </FloatingCentre>
   );
 }
