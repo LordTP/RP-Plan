@@ -136,11 +136,22 @@ def _read_target_state(record, sample_type: str) -> dict:
     }
 
 
-def _set_target_state(record, sample_type: str, status=None, received=None, approved=None):
+# Distinguishes "caller didn't mention this column" from "caller wants this
+# column cleared". Both used to arrive as None, so the reject path's
+# `received=None, approved=None` -- which means WIPE these, v2 has not been sent
+# or signed off -- was silently a no-op, and a rejected sample kept the previous
+# attempt's dates. That is not cosmetic: is_sample_done() treats ANY approved
+# date as done regardless of status, so a sample that was approved and then
+# rejected read as finished and dropped straight out of the worklist and the
+# warnings. The one you most need to chase was the one you could not see.
+_KEEP = object()
+
+
+def _set_target_state(record, sample_type: str, status=_KEEP, received=_KEEP, approved=_KEEP):
     cols = _column_names(sample_type)
-    if status is not None:   setattr(record, cols['status'], status)
-    if received is not None: setattr(record, cols['received'], received)
-    if approved is not None: setattr(record, cols['approved'], approved)
+    if status is not _KEEP:   setattr(record, cols['status'], status)
+    if received is not _KEEP: setattr(record, cols['received'], received)
+    if approved is not _KEEP: setattr(record, cols['approved'], approved)
 
 
 def _resolve_targets(
