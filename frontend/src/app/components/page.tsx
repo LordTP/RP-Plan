@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { LibraryFirstAddModal } from '@/components/orders/LibraryFirstAddModal';
+import { FactoryComponentModal } from '@/components/orders/FactoryComponentModal';
 import { ComponentEditModal } from '@/components/orders/ComponentEditModal';
 import { BulkEditModal } from '@/components/orders/BulkEditModal';
 import { componentsApi, ordersApi, CANONICAL_POSITIONS, type CanonicalComponent, type CanonicalDetail, type CanonicalInstance, type CanonicalPosition } from '@/lib/api';
@@ -192,7 +193,20 @@ function ComponentsContent() {
           }}
         />
 
-        {editing && (
+        {/* Factories get a read-only view of where the sample is up to rather
+            than the edit modal with its fields greyed out -- a form they can't
+            submit answers "what can I change?" (nothing) instead of "where is
+            this and is anything waiting on me?". */}
+        {editing && isSupplier && (
+          <FactoryComponentModal
+            open={true}
+            order={editing.order}
+            component={editing.component}
+            onClose={() => setEditing(null)}
+            onOpenStyle={(id) => { setEditing(null); router.push(`/factory-product?openStyle=${id}`); }}
+          />
+        )}
+        {editing && !isSupplier && (
           <ComponentEditModal
             open={true}
             order={editing.order}

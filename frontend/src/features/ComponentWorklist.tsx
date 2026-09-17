@@ -15,7 +15,7 @@
  * otherwise grouping hides the one rejection you opened the page to find.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Loader2, Search, Package, ExternalLink, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { relativeTimeShort } from '@/lib/sampleStatus';
@@ -139,6 +139,21 @@ function buildGroups(instances: Instance[]): WorkGroup[] {
   return Array.from(map.values());
 }
 
+/**
+ * Whether bulk selection is offered at all.
+ *
+ * Factories cannot edit a sample's status, received or approved date -- that is
+ * Source Lab's -- so every checkbox and the floating bar they feed led to a
+ * disabled button. Advertising an action somebody can never take is worse than
+ * not showing it, and the tick boxes were the most prominent thing on the row.
+ *
+ * A context rather than a prop because the checkboxes live in four different
+ * components, and the table's header cell and body cells have to appear and
+ * disappear together or the columns misalign.
+ */
+const SelectionEnabled = createContext(true);
+const useSelectable = () => useContext(SelectionEnabled);
+
 export function ComponentWorklist({
   orders, loading, isSupplier, onEditInstance, onOpenStyle, onBulkEditDone, onAddForOrders,
 }: Props) {
@@ -146,10 +161,15 @@ export function ComponentWorklist({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [hideShipped, setHideShipped] = useState(true);
   const [grouped, setGrouped] = useState(true);
-  // Cards by default. The worklist is scanned for what needs chasing, and a
-  // card gives the status rollup and the idle clock room to be read at a
-  // glance; the table stays for when you want to sort a column.
-  const [layout, setLayout] = useState<'cards' | 'table'>('cards');
+  // Cards by default for Source Lab: the worklist is scanned for what needs
+  // chasing, and a card gives the status rollup and the idle clock room to be
+  // read at a glance; the table stays for when you want to sort a column.
+  //
+  // Factories start on the table. They are not triaging a book of other
+  // people's POs, they are looking up where their own samples stand, which is
+  // a lookup rather than a scan -- and the table puts four times as many on
+  // screen. Both toggles stay; only the starting point differs.
+  const [layout, setLayout] = useState<'cards' | 'table'>(isSupplier ? 'table' : 'cards');
   const [tile, setTile] = useState<Tile>('all');
   const [sortKey, setSortKey] = useState<SortKey>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -292,6 +312,7 @@ export function ComponentWorklist({
   }));
 
   return (
+    <SelectionEnabled.Provider value={!isSupplier}>
     <div className="flex flex-col gap-3 min-h-0 flex-1">
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         {TILES.map((t) => (
@@ -362,15 +383,17 @@ export function ComponentWorklist({
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-[2] bg-gray-50 border-b border-gray-200">
             <tr className="text-left text-gray-500">
-              <th className="w-9 px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={allOn}
-                  ref={(el) => { if (el) el.indeterminate = !allOn && selected.size > 0; }}
-                  onChange={() => setSelected(allOn ? new Set() : new Set(allIds))}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
-                />
-              </th>
+              {!isSupplier && (
+                <th className="w-9 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allOn}
+                    ref={(el) => { if (el) el.indeterminate = !allOn && selected.size > 0; }}
+                    onChange={() => setSelected(allOn ? new Set() : new Set(allIds))}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+                  />
+                </th>
+              )}
               <SortableTh label="Component" sortKey="component" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
               <th className="px-3 py-2 font-semibold uppercase tracking-wider text-[10px]">Type</th>
               <SortableTh label={grouped ? 'Styles' : 'Style'} sortKey="style" currentSort={sortKey} currentDir={sortDir} onSort={(k) => toggleSort(k as SortKey)} />
@@ -450,7 +473,7 @@ export function ComponentWorklist({
         />
       )}
 
-      {selected.size > 0 && (
+      {!isSupplier && selected.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
           <BulkBar count={selected.size} noun="sample" onClear={() => setSelected(new Set())}>
             {mixedTypes ? (
@@ -488,6 +511,7 @@ export function ComponentWorklist({
         />
       )}
     </div>
+    </SelectionEnabled.Provider>
   );
 }
 
@@ -508,6 +532,7 @@ function GroupRows({
   onEditInstance: (order: Order, component: OrderComponent) => void;
   onOpenStyle: (orderId: number) => void;
 }) {
+  const selectable = useSelectable();
   // A group of one IS the sample — no value in a disclosure triangle hiding a
   // single row behind an extra click.
   if (group.instances.length === 1) {
@@ -536,15 +561,17 @@ function GroupRows({
           checked ? 'bg-primary-50/60' : open ? 'bg-gray-50/80' : 'hover:bg-gray-50',
         )}
       >
-        <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={checked}
-            ref={(el) => { if (el) el.indeterminate = indeterminate; }}
-            onChange={onToggleCheck}
-            className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
-          />
-        </td>
+        {selectable && (
+          <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={checked}
+              ref={(el) => { if (el) el.indeterminate = indeterminate; }}
+              onChange={onToggleCheck}
+              className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+            />
+          </td>
+        )}
         <td className="px-3 py-1.5 max-w-[260px]">
           <div className="flex items-center gap-1.5 min-w-0">
             {group.attention > 0 && <span className="w-1 h-4 rounded-full bg-red-500 flex-shrink-0" />}
@@ -624,6 +651,7 @@ function StyleRow({
   onOpenStyle: () => void;
   showComponent: boolean;
 }) {
+  const selectable = useSelectable();
   const { order, component } = inst;
   const { status } = activeSampleFor(component);
   const pill = statusPillStyle(status);
@@ -641,14 +669,16 @@ function StyleRow({
         checked ? 'bg-primary-50/60' : 'hover:bg-gray-50',
       )}
     >
-      <td className={cn('py-1.5', indent ? 'pl-8 pr-3' : 'px-3')} onClick={(e) => e.stopPropagation()}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggle}
-          className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
-        />
-      </td>
+      {selectable && (
+        <td className={cn('py-1.5', indent ? 'pl-8 pr-3' : 'px-3')} onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={onToggle}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0"
+          />
+        </td>
+      )}
       <td className={cn('py-1.5 max-w-[260px]', indent ? 'pl-6 pr-3' : 'px-3')}>
         <div className="flex items-center gap-1.5 min-w-0">
           {attention && <span className="w-1 h-4 rounded-full bg-red-500 flex-shrink-0" />}
@@ -775,6 +805,7 @@ function WorkCard({
   onEditInstance: (order: Order, component: OrderComponent) => void;
   onOpenStyle: (orderId: number) => void;
 }) {
+  const selectable = useSelectable();
   const [open, setOpen] = useState(false);
   const ids = group.instances.map((i) => i.component.id);
   const allOn = ids.every((id) => selected.has(id));
@@ -791,13 +822,15 @@ function WorkCard({
       )}
     >
       <div className="px-3 py-2.5 flex items-start gap-2">
-        <input
-          type="checkbox"
-          checked={allOn}
-          ref={(el) => { if (el) el.indeterminate = someOn; }}
-          onChange={() => onToggleMany(ids, !allOn)}
-          className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
-        />
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={allOn}
+            ref={(el) => { if (el) el.indeterminate = someOn; }}
+            onChange={() => onToggleMany(ids, !allOn)}
+            className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
@@ -882,13 +915,15 @@ function WorkCard({
                   checked ? 'bg-primary-50/60' : 'hover:bg-gray-50',
                 )}
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={() => onToggleMany([inst.component.id], !checked)}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
-                />
+                {selectable && (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => onToggleMany([inst.component.id], !checked)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 flex-shrink-0"
+                  />
+                )}
                 <span className="font-mono tabular-nums text-gray-700 truncate flex-shrink-0 max-w-[130px]">
                   {inst.order.style_code || `#${inst.order.id}`}
                 </span>

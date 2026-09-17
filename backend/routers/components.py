@@ -107,6 +107,12 @@ def _last_rejection_by_key(
             'attempt_no': r.attempt_no,
             'reason': r.reason,
             'notes': r.notes,
+            # When the attempt being rejected had arrived. Rejecting clears the
+            # component's received column -- correctly, the next attempt has not
+            # turned up -- so this row is the only place that date survives, and
+            # without it a timeline can say when a sample was turned down but
+            # not when it landed.
+            'submitted_at': r.submitted_at.isoformat() if r.submitted_at else None,
             'rejected_at': r.resolved_at.isoformat() if r.resolved_at else None,
             'photo_url': r.photo_url,
             'rejected_by': usernames_by_id.get(r.actioned_by_id) if r.actioned_by_id else None,

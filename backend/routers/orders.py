@@ -372,13 +372,27 @@ async def get_orders(
     
     # Return different response based on user role
     if current_user.role == UserRole.SUPPLIER:
-        # Suppliers get limited fields (Sheet 2 equivalent) — no resubmission
-        # decoration since suppliers don't see the rework UI.
+        # Suppliers get limited fields (Sheet 2 equivalent), but the same
+        # attempt rollup internal users get.
+        #
+        # This used to skip decoration on the grounds that "suppliers don't see
+        # the rework UI", which stopped being true and left the people doing the
+        # rework as the only ones who couldn't see it: a component rejected in
+        # July came back to its own factory as attempt_no 1 with
+        # last_rejection null, so the reason they were supposed to fix was the
+        # one field they were never sent. RejectionContextBanner on the factory
+        # order view has been rendering nothing for exactly this reason.
+        #
+        # Nothing here crosses a factory boundary — `orders` is already scoped
+        # to theirs, and the rollup only reads submissions belonging to these
+        # orders.
+        supplier_dicts = [PurchaseOrderSupplierResponse.from_orm(o).model_dump() for o in orders]
+        decorate_orders_with_attempts(db, supplier_dicts)
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "orders": [PurchaseOrderSupplierResponse.from_orm(o) for o in orders]
+            "orders": supplier_dicts,
         }
     else:
         # Internal users get all fields (Sheet 1 equivalent) plus per-sample-area

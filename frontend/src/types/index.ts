@@ -214,6 +214,10 @@ export interface LastRejection {
   attempt_no: number;
   reason: string | null;
   notes: string | null;
+  /** When the rejected attempt had been received. Lives only on the submission
+   *  row: rejecting clears the component's received column, since the next
+   *  attempt hasn't arrived. */
+  submitted_at?: string | null;
   rejected_at: string | null;
   photo_url: string | null;
   /** Username of who rejected. Optional — older API responses may omit it. */
