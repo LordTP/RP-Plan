@@ -48,8 +48,12 @@ DELIBERATELY NOT IMPORTED
     python import_po5254_components.py                       # show the plan
     python import_po5254_components.py --apply               # write it
     python import_po5254_components.py --apply --base URL    # against prod
+
+Prompts for the password. Set CP_PASSWORD in the environment for an
+unattended run; there is deliberately no --password flag.
 """
 import argparse
+import getpass
 import os
 import re
 import sys
@@ -178,12 +182,17 @@ def main():
                     help='add even though the PO already has components (see the guard below)')
     ap.add_argument('--base', default='http://localhost:8004')
     ap.add_argument('--user', default='admin')
-    ap.add_argument('--password', default='admin123')
     args = ap.parse_args()
     base = args.base.rstrip('/')
 
+    # Never a --password flag: CLI arguments land in shell history and are
+    # visible in `ps` to anyone else on the box. CP_PASSWORD covers unattended
+    # runs; otherwise it is typed at the prompt and never written down.
+    password = os.environ.get('CP_PASSWORD') or getpass.getpass(
+        f'Password for {args.user} on {base}: ')
+
     tok = requests.post(f'{base}/api/auth/login',
-                        json={'username': args.user, 'password': args.password}, timeout=30)
+                        json={'username': args.user, 'password': password}, timeout=30)
     tok.raise_for_status()
     H = {'Authorization': f"Bearer {tok.json()['access_token']}"}
 
