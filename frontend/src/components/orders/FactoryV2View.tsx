@@ -31,6 +31,7 @@ import { useStore } from '@/store/useStore';
 import { ordersApi, statusesApi, settingsApi, componentsApi, excelApi, OrderFilters } from '@/lib/api';
 import { LibraryFirstAddModal } from '@/components/orders/LibraryFirstAddModal';
 import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
+import { FactoryDateRequestModal } from '@/components/orders/FactoryDateRequestModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
 import { cn } from '@/lib/utils';
@@ -568,6 +569,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
   }, [flatStyles, selectedStyleId]);
 
   const [isExportingSelection, setIsExportingSelection] = useState(false);
+  const [bulkDateReqOpen, setBulkDateReqOpen] = useState(false);
 
   /** Export exactly the ticked styles rather than every style on their
    *  POs — a chase list should stay a chase list. */
@@ -1330,6 +1332,19 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           count={selectedIds.size}
           onClear={() => { setSelectedIds(new Set()); lastClickedId.current = null; }}
         >
+          {/* Suppliers tick styles here to export them; asking for a new
+              ex-factory on the same selection is the other thing they came to
+              do with a set of styles, and it was only reachable one row at a
+              time from the orange calendar button. */}
+          {isSupplier && (
+            <button
+              onClick={() => setBulkDateReqOpen(true)}
+              className={bulkAction}
+              title="Ask Source Lab to move the ex-factory date on these styles"
+            >
+              Request date change
+            </button>
+          )}
           <button
             onClick={exportSelection}
             disabled={isExportingSelection}
@@ -1342,6 +1357,18 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
       </div>
 
       <CommentSidebar />
+
+      <FactoryDateRequestModal
+        open={bulkDateReqOpen}
+        orders={orders}
+        selectedIds={selectedIds}
+        onClose={() => setBulkDateReqOpen(false)}
+        onDone={() => {
+          loadOrders();
+          setTrackerRefreshKey((k) => k + 1);
+          setSelectedIds(new Set());
+        }}
+      />
 
       <ExportOrdersModal
         open={showExportModal}
