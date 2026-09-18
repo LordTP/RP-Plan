@@ -81,7 +81,11 @@ export function FactoryComponentModal({
 
   const approved = lane.status === 'APPROVED' || !!lane.approved;
   const notRequired = lane.status === 'NOT REQUIRED';
-  const reworking = lane.attemptNo > 1 && !approved;
+  // Only a rework while we are still waiting for it. A v2 that has arrived is
+  // with Source Lab, not with the factory -- this is checked before the
+  // RECEIVED branch below, so without it a received v2 read "hasn't arrived
+  // yet" and its clock ran from the v1 rejection.
+  const reworking = lane.attemptNo > 1 && !approved && lane.status !== 'RECEIVED';
 
   // Waiting-since depends on who is being waited on, the same rule the
   // worklist's idle clock uses.
@@ -232,8 +236,11 @@ export function FactoryComponentModal({
                   </Step>
                 </>
               )}
-              {!lane.lastRejection && lane.received && (
-                <Step when={fmt(lane.received) || '—'} what="Sample received by Source Lab" />
+              {lane.received && (
+                <Step when={fmt(lane.received) || '—'}
+                      what={lane.attemptNo > 1
+                        ? `v${lane.attemptNo} received by Source Lab`
+                        : 'Sample received by Source Lab'} />
               )}
               {approved ? (
                 <Step tone="ok" when={fmt(lane.approved) || '—'} what={`v${lane.attemptNo} approved`} last />
@@ -241,9 +248,13 @@ export function FactoryComponentModal({
                 <Step tone="mute" when="—" what="Marked not required" last />
               ) : (
                 <Step tone="now" when={`Now · ${waitingDays} working days`}
-                      what={`v${lane.attemptNo} outstanding`} last>
+                      what={lane.received
+                        ? `v${lane.attemptNo} with Source Lab`
+                        : `v${lane.attemptNo} outstanding`} last>
                   <p className="text-[12px] text-gray-500 mt-1">
-                    Nothing received against attempt {lane.attemptNo}.
+                    {lane.received
+                      ? 'Received — waiting on a decision from Source Lab.'
+                      : `Nothing received against attempt ${lane.attemptNo}.`}
                   </p>
                 </Step>
               )}
