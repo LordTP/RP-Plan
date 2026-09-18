@@ -367,17 +367,6 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
   entry: FamilyEntry; index: number; onOpen: () => void;
   onOpenInstance: (orderId: number, instanceId: number) => void;
 }) {
-  // Group this entry's styles by PO — one entry can span several.
-  const byPo = useMemo(() => {
-    const m = new Map<string, FamilyInstance[]>();
-    for (const i of entry.instances) {
-      const po = i.po_number || '—';
-      if (!m.has(po)) m.set(po, []);
-      m.get(po)!.push(i);
-    }
-    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [entry.instances]);
-
   /** Where this entry's styles actually are, and when they last moved.
    *
    *  The row used to collapse this to "all <status>" behind a green tick,
@@ -386,13 +375,23 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
    *  nothing has come back. It also carried no dates at all, so a sample
    *  waiting three weeks looked identical to one requested this morning.
    */
-  // Which POs inside this entry have had their full style list opened.
-  const [expandedPOs, setExpandedPOs] = useState<Set<string>>(new Set());
-  const togglePO = (po: string) => setExpandedPOs((prev) => {
-    const next = new Set(prev);
-    next.has(po) ? next.delete(po) : next.add(po);
-    return next;
-  });
+  // One toggle for the whole entry now, rather than one per PO -- there is no
+  // longer a PO band to hang it off.
+  const [expandedAll, setExpandedAll] = useState(false);
+
+  /** Styles under one entry usually move as one: a single submission covering
+   *  all of them, so the same received and approved dates repeat down every
+   *  row. When that holds, say it once above the list instead. When it stops
+   *  holding -- which is what out_of_step flags -- the per-row dates come back. */
+  const lockstep = useMemo(() => {
+    if (entry.instances.length < 2) return null;
+    const recs = new Set(entry.instances.map((i) => i.received || ''));
+    const apps = new Set(entry.instances.map((i) => i.approved || ''));
+    if (recs.size > 1 || apps.size > 1) return null;
+    const received = entry.instances[0].received;
+    const approved = entry.instances[0].approved;
+    return (received || approved) ? { received, approved } : null;
+  }, [entry.instances]);
 
   const roll = useMemo(() => {
     let approved = 0, received = 0, outstanding = 0, other = 0;
@@ -512,34 +511,49 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
         </div>
       )}
 
-      {/* Anything unfinished breaks out per PO, because "12 of 34 approved"
-          only tells you there is work left — it does not tell you WHICH
-          styles, which is what you came to find out. A fully approved entry
-          stays a single reassuring line; there is nothing to chase on it. */}
-      {(entry.out_of_step || !roll.done) && byPo.map(([po, list]) => {
-        const statuses = new Set(list.map((i) => (i.status || '').trim().toUpperCase()));
-        const poMixed = statuses.size > 1;
+      {/* Every style on one flat list. It used to wrap each PO in a band of
+          its own, which for a single-PO entry -- which is all 61 of them today
+          -- meant a band, a customer line and a count wrapped around rows that
+          already sat under a header naming that PO. Three levels for one.
+          The PO only earns a column when the entry actually spans more than
+          one, and then it is on every row rather than a heading. */}
+      {(entry.out_of_step || !roll.done) && (() => {
+        const rows = sortForChasing(entry.instances);
+        const showPo = entry.po_numbers.length > 1;
+        const shown = expandedAll ? rows : rows.slice(0, ROWS_PER_PO);
         return (
-          <div key={po} className="border-t border-gray-100">
-            <div className={cn('px-3 py-1.5 flex items-center gap-2 text-[11px]', poMixed ? 'bg-amber-50/60' : 'bg-white')}>
-              <span className="font-mono font-bold text-gray-700">PO {po}</span>
-              <span className="text-gray-500 truncate">{list[0]?.customer || ''} · {list.length} {list.length === 1 ? 'style' : 'styles'}</span>
-            </div>
-            {/* An add-event can span 34 styles. Showing every one turns the
-                library into a wall, so lead with the ones still needing work
-                and keep the finished ones behind a count. */}
-            {sortForChasing(list).slice(0, expandedPOs.has(po) ? undefined : ROWS_PER_PO).map((i) => {
+          <div className="border-t border-gray-100">
+            {/* Styles under one entry normally move together -- one submission
+                covering all of them -- so saying it once beats repeating the
+                same pair of dates down every row. */}
+            {lockstep && (
+              <p className="px-3 py-1.5 text-[11px] text-emerald-800 bg-emerald-50/70 border-b border-emerald-100">
+                One decision across all {entry.instances.length} styles
+                {lockstep.received && <> — received <b>{fmtShort(lockstep.received)}</b></>}
+                {lockstep.approved && <>, approved <b>{fmtShort(lockstep.approved)}</b></>}
+              </p>
+            )}
+            {shown.map((i) => {
               const pill = statusPillStyle(i.status);
               const when = i.approved || i.received;
               return (
                 <button
                   key={i.instance_id}
                   onClick={(e) => { e.stopPropagation(); onOpenInstance(i.order_id, i.instance_id); }}
-                  className="w-full text-left grid grid-cols-[150px_1fr_auto_auto] gap-2 items-center px-3 py-1 pl-7 text-[11.5px] border-t border-gray-50 hover:bg-primary-50/60 transition-colors">
+                  className={cn(
+                    'w-full text-left grid gap-2 items-center px-3 py-1.5 text-[11.5px]',
+                    'border-t border-gray-50 hover:bg-primary-50/60 transition-colors',
+                    showPo ? 'grid-cols-[52px_150px_1fr_auto_auto]' : 'grid-cols-[150px_1fr_auto_auto]',
+                  )}
+                >
+                  {showPo && (
+                    <span className="font-mono tabular-nums font-bold text-gray-800">{i.po_number || '—'}</span>
+                  )}
                   <span className="font-mono tabular-nums text-gray-700 truncate">{i.style_code || `#${i.order_id}`}</span>
                   <span className="text-gray-500 truncate">{i.description || '—'}</span>
+                  {/* Already said once above when they all share it. */}
                   <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
-                    {when ? fmtShort(when) : ''}
+                    {lockstep ? '' : (when ? fmtShort(when) : '')}
                   </span>
                   <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
                     {pill.label}
@@ -547,20 +561,18 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
                 </button>
               );
             })}
-            {list.length > ROWS_PER_PO && (
+            {rows.length > ROWS_PER_PO && (
               <button
-                onClick={(e) => { e.stopPropagation(); togglePO(po); }}
-                className="w-full px-3 py-1 pl-7 text-left text-[10.5px] font-medium text-gray-500
+                onClick={(e) => { e.stopPropagation(); setExpandedAll((v) => !v); }}
+                className="w-full px-3 py-1.5 text-left text-[10.5px] font-medium text-gray-500
                            hover:text-gray-900 hover:bg-gray-50 border-t border-gray-50"
               >
-                {expandedPOs.has(po)
-                  ? 'Show fewer'
-                  : `Show all ${list.length} styles on ${po}`}
+                {expandedAll ? 'Show fewer' : `Show all ${rows.length} styles`}
               </button>
             )}
           </div>
         );
-      })}
+      })()}
     </div>
   );
 }
