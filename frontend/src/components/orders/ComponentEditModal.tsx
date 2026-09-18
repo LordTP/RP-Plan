@@ -214,7 +214,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
       onClick={savingField ? undefined : onClose}
     >
       <div
-        className="w-full max-w-2xl bg-white rounded-xl shadow-xl ring-1 ring-gray-100 overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-4xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-200 overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header. Leads with the component, then the style it's on, then
@@ -260,29 +260,56 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
             </div>
           </div>
 
-          {/* Where it sits. Four facts, evenly weighted, so none of them has
-              to be hunted for in a run-on line of dot separators. */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-            <HeaderFact label="Style" value={order.style_code || `#${order.id}`} mono />
-            <HeaderFact label="PO" value={order.po_number || '—'} mono sub={order.customer || undefined} />
-            <HeaderFact
-              label="Ex-factory"
-              value={exFacLabel}
-              sub={order.season || undefined}
-            />
-            <HeaderFact
-              label="Also on"
-              value={siblingCount === 0 ? 'this style only' : `${siblingCount} other ${siblingCount === 1 ? 'style' : 'styles'}`}
-              sub={siblingPoSummary}
-              tone={siblingCount > 0 ? 'primary' : undefined}
-            />
-          </div>
+        </div>
 
-          {order.description && (
-            <p className="text-[11.5px] text-gray-500 mt-2 truncate">{order.description}</p>
+        {/* Two columns, the same split the factory modal uses: what the thing
+            IS on the left, what you are doing to it on the right. One column at
+            max-w-2xl meant the four context facts sat above the fields and
+            pushed the status pills below the fold on a laptop. */}
+        <div className="flex-1 min-h-0 grid md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] overflow-hidden">
+
+        {/* Left — context, read-only */}
+        <div className="md:border-r border-b md:border-b-0 border-gray-200 bg-gray-50/50
+                        px-5 py-4 md:h-full min-h-0 overflow-y-auto">
+          <SideLabel>This style</SideLabel>
+          <dl>
+            <SideFact label="Style" value={order.style_code || `#${order.id}`} mono />
+            <SideFact label="Description" value={order.description} />
+            <SideFact label="PO" value={order.po_number} mono />
+            <SideFact label="Customer" value={order.customer} />
+            <SideFact label="Ex-factory" value={exFacLabel} />
+            <SideFact label="Season" value={order.season} />
+          </dl>
+
+          <SideLabel>The component</SideLabel>
+          <dl>
+            <SideFact label="Sample" value={SAMPLE_AREAS.find((a) => a.prefix === comp.sample_type)?.label} />
+            <SideFact label="Spec" value={canonical?.spec_url} mono />
+            <SideFact label="Colour" value={canonical?.colour} />
+            <SideFact label="Placement" value={(canonical?.position || []).join(', ')} />
+            <SideFact
+              label="Also on"
+              value={siblingCount === 0 ? 'This style only' : `${siblingCount} other ${siblingCount === 1 ? 'style' : 'styles'}`}
+              sub={siblingCount > 0 ? siblingPoSummary : undefined}
+            />
+          </dl>
+
+          {(canonical?.description || canonical?.supplier_notes) && (
+            <>
+              <SideLabel>Brief</SideLabel>
+              {canonical?.description && (
+                <p className="text-[12px] text-gray-700 leading-relaxed">{canonical.description}</p>
+              )}
+              {canonical?.supplier_notes && (
+                <p className="text-[12px] text-gray-700 leading-relaxed mt-2 rounded-lg bg-amber-50
+                              ring-1 ring-amber-200 px-2.5 py-2">{canonical.supplier_notes}</p>
+              )}
+            </>
           )}
         </div>
 
+        {/* Right — the editing */}
+        <div className="min-w-0 md:h-full min-h-0 overflow-y-auto flex flex-col">
         {/* Scope toggle — sticky for the whole edit session. */}
         <div className="border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
           <div className="px-5 py-2.5 flex items-center gap-2 text-[11px] flex-wrap">
@@ -421,7 +448,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         {/* Body — only the section matching the component's sample_type is
             shown. Each component tracks one type; the other's fields are
             either empty (new shape) or legacy data we don't surface here. */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6 bg-gray-50/40">
+        <div className="flex-1 px-5 py-4 space-y-6">
           {SAMPLE_AREAS.filter(({ prefix }) => prefix === comp.sample_type).map(({ type, prefix, label }) => {
             const status = (comp as any)[`${prefix}_status`] as string | null;
             const received = (comp as any)[`${prefix}_received`] as string | null;
@@ -514,6 +541,9 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
           )}
         </div>
 
+        </div>{/* right column */}
+        </div>{/* two columns */}
+
         {/* Footer */}
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-2 bg-white flex-shrink-0">
           <span className="text-[10px] text-gray-400">
@@ -548,6 +578,34 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
           }}
         />
       )}
+    </div>
+  );
+}
+
+function SideLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 mt-4 first:mt-0">
+      {children}
+    </p>
+  );
+}
+
+/** Renders nothing when there is nothing to say. A fixed grid of labels meant
+ *  an unset spec and an unset placement each left a row reading "—", which is
+ *  four lines telling you nothing on a component that has not been briefed. */
+function SideFact({ label, value, sub, mono }: {
+  label: string; value?: string | null; sub?: string | null; mono?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 border-b border-gray-200/70 last:border-0">
+      <dt className="text-[11px] text-gray-500 flex-shrink-0">{label}</dt>
+      <dd className="min-w-0 text-right">
+        <span className={cn('block text-[12px] font-semibold text-gray-900 truncate', mono && 'font-mono')}>
+          {value}
+        </span>
+        {sub && <span className="block text-[10.5px] text-gray-400 truncate">{sub}</span>}
+      </dd>
     </div>
   );
 }
