@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  AlertTriangle, Check, RotateCcw, Inbox, ExternalLink, Clock, User as UserIcon,
+  AlertTriangle, Check, RotateCcw, Inbox, ExternalLink, Clock, User as UserIcon, Search, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { groupDecisions, type Decision } from './ReworkDecisions';
@@ -68,16 +69,44 @@ export function ReworkQueue({
   onRejectAgain: (row: StuckRow) => void;
 }) {
   const decisions = useMemo(() => groupDecisions(stuck), [stuck]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [q, setQ] = useState('');
 
-  // Keep the selection valid across refreshes: approving the open item drops it
-  // out of the list, and a dangling key would leave the panel blank.
-  useEffect(() => {
-    if (!decisions.length) { setSelected(null); return; }
-    if (!selected || !decisions.some(d => d.key === selected)) setSelected(decisions[0].key);
-  }, [decisions, selected]);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return decisions;
+    return decisions.filter(d => {
+      const hay = [
+        d.componentName, d.poNumber, d.factory, d.reason, d.notes,
+        ...d.rows.map(r => `${r.style_code} ${r.description} ${r.colour} ${r.china_orderbook_ref}`),
+      ].join(' ').toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [decisions, q]);
 
-  const active = decisions.find(d => d.key === selected) || decisions[0];
+  // Banded by PO, the way the components table is. Age used to be the grouping
+  // and it read well while everything was old, but a PO is the thing people
+  // chase as a unit -- one call to Prime covers every decision under one band.
+  const bands = useMemo(() => {
+    const m = new Map<string, Decision[]>();
+    for (const d of filtered) {
+      if (!m.has(d.poNumber)) m.set(d.poNumber, []);
+      m.get(d.poNumber)!.push(d);
+    }
+    return Array.from(m.entries())
+      .map(([po, ds]: [string, Decision[]]) => ({
+        po,
+        ds: [...ds].sort((x, y) => age(y.worstDays) - age(x.worstDays)),
+        worst: Math.max(...ds.map(d => age(d.worstDays))),
+        styles: ds.reduce((n, d) => n + d.rows.length, 0),
+        ref: ds[0].rows[0]?.china_orderbook_ref || '',
+        factory: ds[0].factory || '',
+      }))
+      // Worst PO first: the band you should be ringing about is at the top.
+      .sort((x, y) => y.worst - x.worst);
+  }, [filtered]);
+
+  const active = decisions.find(d => d.key === open) || null;
   const styles = stuck.length;
   const truncated = typeof total === 'number' && total > styles;
 
@@ -91,71 +120,137 @@ export function ReworkQueue({
 
   return (
     <section className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-      <header className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+      <header className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
         <h3 className="text-sm font-bold text-gray-900">Needs chasing</h3>
-        <span className="ml-auto text-[11.5px] text-gray-400 tabular-nums">
-          {decisions.length} {decisions.length === 1 ? 'decision' : 'decisions'} · {styles}{' '}
+        <div className="relative ml-auto">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search component, PO, style, colour…"
+            className="w-[260px] max-w-full pl-8 pr-7 py-1.5 text-[12px] bg-white border border-gray-200
+                       rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+          {q && (
+            <button onClick={() => setQ('')} aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <span className="text-[11.5px] text-gray-400 tabular-nums whitespace-nowrap">
+          {filtered.length} {filtered.length === 1 ? 'decision' : 'decisions'} · {styles}{' '}
           {styles === 1 ? 'style' : 'styles'}
           {truncated && <span className="text-amber-600"> · showing {styles} of {total}</span>}
         </span>
       </header>
 
-      {/* Fixed height, and each column scrolls inside it. Without this the
-          panel is as tall as whatever is selected, so picking a decision with
-          nine styles pushed the rejection history half a screen down and
-          picking a one-style one snapped it back -- the page moved under you
-          every time you clicked. A stable frame also gives the queue somewhere
-          to scroll when there are thirty of them instead of three. */}
-      <div className="grid lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:h-[480px]">
-        {/* The queue */}
-        <ul className="lg:border-r border-b lg:border-b-0 border-gray-100 divide-y divide-gray-50
-                       lg:h-full min-h-0 overflow-y-auto overscroll-contain bg-gray-50/40">
-          {decisions.map(d => {
-            const on = active?.key === d.key;
-            const tone = ageTone(age(d.worstDays));
-            const tag = SAMPLE_TAG[d.sampleType];
+      {filtered.length === 0 ? (
+        <p className="px-4 py-10 text-center text-sm text-gray-500">
+          Nothing matches &ldquo;{q}&rdquo;.
+        </p>
+      ) : (
+        <div>
+          {bands.map(band => {
+            const tone = ageTone(band.worst);
             return (
-              <li key={d.key}>
-                <button
-                  onClick={() => setSelected(d.key)}
-                  aria-current={on}
-                  className={cn('w-full text-left px-3 py-2.5 border-l-[3px] transition-colors',
-                    on ? 'bg-white border-l-primary-500' : 'border-l-transparent hover:bg-white/70')}
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1 text-[12.5px] font-bold text-gray-900 truncate">
-                      {d.componentName}
-                    </span>
-                    <span className={cn('text-[12.5px] font-extrabold tabular-nums flex-shrink-0', tone.text)}>
-                      {age(d.worstDays)}d
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded', tag.cls)}>{tag.short}</span>
-                    <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded tabular-nums',
-                      d.maxAttempt >= 3 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
-                      v{d.maxAttempt}
-                    </span>
-                    <span className="text-[10.5px] text-gray-500 tabular-nums truncate">
-                      {d.poNumber} · {d.rows.length} {d.rows.length === 1 ? 'style' : 'styles'}
-                    </span>
-                  </div>
-                </button>
-              </li>
+              <div key={band.po}>
+                {/* Same band as the components table: heavy ground, colour rail,
+                    PO number at a size nothing else competes with. */}
+                <div className={cn('flex items-center gap-3 flex-wrap px-4 py-2.5 border-y-2 border-l-4',
+                  band.worst >= 30 ? 'bg-red-50 border-red-200' : 'bg-gray-100 border-gray-300')}
+                  style={{ borderLeftColor: band.worst >= 30 ? '#dc2626' : '#9ca3af' }}>
+                  <span className="font-mono font-extrabold tabular-nums text-[18px] leading-none text-gray-900">
+                    {band.po}
+                  </span>
+                  {band.ref && <span className="text-[13px] font-semibold text-gray-700 truncate max-w-[280px]">{band.ref}</span>}
+                  {band.factory && <span className="text-[12px] text-gray-500">{band.factory}</span>}
+                  <span className="ml-auto text-[12px] font-semibold text-gray-600 tabular-nums whitespace-nowrap">
+                    {band.ds.length} {band.ds.length === 1 ? 'decision' : 'decisions'} · {band.styles}{' '}
+                    {band.styles === 1 ? 'style' : 'styles'} ·{' '}
+                    <span className={tone.text}>worst {band.worst}d</span>
+                  </span>
+                </div>
+
+                {band.ds.map(d => {
+                  const t = ageTone(age(d.worstDays));
+                  const tag = SAMPLE_TAG[d.sampleType];
+                  return (
+                    <button
+                      key={d.key}
+                      onClick={() => setOpen(d.key)}
+                      className="w-full text-left px-4 py-2.5 border-b border-gray-100 hover:bg-gray-50
+                                 transition-colors grid grid-cols-[minmax(0,1.4fr)_54px_minmax(0,1.5fr)_auto]
+                                 gap-3 items-center"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0', tag.cls)}>{tag.short}</span>
+                        <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded tabular-nums flex-shrink-0',
+                          d.maxAttempt >= 3 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
+                          v{d.maxAttempt}
+                        </span>
+                        <span className="text-[13px] font-bold text-gray-900 truncate">{d.componentName}</span>
+                      </span>
+                      <span className={cn('text-[13px] font-extrabold tabular-nums', t.text)}>
+                        {age(d.worstDays)}d
+                      </span>
+                      <span className="text-[11.5px] text-gray-500 truncate">
+                        {d.rows.length === 1
+                          ? `${d.rows[0].style_code} · ${d.rows[0].colour || ''}`
+                          : `${d.rows.length} styles · ${d.rows.map(r => r.colour).filter(Boolean).join(', ')}`}
+                      </span>
+                      {/* The reason only earns a place when it says something.
+                          Every backfilled row is OTHER, which is noise. */}
+                      <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                        {d.reason && d.reason !== 'OTHER' ? (REASON_LABEL[d.reason] || d.reason) : 'Open'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
-        </ul>
+        </div>
+      )}
 
-        {active && <DecisionDetail
-          d={active} history={history}
-          onOpenOrder={onOpenOrder} onMarkReceived={onMarkReceived}
-          onApprove={onApprove} onRejectAgain={onRejectAgain}
-        />}
-      </div>
+      {/* The detail that used to occupy half the panel now opens over it, so
+          the queue keeps the full width and nothing is hidden behind a click
+          until you actually want it. X closes it, not a click outside. */}
+      {active && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" />
+          <div className="relative w-full max-w-4xl bg-white rounded-xl shadow-2xl ring-1 ring-gray-200 my-auto overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-gray-200 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase tracking-widest text-primary-600 font-bold">In rework</div>
+                <h3 className="text-[17px] font-extrabold text-gray-900 leading-tight mt-0.5">
+                  {active.componentName}
+                </h3>
+                <p className="text-[12px] text-gray-500 mt-0.5">
+                  {SAMPLE_LABEL[active.sampleType]} · attempt {active.maxAttempt} · PO{' '}
+                  <span className="font-mono">{active.poNumber}</span>
+                  {active.factory && <> · {active.factory}</>}
+                </p>
+              </div>
+              <button onClick={() => setOpen(null)} aria-label="Close"
+                      className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 flex-shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto">
+              <DecisionDetail
+                d={active} history={history}
+                onOpenOrder={onOpenOrder} onMarkReceived={onMarkReceived}
+                onApprove={onApprove} onRejectAgain={onRejectAgain}
+              />
+            </div>
+          </div>
+        </div>, document.body)}
     </section>
   );
 }
+
 
 function DecisionDetail({
   d, history, onOpenOrder, onMarkReceived, onApprove, onRejectAgain,
