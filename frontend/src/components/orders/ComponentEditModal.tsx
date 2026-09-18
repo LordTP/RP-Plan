@@ -150,6 +150,21 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
     return () => { cancelled = true; };
   }, [open, order.id, component.id]);
 
+  /** Edits held back until Save.
+   *
+   *  Every field used to write the moment it changed, so tabbing out of a date
+   *  committed it -- and on a bulk scope that is a write across every style on
+   *  the PO from a keystroke the user had not finished making. Staging them
+   *  also means one request for a status and two dates rather than three.
+   */
+  const [draft, setDraft] = useState<Record<string, string | null>>({});
+  const dirty = Object.keys(draft).length > 0;
+  const stage = (field: string, value: string | null) =>
+    setDraft((d) => ({ ...d, [field]: value }));
+  /** What a field shows: the pending edit if there is one, else the saved value. */
+  const fieldValue = (field: string) =>
+    (field in draft ? draft[field] : (comp as any)[field]) as string | null;
+
   const saveField = async (field: string, value: string | null) => {
     setSavingField(field);
     try {
@@ -178,11 +193,29 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         setComp(updated);
       }
       onUpdated();
+      return true;
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to save');
+      return false;
     } finally {
       setSavingField(null);
     }
+  };
+
+  /** Write every staged field in one go. Sequential rather than parallel: the
+   *  bulk path fans each field out across the PO's styles, and three of those
+   *  racing each other is how you get a half-applied edit. */
+  const saveDraft = async () => {
+    const entries = Object.entries(draft);
+    if (!entries.length) return;
+    for (const [field, value] of entries) {
+      // Stop on the first failure -- saveField has already told the user why,
+      // and pressing on would leave a partial edit with no way to tell which
+      // half landed.
+      const ok = await saveField(field, value);
+      if (!ok) return;
+    }
+    setDraft({});
   };
 
   const toggleSelectedSibling = (id: number) => {
@@ -200,7 +233,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
       setRejectFor({ sampleType, currentAttempt });
       return;
     }
-    saveField(`${prefix}_status`, newValue);
+    stage(`${prefix}_status`, newValue);
   };
 
   if (!open) return null;
@@ -450,9 +483,11 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
             either empty (new shape) or legacy data we don't surface here. */}
         <div className="flex-1 px-5 py-4 space-y-6">
           {SAMPLE_AREAS.filter(({ prefix }) => prefix === comp.sample_type).map(({ type, prefix, label }) => {
-            const status = (comp as any)[`${prefix}_status`] as string | null;
-            const received = (comp as any)[`${prefix}_received`] as string | null;
-            const approved = (comp as any)[`${prefix}_approved`] as string | null;
+            // Read through the draft so a staged edit shows immediately --
+            // otherwise picking a date appears to do nothing until Save.
+            const status = fieldValue(`${prefix}_status`);
+            const received = fieldValue(`${prefix}_received`);
+            const approved = fieldValue(`${prefix}_approved`);
             const attemptNo = (comp as any)[`${prefix}_attempt_no`] as number | undefined;
             const rejectionCount = (comp as any)[`${prefix}_rejection_count`] as number | undefined;
             const lastRejection = (comp as any)[`${prefix}_last_rejection`];
@@ -497,7 +532,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                     ) : (
                       <DatePickerInput
                         value={received ? received.split('T')[0] : ''}
-                        onChange={(v) => saveField(`${prefix}_received`, v || null)}
+                        onChange={(v) => stage(`${prefix}_received`, v || null)}
                         variant="block"
                         size="sm"
                       />
@@ -511,7 +546,7 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
                     ) : (
                       <DatePickerInput
                         value={approved ? approved.split('T')[0] : ''}
-                        onChange={(v) => saveField(`${prefix}_approved`, v || null)}
+                        onChange={(v) => stage(`${prefix}_approved`, v || null)}
                         variant="block"
                         size="sm"
                       />
@@ -547,15 +582,31 @@ export function ComponentEditModal({ open, order, component, onClose, onUpdated,
         {/* Footer */}
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-2 bg-white flex-shrink-0">
           <span className="text-[10px] text-gray-400">
-            Last updated {comp.updated_at ? format(parseISO(comp.updated_at), 'd MMM HH:mm') : '—'}
+            {dirty
+              ? <span className="text-amber-700 font-semibold">Unsaved changes</span>
+              : <>Last updated {comp.updated_at ? format(parseISO(comp.updated_at), 'd MMM HH:mm') : '—'}</>}
           </span>
-          <button
-            onClick={onClose}
-            disabled={!!savingField}
-            className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                // Discarding is the destructive half of this pair, so it asks.
+                if (dirty && !window.confirm('Discard the changes you have not saved?')) return;
+                onClose();
+              }}
+              disabled={!!savingField}
+              className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+            >
+              {dirty ? 'Discard' : 'Close'}
+            </button>
+            <button
+              onClick={saveDraft}
+              disabled={!dirty || !!savingField}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-primary-600 rounded-md
+                         hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {savingField ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
 
