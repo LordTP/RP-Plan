@@ -110,7 +110,7 @@ function ComponentsContent() {
             <h1 className="text-2xl font-bold text-gray-900">Components</h1>
             <span className="text-sm text-gray-500 truncate hidden md:block">
               {view === 'work'
-                ? 'Every sample still in flight'
+                ? 'Every sample still in development'
                 : 'Identity for every component — the only place a rename happens'}
             </span>
           </div>

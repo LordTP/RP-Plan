@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { businessDaysBetween } from '@/lib/sampleStatus';
+import { componentsApi, ordersApi } from '@/lib/api';
 import type { Order, OrderComponent, LastRejection } from '@/types';
 
 /**
@@ -72,6 +73,27 @@ export function FactoryComponentModal({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Spec, placement and notes live on the canonical library entry, not on the
+  // instance, so the modal has to go and get them. Comments hang off the order
+  // -- there is no such thing as a component comment -- so these are the
+  // style's, labelled as such rather than implying they are about this print.
+  const [detail, setDetail] = useState<any | null>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setDetail(null); setComments([]);
+    if (component.canonical_id) {
+      componentsApi.getLibraryEntry(component.canonical_id)
+        .then((d) => { if (alive) setDetail(d); })
+        .catch(() => { /* detail is a bonus; the modal still works without it */ });
+    }
+    ordersApi.getOrderComments(order.id)
+      .then((c) => { if (alive) setComments(c || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [open, component.canonical_id, order.id]);
 
   const lane = useMemo(() => laneFor(component), [component]);
   if (!open) return null;
@@ -179,13 +201,67 @@ export function FactoryComponentModal({
             <SectionLabel>Component</SectionLabel>
             <Facts rows={[
               ['Sample type', SAMPLE_LABEL[component.sample_type] || component.sample_type, false],
-              ['Colour', order.colour, false],
+              // The spec reference is how the factory files these -- it is the
+              // one field they asked for by name. Stored in spec_url, which the
+              // UI has always labelled "Spec" because people put a reference in
+              // it far more often than a link.
+              ['Spec', detail?.spec_url, true],
+              ['Colour', detail?.colour || order.colour, false],
+              ['Placement', (() => {
+                try {
+                  const pos = typeof detail?.position === 'string'
+                    ? JSON.parse(detail.position) : detail?.position;
+                  return Array.isArray(pos) ? pos.join(', ') : pos || null;
+                } catch { return detail?.position || null; }
+              })(), false],
               // "Received" on its own is ambiguous in a factory-facing view --
               // received by whom. The journey step beside it already says
               // "received by Source Lab", so this matches it.
               ['Received by Source Lab', fmt(lane.received), false],
               ['Approved', fmt(lane.approved), false],
             ]} />
+
+            {(detail?.description || detail?.supplier_notes) && (
+              <>
+                <SectionLabel>Brief</SectionLabel>
+                {detail.description && (
+                  <p className="text-[12.5px] text-gray-700 leading-relaxed">{detail.description}</p>
+                )}
+                {detail.supplier_notes && (
+                  <p className="text-[12.5px] text-gray-700 leading-relaxed mt-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
+                    {detail.supplier_notes}
+                  </p>
+                )}
+              </>
+            )}
+
+            {comments.length > 0 && (
+              <>
+                {/* Comments belong to the style, not to this component -- the
+                    table has no component_id -- so say so rather than letting
+                    them read as notes about this print. */}
+                <SectionLabel>Comments on this style</SectionLabel>
+                <ul className="space-y-2">
+                  {comments.slice(-4).map((c: any) => (
+                    <li key={c.id} className="rounded-lg bg-gray-50 ring-1 ring-gray-200 px-3 py-2">
+                      <p className="text-[12.5px] text-gray-800 leading-relaxed whitespace-pre-wrap">
+                        {c.comment_text}
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {c.source === 'supplier' ? 'Factory' : 'Source Lab'}
+                        {c.user_name ? ` · ${c.user_name}` : ''}
+                        {fmt(c.created_at) ? ` · ${fmt(c.created_at)}` : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                {comments.length > 4 && (
+                  <p className="text-[11.5px] text-gray-500 mt-1.5">
+                    Showing the last 4 of {comments.length} — open the style for the rest.
+                  </p>
+                )}
+              </>
+            )}
 
             {!approved && !notRequired && (
               <div className="mt-4 rounded-lg bg-primary-50 ring-1 ring-primary-200 px-3 py-2.5">

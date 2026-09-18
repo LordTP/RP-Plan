@@ -45,7 +45,7 @@ interface Props {
 }
 
 const TILES: { key: Tile; label: string; factoryLabel?: string; tone: 'primary' | 'danger' }[] = [
-  { key: 'all', label: 'In flight', tone: 'primary' },
+  { key: 'all', label: 'In development', tone: 'primary' },
   { key: 'attention', label: 'Needs attention', tone: 'danger' },
   { key: 'rejected', label: 'Rejected', tone: 'danger' },
   { key: 'stale', label: 'Stale 14d+', tone: 'primary' },
@@ -174,7 +174,9 @@ export function ComponentWorklist({
   // people's POs, they are looking up where their own samples stand, which is
   // a lookup rather than a scan -- and the table puts four times as many on
   // screen. Both toggles stay; only the starting point differs.
-  const [layout, setLayout] = useState<'cards' | 'table'>(isSupplier ? 'table' : 'cards');
+  // Table for everyone. Cards stay available behind the toggle, but the
+  // table is what people actually work from.
+  const [layout, setLayout] = useState<'cards' | 'table'>('table');
   const [tile, setTile] = useState<Tile>('all');
   const [sortKey, setSortKey] = useState<SortKey>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -542,7 +544,7 @@ export function ComponentWorklist({
                   <td colSpan={colCount} className="px-3 pt-5 pb-1.5 bg-white">
                     <div className="flex items-center gap-2.5">
                       <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                        Nothing added yet
+                        Components outstanding
                       </span>
                       <span className="flex-1 h-px bg-gray-200" />
                       <span className="text-[11px] text-gray-400 tabular-nums">
@@ -661,18 +663,24 @@ function POBand({ po, customer, ref_, styles, attention, exFac, colSpan }: {
   styles: number; attention: number; exFac: string | null; colSpan: number;
 }) {
   return (
-    <tr className={cn('border-y', attention > 0 ? 'bg-red-50/60 border-red-100' : 'bg-gray-50 border-gray-200')}>
-      <td colSpan={colSpan} className="px-3 py-2">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <span className="font-mono font-extrabold tabular-nums text-[14px] text-gray-900">{po}</span>
-          {customer && <span className="text-[12.5px] text-gray-600">{customer}</span>}
-          {ref_ && <span className="text-[11.5px] text-gray-400 truncate max-w-[220px]">{ref_}</span>}
+    /* The band is the only thing separating one PO's components from the
+       next, so it has to read as a divider at a glance rather than as another
+       row: a heavier ground, a colour rail down the side, and the PO number at
+       a size nothing else in the table competes with. */
+    <tr className={cn('border-y-2', attention > 0
+      ? 'bg-red-50 border-red-200' : 'bg-gray-100 border-gray-300')}>
+      <td colSpan={colSpan} className="px-0 py-0">
+        <div className="flex items-center gap-3 flex-wrap px-3 py-3 border-l-4"
+             style={{ borderLeftColor: attention > 0 ? '#dc2626' : '#9ca3af' }}>
+          <span className="font-mono font-extrabold tabular-nums text-[19px] leading-none text-gray-900">{po}</span>
+          {customer && <span className="text-[14px] font-semibold text-gray-700">{customer}</span>}
+          {ref_ && <span className="text-[12.5px] text-gray-500 truncate max-w-[240px]">{ref_}</span>}
           {attention > 0 && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-600 text-white whitespace-nowrap">
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-red-600 text-white whitespace-nowrap">
               {attention} need{attention === 1 ? 's' : ''} attention
             </span>
           )}
-          <span className="ml-auto text-[11.5px] text-gray-500 tabular-nums whitespace-nowrap">
+          <span className="ml-auto text-[12.5px] font-semibold text-gray-600 tabular-nums whitespace-nowrap">
             {styles} {styles === 1 ? 'style' : 'styles'}
             {exFac && <> · ex-fac {relativeTimeShort(exFac)}</>}
           </span>

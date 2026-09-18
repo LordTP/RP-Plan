@@ -2192,7 +2192,7 @@ function WorklistMock() {
     <div className="p-3 bg-gray-50">
       <div className="flex items-center gap-2 mb-2">
         <p className="text-sm font-extrabold text-gray-900">Components</p>
-        <span className="text-[9px] text-gray-400">Every sample still in flight</span>
+        <span className="text-[9px] text-gray-400">Every sample still in development</span>
         <span className="ml-auto inline-flex rounded-md border border-gray-200 bg-white overflow-hidden">
           <span className="px-2 py-1 text-[10px] font-bold text-primary-700 bg-primary-50">Worklist</span>
           <span className="px-2 py-1 text-[10px] font-medium text-gray-500">Library</span>

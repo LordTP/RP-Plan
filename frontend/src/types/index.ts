@@ -419,7 +419,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'customer_po_open_month', label: 'PO Open Month', width: 100, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'expected_dispatch_arrive_uk_month', label: 'Exp Cust Del Month', width: 125, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
   // Shipping / Vessel
-  { key: 'fcl_lcl', label: 'FCL/LCL', width: 75, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FCL_LCL_OPTIONS },
+  { key: 'fcl_lcl', label: 'FCL/LCL/AIR', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'text', options: FCL_LCL_OPTIONS },
   { key: 'vessel_name', label: 'Vessel Name', width: 120, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
   { key: 'vessel_etd', label: 'Vessel ETD', width: 100, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'vessel_eta_to_port', label: 'Vessel ETA Port', width: 115, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
