@@ -2193,7 +2193,9 @@ export function ComponentsSection({
             const status = (comp as any)[`${prefix}_status`] as string | null;
             const approved = (comp as any)[`${prefix}_approved`] as string | null;
             const received = (comp as any)[`${prefix}_received`] as string | null;
-            const pill = statusPillStyle(status);
+            // This is the factory's own product page, so RECEIVED has to read
+            // as "With Source Lab" here too -- it is not a job still theirs.
+            const pill = statusPillStyle(status, { factory: true });
             const s = (status || '').trim().toUpperCase();
             const edge =
               s === 'APPROVED' ? 'border-emerald-200'

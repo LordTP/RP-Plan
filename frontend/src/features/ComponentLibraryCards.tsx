@@ -562,7 +562,10 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
               </p>
             )}
             {shown.map((i) => {
-              const pill = statusPillStyle(i.status);
+              // The factory flag matters here as much as on the worklist:
+              // without it this row says "Received", which to a factory reads
+              // as a job still theirs. Every other pill in the app passes it.
+              const pill = statusPillStyle(i.status, { factory: isSupplier });
               const when = i.approved || i.received;
               return (
                 <button

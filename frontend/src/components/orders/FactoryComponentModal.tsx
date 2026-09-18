@@ -265,12 +265,20 @@ export function FactoryComponentModal({
 
             {!approved && !notRequired && (
               <div className="mt-4 rounded-lg bg-primary-50 ring-1 ring-primary-200 px-3 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-primary-700">Next</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-primary-700">
+                  {lane.status === 'RECEIVED' ? 'With Source Lab' : 'Next'}
+                </p>
                 <p className="text-[12px] text-primary-900/90 mt-1 leading-relaxed">
                   {reworking
                     ? <>Remake against the reason and send it in. <b>v{lane.attemptNo} is already open on this
                         component</b> — don&apos;t add a new one, a duplicate splits the history.</>
-                    : <>Send the sample in. Source Lab record it when it lands.</>}
+                    : lane.status === 'RECEIVED'
+                      // It has arrived. Telling the factory to send it is not
+                      // just noise, it invites a second one -- and a duplicate
+                      // submission splits the history for this component.
+                      ? <><b>Nothing to do.</b> Source Lab have it and will either sign it off or come
+                          back to you with a reason.</>
+                      : <>Send the sample in. Source Lab record it when it lands.</>}
                 </p>
               </div>
             )}

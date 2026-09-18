@@ -388,6 +388,10 @@ function CanonicalDetailPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Two columns, the same split as the component modals: what it IS on
+          the left, what has happened to it on the right. */}
+      <div className="grid lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] gap-4 items-start">
+      <div className="min-w-0">
       {/* Identity */}
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-start gap-3">
@@ -587,6 +591,13 @@ function CanonicalDetailPanel({
         )}
       </div>
 
+      </div>{/* left column */}
+
+      {/* Right — where it is used. The identity is what the thing IS and the
+          instances are where it went; stacked in one column you scrolled past
+          one to reach the other, and the drawer is 4xl wide with the right
+          half empty. */}
+      <div className="min-w-0 space-y-4">
       {/* Rollup counts */}
       <div className="grid grid-cols-4 gap-2">
         <StatBox label="Used" value={stats.used} tone="slate" />
@@ -635,6 +646,9 @@ function CanonicalDetailPanel({
           ))}
         </div>
       </div>
+
+      </div>{/* right column */}
+      </div>{/* two columns */}
 
       {/* Floating bulk bar — same pill as the orders table. */}
       {!isSupplier && selectedInstanceIds.size > 0 && (
