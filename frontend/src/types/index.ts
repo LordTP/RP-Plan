@@ -426,7 +426,9 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'revised_vessel_eta_to_port', label: 'Revised Vessel ETA', width: 130, editable: true, supplierEditable: false, supplierHidden: false, type: 'date' },
   { key: 'estimated_del_to_customer', label: 'Est Del to Cust', width: 115, editable: false, supplierEditable: false, supplierHidden: false, type: 'date' },
   // Status (internal-only, kept for app logic)
-  { key: 'status', label: 'Status', width: 110, editable: true, supplierEditable: false, supplierHidden: false, type: 'text' },
+  // Derived from the order's own fields by order_status.py and refreshed on
+  // every read, so typing over it would be overwritten on the next load.
+  { key: 'status', label: 'Status', width: 150, editable: false, supplierEditable: false, supplierHidden: false, type: 'text' },
 ];
 
 // Factory Product view — PO through ETA Customer, product-focused

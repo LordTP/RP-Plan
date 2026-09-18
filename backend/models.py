@@ -328,18 +328,20 @@ class CommentMention(Base):
 
 
 # Valid order statuses
+# Worked out from the order's own fields, never picked by hand -- see
+# order_status.py for the rules. Kept in worst-to-best order: a PO takes the
+# least advanced of its styles, and that comparison is this list's index.
+#
+# Replaces a hand-set list (Pending / Confirmed / QC Passed / In Transit / On
+# Hold / ...) that was never used: status was NULL on all 110 production rows.
 ORDER_STATUSES = [
-    "Pending",
-    "Confirmed",
-    "In Production",
-    "QC Passed",
-    "Shipped",
-    "In Transit",
-    "Delivered to UK",
-    "Delivered to Customer",
-    "On Hold",
-    "Cancelled",
-    "Delayed",
+    "NEW ORDER",
+    "CONFIRMED EX-FACTORY DATE",
+    "IN DEVELOPMENT",
+    "IN PRODUCTION",
+    "EX FACTORY",
+    "BOOKED",
+    "SHIPPED",
 ]
 
 

@@ -18,6 +18,7 @@ from models import (
     User, UserRole, PurchaseOrder, Comment, CommentRead, DateChangeHistory,
     PendingDateChange, ORDER_STATUSES, RoleColumnSettings, OrderComponent,
 )
+from order_status import refresh_all
 from schemas import (
     PurchaseOrderCreate, PurchaseOrderResponse,
     PurchaseOrderSupplierResponse,
@@ -268,6 +269,18 @@ async def get_orders(
     - tab=shipped: filter where tracking_reference IS NOT NULL (internal only)
     - tab=orders (default for internal): filter where tracking_reference IS NULL
     """
+    # Status is derived from the other fields, so the only way it goes wrong is
+    # by going stale. Refreshing here rather than at each of the dozen-odd write
+    # paths means no code path can forget -- and the list endpoint is what feeds
+    # the table, the dashboards and the exports, so this is where a wrong value
+    # would actually be seen. One pass over ~110 rows, writing only when
+    # something genuinely moved.
+    try:
+        if refresh_all(db):
+            db.commit()
+    except Exception:
+        db.rollback()   # a status refresh must never take the order list down
+
     query = db.query(PurchaseOrder)
     query = apply_supplier_filter(query, current_user)
 

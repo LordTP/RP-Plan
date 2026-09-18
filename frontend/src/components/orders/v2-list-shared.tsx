@@ -72,6 +72,17 @@ export function formatQty(val: number | null | undefined): string {
 // ─── Order status palette ─────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  // The seven automatic statuses (order_status.py). Cool early, warm through
+  // production, blue once it is moving, green when it has gone -- so a column
+  // of these reads as progress without anyone decoding the words.
+  'NEW ORDER': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' },
+  'CONFIRMED EX-FACTORY DATE': { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-400' },
+  'IN DEVELOPMENT': { bg: 'bg-violet-50', text: 'text-violet-700', dot: 'bg-violet-400' },
+  'IN PRODUCTION': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400' },
+  'EX FACTORY': { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
+  'BOOKED': { bg: 'bg-indigo-50', text: 'text-indigo-700', dot: 'bg-indigo-400' },
+  'SHIPPED': { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-400' },
+  // Superseded values, kept so historic rows still render.
   'In Production': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400' },
   'Pending Approval': { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
   'Shipped': { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-400' },
@@ -91,6 +102,13 @@ export function getStatusStyle(status: string | undefined) {
  *  Tailwind class because statuses are DB-driven, so the palette can't be
  *  resolved at build time from a static class map. */
 const STATUS_DOT_HEX: Record<string, string> = {
+  'NEW ORDER': '#9ca3af',
+  'CONFIRMED EX-FACTORY DATE': '#2dd4bf',
+  'IN DEVELOPMENT': '#a78bfa',
+  'IN PRODUCTION': '#fbbf24',
+  'EX FACTORY': '#fb923c',
+  'BOOKED': '#818cf8',
+  'SHIPPED': '#60a5fa',
   'In Production': '#fbbf24',
   'Pending Approval': '#fb923c',
   'Shipped': '#60a5fa',
