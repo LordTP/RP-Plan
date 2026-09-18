@@ -7,6 +7,7 @@ import { cn, formatDate, formatCurrency, formatNumber, formatDateForInput } from
 import { ordersApi } from '@/lib/api';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
+import { EditStepHeading, ScopeCard } from '@/components/orders/v2-detail-helpers';
 import { NOTE_ELIGIBLE_FIELDS } from '@/lib/dateNotes';
 import { useStore } from '@/store/useStore';
 import type { ColumnDef, Order } from '@/types';
@@ -118,6 +119,8 @@ function EditableCellInner({
 
   const isDateField = column.type === 'date';
   const isBulkable = isDateField || !!column.options;
+  // Drives the card width AND the two-column split, so they cannot disagree.
+  const showScope = isBulkable && stylesOnPO.length > 1;
 
   const canEdit =
     ((userRole === 'internal' || userRole === 'admin') && isEditable) ||
@@ -371,61 +374,48 @@ function EditableCellInner({
           />
 
           {/* Card */}
-          <div className="relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full max-w-lg overflow-hidden">
+          <div className={cn('relative bg-white rounded-xl shadow-xl ring-1 ring-gray-200 w-full overflow-hidden',
+              // The style list is the one part of this that needs room; at a
+              // fixed max-w-lg it was a scrollbox inside a narrow column.
+              showScope ? 'max-w-3xl' : 'max-w-md')}>
             {/* Header — eyebrow flips to BULK EDIT when scope is beyond
                 the current row, so the user can see at a glance that
                 they're about to change more than one thing. */}
-            <div className="px-5 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">
-                  {applyMode === 'single' ? 'EDIT' : 'BULK EDIT'}
+            {/* Header, matching the detail panel's: the field being changed
+                reads as the title, and the row it belongs to sits under it on
+                one line instead of three stacked chips. */}
+            <div className="px-5 py-4 border-b border-gray-200 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase tracking-widest text-primary-600 font-bold">
+                  {applyMode === 'single' ? 'Edit' : 'Bulk edit'}
                 </div>
-                <h3 className="text-base font-bold text-gray-900 mt-0.5 truncate">
+                <h3 className="text-[17px] font-extrabold text-gray-900 leading-tight mt-0.5">
                   {column.label}
                 </h3>
-                {/* Which row am I editing? PO and style code alone weren't
-                    enough to recognise it — style codes all look alike at a
-                    glance, so the product name and colour carry the actual
-                    identification. Sized to be read rather than squinted at:
-                    10px monospace is fine for a chip, not for the line that
-                    tells you what you're about to change. */}
-                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  <span className="text-[11px] font-mono font-semibold text-gray-700 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 tabular-nums">
-                    PO {order.po_number}
-                  </span>
-                  {order.style_code && (
-                    <span className="text-[11px] font-mono text-gray-500 tabular-nums truncate">
-                      {order.style_code}
-                    </span>
-                  )}
-                </div>
-                {(order.description || order.colour) && (
-                  <div className="flex items-baseline gap-1.5 mt-1 min-w-0">
-                    {order.description && (
-                      <span className="text-[13px] font-semibold text-gray-800 truncate">
-                        {order.description}
-                      </span>
-                    )}
-                    {order.colour && (
-                      <span className="text-[12px] text-gray-500 whitespace-nowrap">
-                        · {order.colour}
-                      </span>
-                    )}
-                  </div>
-                )}
+                <p className="text-[12px] text-gray-500 mt-1 truncate">
+                  {order.style_code && <span className="font-mono">{order.style_code}</span>}
+                  {order.description && <> · {order.description}</>}
+                  {order.colour && <> · {order.colour}</>}
+                  {order.po_number && <> · PO <span className="font-mono">{order.po_number}</span></>}
+                </p>
               </div>
               <button
                 onClick={handleCancel}
-                className="text-gray-400 hover:text-gray-700 p-1 flex-shrink-0"
+                aria-label="Close"
+                className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="px-5 py-4 space-y-4">
+            <div className={cn(showScope && 'grid sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]')}>
+              {/* ── 1 · the new value ── */}
+              <div className={cn('px-5 py-4 space-y-4',
+                showScope && 'sm:border-r border-b sm:border-b-0 border-gray-100 bg-gray-50/40')}>
               {/* Value input */}
               <div>
+                <div className="mb-2.5"><EditStepHeading n={1} title="New value" /></div>
                 {column.options ? (
                   <div className="border border-gray-200 rounded-md overflow-hidden divide-y divide-gray-50">
                     <button
@@ -511,52 +501,41 @@ function EditableCellInner({
                 </div>
               )}
 
-              {/* Bulk scope — segmented control replaces the previous
-                  radio-group stack. Same three modes, half the vertical
-                  space, and the active state signals which is picked
-                  without needing to hunt for a filled dot. */}
-              {isBulkable && stylesOnPO.length > 1 && (
-                <div>
-                  <label className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1.5 block">
-                    Apply to
-                  </label>
-                  <div className="inline-flex w-full p-0.5 bg-gray-100 rounded-lg text-[11px] font-semibold">
-                    <button
-                      onClick={() => setApplyMode('single')}
-                      disabled={isSaving}
-                      className={cn(
-                        'flex-1 px-2 py-1 rounded-md transition-colors',
-                        applyMode === 'single'
-                          ? 'bg-white shadow-sm text-primary-700'
-                          : 'text-gray-500 hover:text-gray-700',
-                      )}
-                    >
-                      This style
-                    </button>
-                    <button
-                      onClick={() => setApplyMode('all')}
-                      disabled={isSaving}
-                      className={cn(
-                        'flex-1 px-2 py-1 rounded-md transition-colors',
-                        applyMode === 'all'
-                          ? 'bg-white shadow-sm text-primary-700'
-                          : 'text-gray-500 hover:text-gray-700',
-                      )}
-                    >
-                      All on PO ({stylesOnPO.length})
-                    </button>
-                    <button
-                      onClick={() => setApplyMode('selected')}
-                      disabled={isSaving}
-                      className={cn(
-                        'flex-1 px-2 py-1 rounded-md transition-colors',
-                        applyMode === 'selected'
-                          ? 'bg-white shadow-sm text-primary-700'
-                          : 'text-gray-500 hover:text-gray-700',
-                      )}
-                    >
-                      Select…
-                    </button>
+              </div>
+
+              {/* ── 2 · who it applies to — beside the value, not beneath it.
+                  Sizing the card on the chosen mode made it open narrow and
+                  jump wider the moment you picked "Pick the styles". The
+                  detail panel sizes itself once, on whether the PO has any
+                  sibling styles at all, so it never moves. */}
+              {showScope && (
+                <div className="px-5 py-4 min-w-0">
+                  {/* Same scope cards the detail panel uses, imported rather
+                      than reimplemented -- three tiny segmented pills made the
+                      most consequential choice here (how many rows this
+                      writes) the smallest thing in the modal. */}
+                  <div className="mb-2.5"><EditStepHeading n={2} title="Apply to" /></div>
+                  <div className="space-y-1.5">
+                    <ScopeCard
+                      on={applyMode === 'single'}
+                      onPick={() => { if (!isSaving) setApplyMode('single'); }}
+                      title="This style only"
+                      sub={order.style_code || undefined}
+                    />
+                    <ScopeCard
+                      on={applyMode === 'all'}
+                      onPick={() => { if (!isSaving) setApplyMode('all'); }}
+                      title={`Every style on PO ${order.po_number ?? ''}`.trim()}
+                      sub={`${stylesOnPO.length} styles`}
+                    />
+                    <ScopeCard
+                      on={applyMode === 'selected'}
+                      onPick={() => { if (!isSaving) setApplyMode('selected'); }}
+                      title="Pick the styles"
+                      sub={applyMode === 'selected'
+                        ? `${selectedOrderIds.length} of ${stylesOnPO.length} chosen`
+                        : 'choose from the PO'}
+                    />
                   </div>
 
                   {applyMode === 'selected' && (

@@ -390,7 +390,7 @@ export function ConfirmEdit({ onSubmit, onCancel }: { onSubmit: () => void; onCa
   );
 }
 
-function EditStepHeading({ n, title }: { n: number; title: string }) {
+export function EditStepHeading({ n, title }: { n: number; title: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-[18px] h-[18px] rounded-full bg-gray-200 text-gray-700 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
@@ -404,7 +404,7 @@ function EditStepHeading({ n, title }: { n: number; title: string }) {
 /** A scope choice with room to say what it means. The three tiny radios these
  *  replace made the most consequential decision in the modal -- how many rows
  *  this writes to -- its smallest element. */
-function ScopeCard({ on, onPick, title, sub }: {
+export function ScopeCard({ on, onPick, title, sub }: {
   on: boolean; onPick: () => void; title: string; sub?: string;
 }) {
   return (
