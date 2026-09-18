@@ -76,7 +76,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
   // production, blue once it is moving, green when it has gone -- so a column
   // of these reads as progress without anyone decoding the words.
   'NEW ORDER': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' },
-  'CONFIRMED EX-FACTORY DATE': { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-400' },
+  'CONFIRMED': { bg: 'bg-teal-50', text: 'text-teal-700', dot: 'bg-teal-400' },
   'IN DEVELOPMENT': { bg: 'bg-violet-50', text: 'text-violet-700', dot: 'bg-violet-400' },
   'IN PRODUCTION': { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400' },
   'EX FACTORY': { bg: 'bg-orange-50', text: 'text-orange-700', dot: 'bg-orange-400' },
@@ -103,7 +103,7 @@ export function getStatusStyle(status: string | undefined) {
  *  resolved at build time from a static class map. */
 const STATUS_DOT_HEX: Record<string, string> = {
   'NEW ORDER': '#9ca3af',
-  'CONFIRMED EX-FACTORY DATE': '#2dd4bf',
+  'CONFIRMED': '#2dd4bf',
   'IN DEVELOPMENT': '#a78bfa',
   'IN PRODUCTION': '#fbbf24',
   'EX FACTORY': '#fb923c',

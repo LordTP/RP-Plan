@@ -14,7 +14,7 @@ not:
   * The component rule is the one genuine exception, and it runs the other way.
     ANY component on ANY style pulls EVERY style on that PO up to at least
     IN DEVELOPMENT. Without it, PO 5279 (22 of 34 styles carrying components)
-    would read CONFIRMED EX-FACTORY DATE, which understates a PO that is
+    would read CONFIRMED, which understates a PO that is
     demonstrably under way.
 
 EX FACTORY is gated behind IN PRODUCTION on purpose. It is the only status the
@@ -35,7 +35,7 @@ from sample_helpers import is_sample_done
 # Ordered worst-to-best. Position in this list IS the comparison, so a PO's
 # status is just the minimum index across its styles.
 NEW_ORDER = 'NEW ORDER'
-CONFIRMED_EX_FACTORY = 'CONFIRMED EX-FACTORY DATE'
+CONFIRMED_EX_FACTORY = 'CONFIRMED'
 IN_DEVELOPMENT = 'IN DEVELOPMENT'
 IN_PRODUCTION = 'IN PRODUCTION'
 EX_FACTORY = 'EX FACTORY'

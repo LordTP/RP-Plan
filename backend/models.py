@@ -336,7 +336,7 @@ class CommentMention(Base):
 # Hold / ...) that was never used: status was NULL on all 110 production rows.
 ORDER_STATUSES = [
     "NEW ORDER",
-    "CONFIRMED EX-FACTORY DATE",
+    "CONFIRMED",
     "IN DEVELOPMENT",
     "IN PRODUCTION",
     "EX FACTORY",
