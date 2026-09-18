@@ -545,6 +545,24 @@ async def startup_event():
         seed_db.close()
 
     # Start the notifications scheduler — runs the periodic check every 6h.
+    # Order status is derived, and the orders list endpoint keeps it fresh --
+    # but only once somebody opens that page. Doing a pass at boot means the
+    # figures are right for whoever lands on the dashboard first, and it is what
+    # fills the column in on a deploy where status has never been set.
+    try:
+        from database import SessionLocal as _SL
+        from order_status import refresh_all as _refresh_status
+        _db = _SL()
+        try:
+            _changed = _refresh_status(_db)
+            if _changed:
+                _db.commit()
+                print(f"✓ Order status: {_changed} rows recalculated")
+        finally:
+            _db.close()
+    except Exception as exc:
+        print(f"[order-status] startup pass failed, will recalculate on first read: {exc}")
+
     # An asyncio background task; in-process, resets on container restart.
     import asyncio as _asyncio
     _asyncio.create_task(_notifications_scheduler())
