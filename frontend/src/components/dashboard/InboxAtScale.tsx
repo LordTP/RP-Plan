@@ -508,34 +508,38 @@ function ChangeRow({ change, showPO, selected, onToggleSelect, onApprove, onReje
   const oldVal = stripTime(change.current_value || '');
   const newVal = stripTime(change.proposed_value || '');
   return (
+    /* Two lines, not one. Approving a date slip means reading two things: which
+       style it is, and why the factory wants it. On one 11px line the style code
+       was capped at 110px (S004807A-0767-MCI arrived as "S004807A-0767-M...")
+       and the reason took whatever was left -- about 90px, so "Mill delayed the
+       knit..." read as "Mill del...", available only as a hover tooltip. The
+       identifier now never truncates and the reason gets a line of its own. */
     <div
       className={cn(
-        'group pl-9 pr-3 py-1.5 flex items-center gap-2.5 text-[11px] hover:bg-gray-50 min-w-0',
+        'group pl-9 pr-3 py-2 text-[11px] hover:bg-gray-50',
         selected && 'bg-blue-50/60'
       )}
     >
-      <input
-        type="checkbox"
-        className="w-3 h-3 rounded border-gray-300 flex-shrink-0"
-        checked={selected}
-        onChange={onToggleSelect}
-      />
-      <span className="text-gray-700 font-semibold whitespace-nowrap">{fieldLabel}</span>
-      {change.style_code && (
-        <span className="font-mono text-gray-500 truncate max-w-[110px]">{change.style_code}</span>
-      )}
-      {showPO && (
-        <button onClick={(e) => { e.stopPropagation(); onPOClick(); }} className="font-mono text-gray-400 hover:text-blue-700">
-          · {change.po_number}
-        </button>
-      )}
-      <span className="text-gray-300">·</span>
-      <span className="text-gray-400 line-through whitespace-nowrap">{oldVal || 'Not set'}</span>
-      <span className="text-gray-300">→</span>
-      <strong className="text-gray-700 whitespace-nowrap">{newVal || 'Not set'}</strong>
-      {change.reason && (
-        <span className="text-gray-400 italic truncate min-w-0 flex-1" title={change.reason}>· "{change.reason}"</span>
-      )}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <input
+          type="checkbox"
+          className="w-3 h-3 rounded border-gray-300 flex-shrink-0"
+          checked={selected}
+          onChange={onToggleSelect}
+        />
+        <span className="text-gray-700 font-semibold whitespace-nowrap">{fieldLabel}</span>
+        {change.style_code && (
+          <span className="font-mono text-gray-600 whitespace-nowrap">{change.style_code}</span>
+        )}
+        {showPO && (
+          <button onClick={(e) => { e.stopPropagation(); onPOClick(); }} className="font-mono text-gray-400 hover:text-blue-700 whitespace-nowrap">
+            · {change.po_number}
+          </button>
+        )}
+        <span className="text-gray-300">·</span>
+        <span className="text-gray-400 line-through whitespace-nowrap">{oldVal || 'Not set'}</span>
+        <span className="text-gray-300">→</span>
+        <strong className="text-gray-700 whitespace-nowrap">{newVal || 'Not set'}</strong>
       <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
         <button
           onClick={onApprove}
@@ -553,6 +557,12 @@ function ChangeRow({ change, showPO, selected, onToggleSelect, onApprove, onReje
         </button>
       </div>
     </div>
+      {change.reason && (
+        <p className="pl-[22px] mt-1 text-[11px] text-gray-500 italic leading-snug">
+          &ldquo;{change.reason}&rdquo;
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -569,12 +579,16 @@ function FlatRow({ change, selected, onToggleSelect, onApprove, onRejectClick, o
   const oldVal = stripTime(change.current_value || '');
   const newVal = stripTime(change.proposed_value || '');
   return (
+    /* Same two-line shape as ChangeRow, and for the same reason -- plus this
+       variant never rendered change.reason at all, so the flat list asked for a
+       decision while withholding the factory's justification entirely. */
     <div
       className={cn(
-        'group px-3 py-2 flex items-center gap-2.5 text-[11px] hover:bg-gray-50 min-w-0',
+        'group px-3 py-2 text-[11px] hover:bg-gray-50',
         selected && 'bg-blue-50/60'
       )}
     >
+      <div className="flex items-center gap-2.5 min-w-0">
       <input
         type="checkbox"
         className="w-3 h-3 rounded border-gray-300 flex-shrink-0"
@@ -582,7 +596,7 @@ function FlatRow({ change, selected, onToggleSelect, onApprove, onRejectClick, o
         onChange={onToggleSelect}
       />
       <span className="text-gray-700 font-semibold whitespace-nowrap">{fieldLabel}</span>
-      <button onClick={(e) => { e.stopPropagation(); onPOClick(); }} className="font-mono text-gray-700 hover:text-blue-700 truncate max-w-[110px]">
+      <button onClick={(e) => { e.stopPropagation(); onPOClick(); }} className="font-mono text-gray-700 hover:text-blue-700 whitespace-nowrap">
         {change.style_code}
       </button>
       <span className="text-gray-300">·</span>
@@ -609,6 +623,12 @@ function FlatRow({ change, selected, onToggleSelect, onApprove, onRejectClick, o
           Reject
         </button>
       </div>
+      </div>
+      {change.reason && (
+        <p className="pl-[22px] mt-1 text-[11px] text-gray-500 italic leading-snug">
+          &ldquo;{change.reason}&rdquo;
+        </p>
+      )}
     </div>
   );
 }
