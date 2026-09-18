@@ -73,8 +73,13 @@ export function FloatingCentre({
 
         {isOpen && (
           <div className={cn(
-            'lg:absolute lg:left-0 lg:right-0 lg:top-full lg:mt-1 bg-white lg:rounded-xl',
-            'lg:ring-1 lg:ring-gray-200 lg:shadow-2xl overflow-hidden',
+            // Not gated on a breakpoint. Under lg these were falling back to
+            // static, which put the panel back in the flow and pushed the whole
+            // page down -- the very thing floating it was meant to stop. Every
+            // page this sits on is desktop full-width, so there is no narrow
+            // layout being protected by the gate.
+            'absolute left-0 right-0 top-full mt-1 bg-white rounded-xl',
+            'ring-1 ring-gray-200 shadow-2xl overflow-hidden',
             panelClassName,
           )}>
             {children}

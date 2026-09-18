@@ -17,7 +17,6 @@ import {
   type MyApprovedChange,
   type RejectedChange,
 } from '@/lib/api';
-import { WarningsCentre } from '@/components/dashboard/WarningsCentre';
 import { formatNumber, formatDate, cn } from '@/lib/utils';
 import { InboxAtScale } from '@/components/dashboard/InboxAtScale';
 import { RecentActivityFeed, groupBulkActivity } from '@/components/dashboard/RecentActivityFeed';
@@ -39,7 +38,6 @@ function DashboardContent() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalGroup[]>([]);
-  const [warnings, setWarnings] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivityEvent[]>([]);
   const [hasMoreActivity, setHasMoreActivity] = useState(false);
   const [loadingMoreActivity, setLoadingMoreActivity] = useState(false);
@@ -72,12 +70,10 @@ function DashboardContent() {
       setRecentActivity(recentResult?.events || []);
       setHasMoreActivity(recentResult?.has_more || false);
 
-      const [approvalsResult, warningsResult] = await Promise.all([
-        isInternal ? approvalsApi.getPendingApprovals() : Promise.resolve({ pending_approvals: [] }),
-        analyticsApi.getDashboardWarnings().catch(() => ({ warnings: [] })),
-      ]);
+      const approvalsResult = isInternal
+        ? await approvalsApi.getPendingApprovals()
+        : { pending_approvals: [] };
       setPendingApprovals(approvalsResult.pending_approvals || []);
-      setWarnings(warningsResult?.warnings || []);
 
       // Supplier-only: fetch their own date-change submissions.
       if (isSupplier) {
@@ -315,12 +311,6 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* Warnings Centre — full width, its own working surface */}
-      {warnings.length > 0 && (
-        <div className="mt-6">
-          <WarningsCentre warnings={warnings} />
-        </div>
-      )}
     </AppShell>
   );
 }

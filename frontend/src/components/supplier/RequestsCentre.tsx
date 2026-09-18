@@ -291,7 +291,7 @@ export function RequestsCentre({ refreshKey = 0 }: { refreshKey?: number }) {
           />
         </div>
       }
-      panelClassName="lg:h-[min(520px,calc(100vh-240px))]"
+      panelClassName="h-[min(520px,calc(100vh-240px))]"
     >
       <div className="grid lg:grid-cols-[300px_1fr] h-full">
           {/* Buckets, grouped by who owes the work */}

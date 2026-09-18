@@ -44,9 +44,20 @@ const WAITING_ON_SOURCE_LAB = new Set([
   'pps_approval',
 ]);
 
-export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]; embedded?: boolean }) {
+export function WarningsCentre({
+  warnings, embedded = false, search: searchProp, onSearchChange,
+}: {
+  warnings: any[];
+  embedded?: boolean;
+  /** Lift the search out when the box belongs in a host header rather than
+   *  inside the panel — see FloatingWarningsCentre. */
+  search?: string;
+  onSearchChange?: (v: string) => void;
+}) {
   const [selected, setSelected] = useState<string>(warnings[0]?.key || '');
-  const [search, setSearch] = useState('');
+  const [ownSearch, setOwnSearch] = useState('');
+  const search = searchProp ?? ownSearch;
+  const setSearch = onSearchChange ?? setOwnSearch;
 
   const filteredWarnings = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -127,15 +138,14 @@ export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]
   const selStyle = WARNING_SEVERITY_STYLES[selectedWarning.severity] || WARNING_SEVERITY_STYLES.amber;
 
   return (
-    <div className={cn(!embedded &&
+    <div className={cn(embedded ? 'h-full' :
       'bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden')}>
       {/* Embedded in a FloatingCentre the card chrome and title are already
           supplied, so only the search comes with the body. */}
-      {embedded ? (
-        <div className="px-4 pt-3 flex justify-end">
-          <SearchInput value={search} onChange={setSearch} />
-        </div>
-      ) : (
+      {/* Embedded, the host header carries both the title and the search, so
+          nothing goes here — a search row of its own left a band of empty space
+          across the top of the panel. */}
+      {embedded ? null : (
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -154,9 +164,16 @@ export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]
         </div>
       )}
 
-      <div className={cn('grid grid-cols-[320px_1fr]', embedded ? 'h-[calc(100%-46px)]' : 'h-[440px]')}>
+      {/* The panel is a definite height, but h-full is only a percentage of
+          something definite -- and embedded, the wrapper above carried no
+          classes, so this grid sized to its content instead. That is why the
+          left rail's grey stopped where its rows stopped and left white below
+          it, and why 109 fit samples overflowed a panel that clips. Carrying
+          the height down and letting the columns shrink (min-h-0) gives the
+          rail the full depth and hands the scroll to the detail pane. */}
+      <div className={cn('grid grid-cols-[320px_1fr] min-h-0', embedded ? 'h-full' : 'h-[440px]')}>
         {/* Left: categories grouped by who owes the work */}
-        <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 overflow-y-auto">
+        <div className="border-r border-gray-100 bg-gray-50/60 p-3 space-y-4 min-h-0 overflow-y-auto">
           {theirCourt.length > 0 && (
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 px-2">
@@ -176,7 +193,7 @@ export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]
         </div>
 
         {/* Right: detail */}
-        <div className="p-5 overflow-y-auto">
+        <div className="p-5 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
             <div>
               <h4 className="text-sm font-bold text-gray-900">{selectedWarning.title}</h4>
@@ -236,6 +253,7 @@ export function WarningsCentre({ warnings, embedded = false }: { warnings: any[]
  */
 export function FloatingWarningsCentre() {
   const [warnings, setWarnings] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -258,15 +276,18 @@ export function FloatingWarningsCentre() {
       tone="alert"
       title="Warnings Centre"
       subtitle={
-        `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
-        + (ourCount ? ` · ${ourCount} on us` : '')
-        + (theirCount ? ` · ${theirCount} on the factories` : '')
+        search
+          ? `Filtering on "${search}"`
+          : `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
+            + (ourCount ? ` · ${ourCount} on us` : '')
+            + (theirCount ? ` · ${theirCount} on the factories` : '')
       }
-      panelClassName="lg:h-[min(520px,calc(100vh-240px))]"
+      actions={<SearchInput value={search} onChange={setSearch} />}
+      panelClassName="h-[min(520px,calc(100vh-240px))]"
     >
       {/* The dashboard version already is a rail and a pane; reuse it whole
           rather than keeping two copies of the grouping and search logic. */}
-      <WarningsCentre warnings={warnings} embedded />
+      <WarningsCentre warnings={warnings} embedded search={search} onSearchChange={setSearch} />
     </FloatingCentre>
   );
 }
