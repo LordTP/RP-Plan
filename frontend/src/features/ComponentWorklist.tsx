@@ -232,8 +232,19 @@ export function ComponentWorklist({
       if (tile === 'outstanding' && st !== 'OUTSTANDING') return false;
       if (tile === 'received' && st !== 'RECEIVED') return false;
       if (search) {
-        const hay = `${c.name || ''} ${order.style_code || ''} ${order.customer || ''} ${order.po_number || ''} ${order.description || ''}`.toLowerCase();
-        if (!hay.includes(search)) return false;
+        // Everything the row and its PO band actually show. The orderbook ref
+        // was the glaring omission: the band prints "BUBBLE COLLECTIVE - DROP
+        // 3" in front of you and searching "bubble" returned nothing, because
+        // the haystack never included it.
+        const hay = [
+          c.name, c.sample_type,
+          order.style_code, order.customer, order.po_number,
+          order.description, order.colour, order.factory,
+          order.china_orderbook_ref, order.customer_style_code,
+        ].filter(Boolean).join(' ').toLowerCase();
+        // Every word has to match, but each can match anywhere -- so
+        // "bubble puff" works, and so does "puff bubble".
+        if (!search.split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false;
       }
       return true;
     });

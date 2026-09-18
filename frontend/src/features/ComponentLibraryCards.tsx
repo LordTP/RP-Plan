@@ -49,6 +49,7 @@ type NameGroup = {
   customersCount: number;
   outOfStep: number;
   hasSpec: boolean;
+  poNumbers: string[];
 };
 
 function buildGroups(all: CanonicalComponent[]): NameGroup[] {
@@ -61,12 +62,13 @@ function buildGroups(all: CanonicalComponent[]): NameGroup[] {
     if (!g) {
       g = {
         key, name: c.name, sampleType: c.sample_type, entries: [],
-        stylesCount: 0, customersCount: 0, outOfStep: 0, hasSpec: false,
+        stylesCount: 0, customersCount: 0, outOfStep: 0, hasSpec: false, poNumbers: [],
       };
       map.set(key, g);
     }
     g.entries.push(c);
     g.stylesCount += c.styles_count;
+    for (const po of c.po_numbers || []) if (!g.poNumbers.includes(po)) g.poNumbers.push(po);
     g.customersCount = Math.max(g.customersCount, c.customers_count);
     if (c.out_of_step) g.outOfStep++;
     if (c.has_spec) g.hasSpec = true;
@@ -207,7 +209,7 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-[276px_1fr] gap-3">
-        <div className="min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+        <div className="min-h-0 overflow-y-auto rounded-xl border border-gray-200 bg-white">
           {loading && rows.length === 0 ? (
             <div className="flex items-center justify-center py-10 text-gray-400">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -272,35 +274,41 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
 function NameCard({ group, active, onClick }: { group: NameGroup; active: boolean; onClick: () => void }) {
   const alert = group.outOfStep > 0;
   return (
+    /* A row, not a card. Sixty-one bordered boxes stacked down a 276px column
+       read as sixty-one separate things; the rail is one list and should look
+       like one. The selected row is marked by the rail itself rather than by
+       giving that row its own border. */
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left rounded-lg border p-2.5 flex flex-col gap-1.5 transition-colors shrink-0',
-        active ? 'border-primary-400 bg-primary-50 shadow-[inset_3px_0_0_var(--tw-shadow-color)] shadow-primary-500'
-          : alert ? 'border-amber-200 bg-white hover:bg-gray-50'
-          : 'border-gray-200 bg-white hover:bg-gray-50',
+        'w-full text-left px-3 py-2 border-l-[3px] border-b border-gray-100 transition-colors shrink-0',
+        active ? 'bg-primary-50 border-l-primary-500' : 'border-l-transparent hover:bg-gray-50',
       )}
     >
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider', sampleTypeChipBg(group.sampleType))}>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider flex-shrink-0',
+          sampleTypeChipBg(group.sampleType))}>
           {sampleTypeLabel(group.sampleType)}
         </span>
-        {alert ? (
-          <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-white bg-amber-600 rounded-full px-2 py-0.5">
-            <AlertTriangle className="w-2.5 h-2.5" />
-            {group.outOfStep} out of step
-          </span>
-        ) : group.stylesCount > 0 && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
-            <Check className="w-3 h-3" strokeWidth={3} /> in step
+        <span className="text-[13px] font-bold text-gray-900 truncate">{group.name}</span>
+        {/* Only when something is wrong. "In step" was on every row in the
+            library, which makes it decoration rather than information. */}
+        {alert && (
+          <span className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-bold text-white
+                           bg-amber-600 rounded-full px-1.5 py-0.5 flex-shrink-0">
+            <AlertTriangle className="w-2.5 h-2.5" />{group.outOfStep}
           </span>
         )}
-        {group.hasSpec && <Paperclip className="w-3 h-3 text-gray-400 ml-auto" />}
       </div>
-      <div className="text-[13.5px] font-bold text-gray-900 truncate">{group.name}</div>
-      <div className="text-[11px] text-gray-500 tabular-nums">
-        <b className="text-gray-700 font-semibold">{group.entries.length}</b> {group.entries.length === 1 ? 'entry' : 'entries'}
-        {' · '}<b className="text-gray-700 font-semibold">{group.stylesCount}</b> {group.stylesCount === 1 ? 'style' : 'styles'}
+      <div className="text-[11px] text-gray-500 tabular-nums mt-0.5 truncate">
+        {group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'}
+        {' · '}{group.stylesCount} {group.stylesCount === 1 ? 'style' : 'styles'}
+        {/* The PO is what people scan a component list for. */}
+        {group.poNumbers.length === 1
+          ? <> · PO <b className="text-gray-700 font-semibold">{group.poNumbers[0]}</b></>
+          : group.poNumbers.length > 1
+            ? <> · <b className="text-gray-700 font-semibold">{group.poNumbers.length} POs</b></>
+            : null}
       </div>
     </button>
   );
@@ -367,6 +375,9 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
   entry: FamilyEntry; index: number; onOpen: () => void;
   onOpenInstance: (orderId: number, instanceId: number) => void;
 }) {
+  const { user } = useStore();
+  const isSupplier = user?.role === 'supplier';
+
   /** Where this entry's styles actually are, and when they last moved.
    *
    *  The row used to collapse this to "all <status>" behind a green tick,
@@ -426,21 +437,38 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
     // squeezed to a sliver with their text clipped so the expanded
     // out-of-step ones could fit the container.
     <div className={cn('rounded-lg border overflow-hidden shrink-0', entry.out_of_step ? 'border-amber-300 ring-2 ring-amber-100' : 'border-gray-200')}>
+      {/* The header opens the identity drawer, which is where a component gets
+          renamed or given a spec -- Source Lab's job, not the factory's. For a
+          supplier it is not a control at all: their way in is the style row
+          below, which gives them the same modal as the worklist. */}
       <div
-        onClick={onOpen}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+        onClick={isSupplier ? undefined : onOpen}
+        role={isSupplier ? undefined : 'button'}
+        tabIndex={isSupplier ? undefined : 0}
+        onKeyDown={isSupplier ? undefined
+          : (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
         className={cn(
-          'px-3 py-2 flex items-center gap-2 flex-wrap cursor-pointer transition-colors',
-          entry.out_of_step ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50 hover:bg-gray-100',
+          'px-3 py-2 flex items-center gap-2 flex-wrap transition-colors',
+          !isSupplier && 'cursor-pointer',
+          entry.out_of_step
+            ? cn('bg-amber-50', !isSupplier && 'hover:bg-amber-100')
+            : cn('bg-gray-50', !isSupplier && 'hover:bg-gray-100'),
         )}
       >
         <span className="font-mono text-[10.5px] font-bold text-gray-400">#{index}</span>
-        {entry.colour && (
-          <span className="text-[10.5px] font-semibold text-gray-700 bg-white border border-gray-200 rounded px-1.5 py-0.5">
-            {entry.colour}
+        {/* Colour and spec are what separate one entry of a name from another
+            -- BULK FABRIC is six entries and the colour plus the spec is the
+            only way to tell which is which. The spec was not on the row at
+            all, so five of the six looked identical. */}
+        <span className="text-[12.5px] font-bold text-gray-900">
+          {entry.colour || <span className="font-normal text-gray-400">No colour</span>}
+        </span>
+        {entry.spec_url ? (
+          <span className="font-mono text-[11px] font-semibold text-gray-600 bg-white border border-gray-200 rounded px-1.5 py-0.5">
+            {entry.spec_url}
           </span>
+        ) : (
+          <span className="text-[10.5px] text-gray-400">no spec</span>
         )}
         <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap">
           <b className="text-gray-700">{entry.styles_count}</b> {entry.styles_count === 1 ? 'style' : 'styles'}

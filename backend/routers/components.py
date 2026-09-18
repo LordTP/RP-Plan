@@ -1020,6 +1020,22 @@ async def list_component_library(
 
     rows = query.order_by(Component.name).all()
 
+    # Which POs each canonical touches. The rail shows this, and asking the
+    # detail endpoint once per canonical to find out would be 61 round trips
+    # to render one list. One grouped query instead, scoped the same way the
+    # list itself is.
+    po_q = (
+        db.query(OrderComponent.canonical_id, PurchaseOrder.po_number)
+        .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
+        .filter(OrderComponent.canonical_id.isnot(None))
+    )
+    for clause in supplier_filter_clause(current_user):
+        po_q = po_q.filter(clause)
+    po_map: dict = {}
+    for canonical_id, po_number in po_q.distinct().all():
+        if po_number:
+            po_map.setdefault(canonical_id, set()).add(po_number)
+
     results = []
     for r in rows:
         styles_count = int(r.styles_count or 0)
@@ -1037,6 +1053,7 @@ async def list_component_library(
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             "styles_count": styles_count,
+            "po_numbers": sorted(po_map.get(r.id, [])),
             "customers_count": int(r.customers_count or 0),
             "approved_count": int(r.approved_count or 0),
             "received_count": int(r.received_count or 0),

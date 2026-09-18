@@ -476,6 +476,8 @@ export interface CanonicalComponent {
   /** This entry's own styles disagree with each other. Not a comparison
    *  between entries sharing a name — those differ legitimately. */
   out_of_step: boolean;
+  /** Every PO this canonical's instances sit on. */
+  po_numbers: string[];
 }
 
 /** One instance of a canonical, as returned by the by-name family endpoint. */
