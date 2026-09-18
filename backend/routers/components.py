@@ -960,12 +960,18 @@ async def list_component_library(
 
     if sample_type:
         query = query.filter(Component.sample_type == sample_type)
-    if q:
-        like = f"%{q.strip()}%"
+    if q and q.strip():
+        # Every word has to match somewhere, but each word can match anywhere:
+        # "bulk 5279" finds the bulk fabrics on that PO, and word order does not
+        # matter. One literal substring could not do that -- it looked for the
+        # string "bulk 5279" and found nothing.
+        words = [w for w in q.strip().split() if w]
         # Match on canonical identity fields OR on style_code / po_number /
         # customer_style_code of any linked instance. The style/PO branch is
         # a subquery so it doesn't multiply rows in the outer group-by.
-        style_po_match_ids = (
+        for word in words:
+          like = f"%{word}%"
+          style_po_match_ids = (
             db.query(OrderComponent.canonical_id)
             .join(PurchaseOrder, PurchaseOrder.id == OrderComponent.order_id)
             .filter(OrderComponent.canonical_id.isnot(None))
@@ -984,14 +990,18 @@ async def list_component_library(
             )
             .distinct()
             .subquery()
-        )
-        query = query.filter(
+          )
+          query = query.filter(
             (Component.name.ilike(like))
             | (Component.description.ilike(like))
             | (Component.colour.ilike(like))
             | (Component.supplier_notes.ilike(like))
+            # spec_url is the field the UI labels "Spec"; leaving it out meant
+            # typing a spec reference found nothing, even though the panel
+            # prints one on every entry.
+            | (Component.spec_url.ilike(like))
             | (Component.id.in_(db.query(style_po_match_ids)))
-        )
+          )
 
     # Supplier scoping: canonical must have at least one instance on their
     # factory. We enforce this via HAVING count > 0 on the PO-filtered join.

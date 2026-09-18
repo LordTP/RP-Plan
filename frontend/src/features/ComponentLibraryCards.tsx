@@ -19,11 +19,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Search, Library, AlertTriangle, Check, Paperclip, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useStore } from '@/store/useStore';
+import { FactoryComponentModal } from '@/components/orders/FactoryComponentModal';
+import { ComponentEditModal } from '@/components/orders/ComponentEditModal';
 import { cn } from '@/lib/utils';
-import { componentsApi, type CanonicalComponent, type ComponentFamily, type FamilyEntry, type FamilyInstance } from '@/lib/api';
+import { componentsApi, ordersApi, type CanonicalComponent, type ComponentFamily, type FamilyEntry, type FamilyInstance } from '@/lib/api';
 import { StatusTile, TogglePill, StatusBar } from '@/components/orders/v2-list-primitives';
 import { sampleTypeLabel, sampleTypeChipBg, sampleTypeFullLabel, statusPillStyle } from './component-shared';
-import type { ComponentSampleType } from '@/types';
+import type { ComponentSampleType, Order, OrderComponent } from '@/types';
 
 type TypeFilter = 'all' | ComponentSampleType;
 type Tile = 'all' | 'out_of_step' | 'in_use' | 'unused' | 'no_spec';
@@ -112,6 +115,32 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
   const [tile, setTile] = useState<Tile>('all');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
+  // Clicking a style opens the same modal that style would open from the
+  // worklist -- read-only for a factory, the editor for Source Lab. The library
+  // list only carries ids, so the order and its components are fetched on the
+  // click rather than held for all 61 entries up front.
+  const { user } = useStore();
+  const isSupplier = user?.role === 'supplier';
+  const [instance, setInstance] = useState<{ order: Order; component: OrderComponent } | null>(null);
+  const [opening, setOpening] = useState(false);
+
+  const openInstance = async (orderId: number, instanceId: number) => {
+    setOpening(true);
+    try {
+      const [order, comps] = await Promise.all([
+        ordersApi.getOrder(orderId),
+        componentsApi.getComponents(orderId),
+      ]);
+      const component = (comps || []).find((c: OrderComponent) => c.id === instanceId);
+      if (!order || !component) { toast.error('Could not open that style.'); return; }
+      setInstance({ order, component });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Could not open that style.');
+    } finally {
+      setOpening(false);
+    }
+  };
+
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -162,39 +191,18 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
 
   return (
     <div className="flex flex-col gap-3 min-h-0 flex-1">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-        {TILES.map((t) => (
-          <StatusTile
-            key={t.key}
-            label={t.label}
-            count={counts[t.key]}
-            tone={t.tone}
-            active={tile === t.key}
-            onClick={() => setTile(tile === t.key && t.key !== 'all' ? 'all' : t.key)}
-          />
-        ))}
-      </div>
-
+      {/* The five tiles are gone. Two of them could never move -- out_of_step
+          and unused were 0 across the whole library -- and the other three
+          restated what the rail already says. One search does the work. */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, colour, PO, customer, factory, style or product…"
+            placeholder="Search anything — name, colour, spec, PO, customer, factory, style or product…"
             className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mr-0.5">Type</span>
-          {(['all', 'strike_off', 'lab_dip', 'label'] as TypeFilter[]).map((t) => (
-            <TogglePill
-              key={t}
-              on={typeFilter === t}
-              label={t === 'all' ? 'All' : sampleTypeFullLabel(t as ComponentSampleType)}
-              onClick={() => setTypeFilter(t)}
-            />
-          ))}
         </div>
       </div>
 
@@ -221,7 +229,8 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
 
         <div className="min-h-0 overflow-hidden">
           {selected
-            ? <FamilyPanel key={selected.key} group={selected} search={q} onOpenEntry={onOpenEntry} />
+            ? <FamilyPanel key={selected.key} group={selected} search={q} onOpenEntry={onOpenEntry}
+                           onOpenInstance={openInstance} />
             : (
               <div className="h-full rounded-xl border border-gray-200 bg-white flex items-center justify-center text-sm text-gray-400">
                 Pick a component to see its entries.
@@ -229,6 +238,23 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
             )}
         </div>
       </div>
+
+      {instance && (isSupplier ? (
+        <FactoryComponentModal
+          open
+          order={instance.order}
+          component={instance.component}
+          onClose={() => setInstance(null)}
+        />
+      ) : (
+        <ComponentEditModal
+          open
+          order={instance.order}
+          component={instance.component}
+          onClose={() => setInstance(null)}
+          onUpdated={() => setInstance(null)}
+        />
+      ))}
 
       <div className="-mt-1">
         <StatusBar
@@ -280,8 +306,9 @@ function NameCard({ group, active, onClick }: { group: NameGroup; active: boolea
   );
 }
 
-function FamilyPanel({ group, search, onOpenEntry }: {
+function FamilyPanel({ group, search, onOpenEntry, onOpenInstance }: {
   group: NameGroup; search: string; onOpenEntry: (id: number) => void;
+  onOpenInstance: (orderId: number, instanceId: number) => void;
 }) {
   const [family, setFamily] = useState<ComponentFamily | null>(null);
   const [loading, setLoading] = useState(true);
@@ -328,14 +355,18 @@ function FamilyPanel({ group, search, onOpenEntry }: {
         ) : !family || family.entries.length === 0 ? (
           <div className="text-center text-xs text-gray-400 py-10">No entries.</div>
         ) : family.entries.map((e, i) => (
-          <EntryBlock key={e.id} entry={e} index={i + 1} onOpen={() => onOpenEntry(e.id)} />
+          <EntryBlock key={e.id} entry={e} index={i + 1} onOpen={() => onOpenEntry(e.id)}
+                      onOpenInstance={onOpenInstance} />
         ))}
       </div>
     </div>
   );
 }
 
-function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: number; onOpen: () => void }) {
+function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
+  entry: FamilyEntry; index: number; onOpen: () => void;
+  onOpenInstance: (orderId: number, instanceId: number) => void;
+}) {
   // Group this entry's styles by PO — one entry can span several.
   const byPo = useMemo(() => {
     const m = new Map<string, FamilyInstance[]>();
@@ -501,7 +532,10 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
               const pill = statusPillStyle(i.status);
               const when = i.approved || i.received;
               return (
-                <div key={i.instance_id} className="grid grid-cols-[150px_1fr_auto_auto] gap-2 items-center px-3 py-1 pl-7 text-[11.5px] border-t border-gray-50">
+                <button
+                  key={i.instance_id}
+                  onClick={(e) => { e.stopPropagation(); onOpenInstance(i.order_id, i.instance_id); }}
+                  className="w-full text-left grid grid-cols-[150px_1fr_auto_auto] gap-2 items-center px-3 py-1 pl-7 text-[11.5px] border-t border-gray-50 hover:bg-primary-50/60 transition-colors">
                   <span className="font-mono tabular-nums text-gray-700 truncate">{i.style_code || `#${i.order_id}`}</span>
                   <span className="text-gray-500 truncate">{i.description || '—'}</span>
                   <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
@@ -510,7 +544,7 @@ function EntryBlock({ entry, index, onOpen }: { entry: FamilyEntry; index: numbe
                   <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap', pill.bg, pill.text)}>
                     {pill.label}
                   </span>
-                </div>
+                </button>
               );
             })}
             {list.length > ROWS_PER_PO && (
