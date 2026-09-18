@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle, Check, RotateCcw, Inbox, ExternalLink, Clock, User as UserIcon, Search, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { componentsApi } from '@/lib/api';
 import { groupDecisions, type Decision } from './ReworkDecisions';
 import type { StuckRow, RejectionHistoryRow, SampleType } from '@/lib/api';
 
@@ -55,6 +56,27 @@ function ageTone(days: number) {
   if (days >= 30) return { text: 'text-red-600', rail: 'bg-red-500', soft: 'bg-red-50 text-red-700 ring-red-200' };
   if (days >= 14) return { text: 'text-amber-600', rail: 'bg-amber-500', soft: 'bg-amber-50 text-amber-700 ring-amber-200' };
   return { text: 'text-gray-700', rail: 'bg-gray-300', soft: 'bg-gray-50 text-gray-600 ring-gray-200' };
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 mt-4 first:mt-0">
+      {children}
+    </p>
+  );
+}
+
+/** Skips itself when there is nothing to say, so an unfilled spec does not
+ *  leave a row of em-dashes down the column. */
+function Fact({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 border-b border-gray-200/60 last:border-0">
+      <dt className="text-[11.5px] text-gray-500 flex-shrink-0">{label}</dt>
+      <dd className={cn('text-[12.5px] font-semibold text-gray-900 text-right min-w-0 truncate',
+        mono && 'font-mono')}>{value}</dd>
+    </div>
+  );
 }
 
 export function ReworkQueue({
@@ -265,6 +287,34 @@ function DecisionDetail({
   const first = d.rows[0];
   const tone = ageTone(age(d.worstDays));
 
+  // Spec, placement and the brief sit on the canonical library entry rather
+  // than on the instance, and the queue only carries the instance id -- so it
+  // is two hops: the order's components to find the canonical, then the
+  // canonical itself. Both are best-effort; the modal works without them.
+  const [lib, setLib] = useState<any | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLib(null);
+    if (!first?.order_id || !first?.component_id) return;
+    componentsApi.getComponents(first.order_id)
+      .then(list => {
+        const inst = (list || []).find((c: any) => c.id === first.component_id);
+        const canonical = inst?.canonical_id;
+        if (!canonical) return null;
+        return componentsApi.getLibraryEntry(canonical);
+      })
+      .then(entry => { if (alive && entry) setLib(entry); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [first?.order_id, first?.component_id]);
+
+  const placement = useMemo(() => {
+    try {
+      const pos = typeof lib?.position === 'string' ? JSON.parse(lib.position) : lib?.position;
+      return Array.isArray(pos) ? pos.join(', ') : (pos || null);
+    } catch { return lib?.position || null; }
+  }, [lib]);
+
   // The rejection that opened this attempt. StuckRow carries the reason but not
   // when it was given or by whom, so it comes from the history rows for the
   // same component on the same PO one attempt back.
@@ -275,22 +325,40 @@ function DecisionDetail({
     && h.attempt_no === d.maxAttempt - 1), [history, d]);
 
   return (
-    <div className="p-4 sm:p-5 min-w-0 lg:h-full lg:overflow-y-auto overscroll-contain">
-      <div className="flex items-start gap-3 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <h4 className="text-[16px] font-extrabold text-gray-900 leading-tight">{d.componentName}</h4>
-          <p className="text-[11.5px] text-gray-500 mt-1">
-            {SAMPLE_LABEL[d.sampleType]} · attempt {d.maxAttempt} · PO{' '}
-            <b className="text-gray-700 font-mono">{d.poNumber}</b>
-            {d.factory && <> · {d.factory}</>}
-          </p>
-        </div>
-        <div className={cn('text-right px-2.5 py-1 rounded-lg ring-1 flex-shrink-0', tone.soft)}>
-          <div className="text-[17px] font-extrabold tabular-nums leading-none">{age(d.worstDays)}d</div>
-          <div className="text-[9px] uppercase tracking-wider mt-0.5 opacity-80">waiting</div>
-        </div>
+    <div className="min-w-0">
+      {/* Two columns: what the thing IS on the left, what has happened to it on
+          the right. The single column this replaces put the spec and the
+          rejection reason in the same vertical queue, so the person deciding
+          had to scroll between the two halves of the same question. */}
+      <div className="grid md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+      <div className="p-4 sm:p-5 md:border-r border-b md:border-b-0 border-gray-100 bg-gray-50/40">
+        <SectionLabel>The component</SectionLabel>
+        <dl className="space-y-0">
+          <Fact label="Sample" value={SAMPLE_LABEL[d.sampleType]} />
+          <Fact label="Spec" value={lib?.spec_url} mono />
+          <Fact label="Placement" value={placement} />
+          <Fact label="Colours" value={Array.from(new Set(d.rows.map(r => r.colour).filter(Boolean))).join(', ')} />
+          <Fact label="PO" value={d.poNumber} mono />
+          <Fact label="Factory" value={d.factory} />
+          <Fact label="Orderbook" value={first?.china_orderbook_ref} />
+          <Fact label="Waiting" value={`${age(d.worstDays)} days`} />
+        </dl>
+        {(lib?.description || lib?.supplier_notes) && (
+          <>
+            <SectionLabel>Brief</SectionLabel>
+            {lib?.description && (
+              <p className="text-[12.5px] text-gray-700 leading-relaxed">{lib.description}</p>
+            )}
+            {lib?.supplier_notes && (
+              <p className="text-[12.5px] text-gray-700 leading-relaxed mt-2 rounded-lg bg-amber-50
+                            ring-1 ring-amber-200 px-3 py-2">{lib.supplier_notes}</p>
+            )}
+          </>
+        )}
       </div>
 
+      <div className="p-4 sm:p-5 min-w-0">
+        <SectionLabel>Why it came back</SectionLabel>
       {/* The reason, in full — the point of the page, and what the old card clipped. */}
       {d.reason && (
         <div className="mt-3 rounded-lg bg-red-50/70 ring-1 ring-red-100 px-3 py-2.5">
@@ -325,8 +393,12 @@ function DecisionDetail({
         </li>
       </ol>
 
-      {/* Every style the decision hit. */}
-      <div className="mt-4 rounded-lg ring-1 ring-gray-200 overflow-hidden">
+      </div>{/* right column */}
+      </div>{/* two columns */}
+
+      {/* Every style the decision hit -- full width under both columns, since
+          this is the list you actually act on. */}
+      <div className="mx-4 sm:mx-5 mb-4 rounded-lg ring-1 ring-gray-200 overflow-hidden">
         <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold
                         uppercase tracking-wider text-gray-500">
           {d.rows.length} {d.rows.length === 1 ? 'style' : 'styles'} affected
@@ -361,7 +433,7 @@ function DecisionDetail({
 
       {/* Whole-decision actions. Per-style ones stay above for the odd case
           where one style comes back right and the rest do not. */}
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
+      <div className="px-4 sm:px-5 pb-5 flex items-center gap-2 flex-wrap">
         <button
           onClick={() => onMarkReceived(first)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold
