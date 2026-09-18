@@ -34,6 +34,7 @@ import { ExportOrdersModal } from '@/components/orders/ExportOrdersModal';
 import { FactoryDateRequestModal } from '@/components/orders/FactoryDateRequestModal';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
 import { InlineComments } from '@/components/orders/InlineComments';
+import { CommentThread } from '@/components/orders/comments/CommentThread';
 import { cn } from '@/lib/utils';
 import { statusPillStyle } from '@/features/component-shared';
 import type { Order, OrderComponent } from '@/types';
@@ -1633,23 +1634,6 @@ function DetailPanel({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => { setModalTab(modalTab === 'comments' ? 'details' : 'comments'); modalContentRef.current?.scrollTo(0, 0); }}
-              className={cn(
-                'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 border',
-                modalTab === 'comments'
-                  ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              )}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              {modalTab === 'comments' ? 'Details' : 'Comments'}
-              {modalTab !== 'comments' && (order.unread_comment_count || 0) > 0 && (
-                <span className="px-1.5 py-0 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                  {order.unread_comment_count}
-                </span>
-              )}
-            </button>
             {/* Page between styles without closing — the main win of the
                 drawer over the old centred modal. */}
             {(onPrev || onNext) && (
@@ -1940,6 +1924,26 @@ function DetailPanel({
                     {hasCol('original_del_date_to_customer') && <TimelineItem label="Customer Req Delivery" date={order.original_del_date_to_customer} note={order.date_notes?.original_del_date_to_customer} />}
                   </div>
                 </div>
+              </div>
+            </section>
+
+            {/* ─── Comments ───
+                 Moved out of the top-right toggle into the dead space the right
+                 column leaves under the Journey. The factory reads these to find
+                 out what Source Lab want changed, so making them a separate view
+                 you had to leave the detail for was backwards. History is not
+                 here: that is a Source Lab view and always was. */}
+            <SectionDivider />
+            <section className="px-6 pt-6 pb-6">
+              <SectionHeader accent="blue" label="Comments" />
+              {/* CommentThread fills its container, so give it a definite one --
+                  in the old tab it inherited the drawer's full height. */}
+              <div className="h-[420px] min-h-0">
+                <CommentThread
+                  orderId={order.id}
+                  poNumber={order.po_number}
+                  onCommentCountChange={onCommentCountChange}
+                />
               </div>
             </section>
             </div>

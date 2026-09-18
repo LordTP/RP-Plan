@@ -34,7 +34,8 @@ import { AuthProvider } from '@/components/layout/AuthProvider';
 import { CommentSidebar } from '@/components/orders/CommentSidebar';
 import { ComponentsSection } from '@/components/orders/FactoryV2View';
 import { StatusDropdown } from '@/components/orders/StatusDropdown';
-import { InlineComments } from '@/components/orders/InlineComments';
+import { CommentThread } from '@/components/orders/comments/CommentThread';
+import { HistoryPanel } from '@/components/orders/comments/HistoryPanel';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { FloatingWarningsCentre } from '@/components/dashboard/WarningsCentre';
 import { HeroTile, SectionHeader, SectionDivider, SampleCard, SampleStatusCard, BulkScopeProvider, InlineBulkScopeEditor, useBulkScope, TimelineItem, JourneyFact, ConfirmEdit } from '@/components/orders/v2-detail-helpers';
@@ -1299,7 +1300,6 @@ function OrdersV2Content() {
             isDesigner={isDesigner}
             view={viewParam}
             onSave={handleDetailSave}
-            initialTab={openOnComments ? 'comments' : 'details'}
             onCommentCountChange={(orderId, commentCount, unreadCount) => {
               const updateOrder = (o: Order) => o.id === orderId ? { ...o, comment_count: commentCount, unread_comment_count: unreadCount } : o;
               if (isFactoryView) {
@@ -1743,7 +1743,7 @@ function DetailPanel({
   isDesigner?: boolean;
   view: string | null;
   onSave?: (orderId: number, field: string, value: any) => void;
-  initialTab?: 'details' | 'comments';
+  initialTab?: 'details' | 'history';
   onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
   /** Parent is animating the drawer out — it stays mounted for the slide. */
   closing?: boolean;
@@ -1771,7 +1771,8 @@ function DetailPanel({
     return col?.editable ?? false;
   };
 
-  const [modalTab, setModalTab] = useState<'details' | 'comments'>(initialTab);
+  const [modalTab, setModalTab] = useState<'details' | 'history'>(
+    initialTab === 'history' ? 'history' : 'details');
   const modalContentRef = useRef<HTMLDivElement>(null);
   const statusStyle = getStatusStyle(order.status);
 
@@ -1864,40 +1865,24 @@ function DetailPanel({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Segmented Details/Comments toggle */}
-            <div className="inline-flex rounded-lg bg-gray-100 p-0.5">
+            {/* Comments moved into the panel (under Journey), so the tab
+                toggle that used to live here is gone. History is the only thing
+                left that needs its own view, and suppliers never had access to
+                it -- so for a factory this corner is now just paging and close. */}
+            {!isSupplier && (
               <button
-                onClick={() => { setModalTab('details'); modalContentRef.current?.scrollTo(0, 0); }}
+                onClick={() => { setModalTab(modalTab === 'history' ? 'details' : 'history'); modalContentRef.current?.scrollTo(0, 0); }}
                 className={cn(
-                  'px-3 py-1 text-[11.5px] font-semibold rounded-md transition-colors',
-                  modalTab === 'details'
-                    ? 'bg-white text-primary-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
+                  'px-3 py-1 text-[11.5px] font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5',
+                  modalTab === 'history'
+                    ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200'
+                    : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
                 )}
               >
-                Details
+                <Clock className="w-3.5 h-3.5" />
+                History
               </button>
-              <button
-                onClick={() => { setModalTab('comments'); modalContentRef.current?.scrollTo(0, 0); }}
-                className={cn(
-                  'px-3 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex items-center gap-1.5',
-                  modalTab === 'comments'
-                    ? 'bg-white text-primary-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
-                )}
-              >
-                <MessageSquare className="w-3 h-3" />
-                Comments
-                {(order.unread_comment_count || 0) > 0 && (
-                  <span className={cn(
-                    'px-1 py-0 text-[9px] font-bold rounded-full leading-tight',
-                    modalTab === 'comments' ? 'bg-primary-100 text-primary-700' : 'bg-red-500 text-white'
-                  )}>
-                    {order.unread_comment_count}
-                  </span>
-                )}
-              </button>
-            </div>
+            )}
             {/* Page between styles without closing the drawer — the main
                 win of the drawer over the old centred modal. */}
             {(onPrev || onNext) && (
@@ -1933,10 +1918,10 @@ function DetailPanel({
 
       {/* Body — Comments tab keeps its own full-height layout. Details tab uses
           the new hero + sticky pill nav + scroll-of-sections layout. */}
-      {modalTab === 'comments' ? (
+      {modalTab === 'history' ? (
         <div ref={modalContentRef} className="flex-1 min-h-0 overflow-hidden p-6 flex">
           <div className="flex-1 min-h-0">
-            <InlineComments order={order} onCommentCountChange={onCommentCountChange} />
+            <HistoryPanel orderId={order.id} />
           </div>
         </div>
       ) : (
@@ -1950,6 +1935,7 @@ function DetailPanel({
           modalContentRef={modalContentRef}
           sizes={sizes}
           maxSize={maxSize}
+          onCommentCountChange={onCommentCountChange}
         />
       )}
 
@@ -1970,10 +1956,12 @@ function DetailBody({
   modalContentRef,
   sizes,
   maxSize,
+  onCommentCountChange,
 }: {
   order: Order;
   hasCol: (key: string) => boolean;
   canEdit: (key: string) => boolean;
+  onCommentCountChange?: (orderId: number, commentCount: number, unreadCount: number) => void;
   isSupplier: boolean;
   isDesigner: boolean;
   onSave?: (orderId: number, field: string, value: any) => void;
@@ -2449,6 +2437,27 @@ function DetailBody({
             </div>
           </div>
         </section>
+        {/* ─── Comments ───
+             These used to be a tab of their own in the top right, which meant
+             leaving the detail you were reading to see what had been said about
+             it. The right column runs out of content under the Journey, so they
+             sit in that gap and are readable alongside the dates they refer to.
+             The history that shared that tab is Source Lab-only and keeps its
+             own button in the header. */}
+        <SectionDivider />
+        <section className="px-6 pt-6 pb-6">
+          <SectionHeader accent="blue" label="Comments" />
+          {/* CommentThread sizes to its container, so it needs a definite one
+              here -- in the old tab it inherited the drawer's full height. */}
+          <div className="h-[420px] min-h-0">
+            <CommentThread
+              orderId={order.id}
+              poNumber={order.po_number}
+              onCommentCountChange={onCommentCountChange}
+            />
+          </div>
+        </section>
+
 
       </div>{/* right column */}
       </div>{/* two-column grid */}
