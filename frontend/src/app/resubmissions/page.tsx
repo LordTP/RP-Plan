@@ -89,49 +89,43 @@ function ResubmissionsContent() {
 
   return (
     <AppShell title="Resubmissions">
-      <div className="p-6">
-        <div
-          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
-          style={{ height: 'calc(100vh - 100px)' }}
-        >
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <RefreshCcw className="w-5 h-5 text-red-600" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-gray-900">Resubmissions</h3>
-                <p className="text-xs text-gray-500 truncate">
-                  {isLoading ? 'Loading…'
-                    : data?.empty ? 'Nothing to show — no sample has been rejected yet. Everything\'s clearing on v1.'
-                    : `${data?.in_rework_now ?? 0} sample${(data?.in_rework_now ?? 0) === 1 ? '' : 's'} currently in rework`}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              </div>
-            ) : data?.empty ? (
-              <EmptyState />
-            ) : data ? (
-              <PopulatedDashboard
-                data={data}
-                onOpenOrder={(orderId) => router.push(`/orders-v2?order=${orderId}`)}
-                onMarkReceived={handleMarkReceived}
-                onApprove={handleApprove}
-                onRejectAgain={handleRejectAgain}
-              />
-            ) : (
-              <div className="text-sm text-gray-500">Failed to load resubmissions data.</div>
-            )}
-          </div>
+      {/* No outer card. The page was a white panel sitting on the page
+          background with more white panels inside it, which is why it read as
+          a box rather than as a page and never used the width -- p-6 outside,
+          px-6 py-4 for its header and p-6 again for its body, three levels of
+          padding before any content. Sections now sit straight on the page
+          ground the way every other screen does, and the page scrolls normally
+          instead of being pinned to calc(100vh - 100px). */}
+      <div className="px-5 py-5">
+        {/* One heading, not two. The card header said "Resubmissions" and the
+            section under it said "Needs chasing" -- the same thing twice, with
+            the count split across both. */}
+        <div className="flex items-baseline gap-3 flex-wrap mb-4">
+          <h1 className="text-[22px] font-extrabold text-gray-900 tracking-tight">Resubmissions</h1>
+          <p className="text-[13px] text-gray-500">
+            {isLoading ? 'Loading…'
+              : data?.empty ? 'Nothing to show — no sample has been rejected yet. Everything is clearing on v1.'
+              : `${data?.in_rework_now ?? 0} sample${(data?.in_rework_now ?? 0) === 1 ? '' : 's'} in rework · ${data?.history_total ?? 0} rejected all time`}
+          </p>
         </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          </div>
+        ) : data?.empty ? (
+          <EmptyState />
+        ) : data ? (
+          <PopulatedDashboard
+            data={data}
+            onOpenOrder={(orderId) => router.push(`/orders-v2?order=${orderId}`)}
+            onMarkReceived={handleMarkReceived}
+            onApprove={handleApprove}
+            onRejectAgain={handleRejectAgain}
+          />
+        ) : (
+          <div className="text-sm text-gray-500">Failed to load resubmissions data.</div>
+        )}
       </div>
 
       {rejectModal && (
