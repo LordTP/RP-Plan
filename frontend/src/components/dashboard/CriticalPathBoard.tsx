@@ -185,10 +185,10 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
       </div>
 
       <div className="overflow-auto max-h-[62vh] relative">
-        <table className="w-full border-collapse min-w-[880px]">
+        <table className="w-full table-fixed border-collapse min-w-[880px]">
           <thead className="sticky top-0 z-30 bg-white">
             <tr>
-              <th className="text-left pl-3.5 pb-2 pt-2.5 w-[268px] border-b-2 border-gray-300
+              <th className="text-left pl-3.5 pb-2 pt-2.5 min-w-[300px] border-b-2 border-gray-300
                              text-[10.5px] font-bold uppercase tracking-wide
                              text-gray-500 align-bottom
                              sticky left-0 z-40 bg-white
@@ -198,7 +198,7 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
               {data.gates.map(g => {
                 const t = data.totals[g.key];
                 return (
-                  <th key={g.key} className="pb-2 pt-2.5 px-1 border-b-2 border-gray-300 align-bottom
+                  <th key={g.key} className="w-[124px] pb-2 pt-2.5 px-1 border-b-2 border-gray-300 align-bottom
                                              border-l border-gray-100
                                              text-[10.5px] font-bold uppercase
                                              tracking-wide text-gray-500 whitespace-nowrap">
@@ -217,7 +217,7 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                   </th>
                 );
               })}
-              <th className="text-right pr-3.5 pb-2 pt-2.5 w-[118px] border-b-2 border-gray-300
+              <th className="text-right pr-3.5 pb-2 pt-2.5 w-[132px] border-b-2 border-gray-300
                              border-l border-gray-100
                              text-[10.5px] font-bold uppercase tracking-wide
                              text-gray-500 align-bottom">
@@ -239,7 +239,7 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                       'after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200',
                       open ? 'bg-primary-50' : 'bg-white group-hover:bg-gray-50',
                     )}>
-                      <span className="flex items-center gap-1.5 max-w-[250px]">
+                      <span className="flex items-center gap-1.5">
                         <ChevronRight className={cn('w-3 h-3 text-gray-400 flex-shrink-0 transition-transform',
                           open && 'rotate-90')} />
                         <span className="min-w-0">
@@ -273,7 +273,7 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                       )}>
                         <button
                           onClick={(e) => { e.stopPropagation(); onStyleClick(s.po_number, s.style_code || undefined); }}
-                          className="text-left block max-w-[250px] pl-[18px]"
+                          className="text-left block pl-[18px] w-full"
                         >
                           <span className="block text-[12px] font-mono text-gray-800 leading-tight">
                             {s.style_code}
