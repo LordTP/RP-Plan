@@ -281,7 +281,7 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
             rows_processed=0,
             rows_created=0,
             rows_updated=0,
-            errors=["Missing required column: 'PO#'. The file must have a column header named 'PO#' in the first row. Please check your file matches the template format."]
+            errors=["Missing required column: 'PO#'. The file needs a column headed 'PO#' — it can sit under a title or category row, but it has to be in the first few rows. Please check your file matches the template format."]
         )
 
     if "style_code" not in col_map:
@@ -290,7 +290,7 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
             rows_processed=0,
             rows_created=0,
             rows_updated=0,
-            errors=["Missing required column: 'STYLE CODE'. The file must have a column header named 'STYLE CODE' in the first row. Please check your file matches the template format."]
+            errors=["Missing required column: 'STYLE CODE'. The file needs a column headed 'STYLE CODE' on the same row as 'PO#'. Please check your file matches the template format."]
         )
 
     # Find first data row (skip header rows and size reference rows)
@@ -642,7 +642,7 @@ def preview_excel_import(file_bytes: bytes, db: Session, new_only: bool = False)
     if missing_cols:
         return {
             "success": False,
-            "error": f"Missing required columns: {', '.join(missing_cols)}. Please ensure your file has these column headers in the first row.",
+            "error": f"Missing required columns: {', '.join(missing_cols)}. Please ensure your file has these column headers on the same row as 'PO#'.",
             "new_orders": [],
             "updated_orders": [],
             "unchanged_orders": [],
@@ -858,15 +858,47 @@ def _format_value_for_display(value: Any) -> str:
     return str(value)
 
 
+# How far down to look for the header row before giving up on the file.
+HEADER_SEARCH_LIMIT = 5
+
+
+def _find_header_row(sheet) -> int:
+    """The row carrying the column names.
+
+    It is not always row 1. Our own export puts a category band there —
+    MERCH / DESIGN / PRODUCT / PRIME / AUTO, naming who owns each column —
+    with the real headers on row 2, which meant the app could not re-import
+    its own export. Other people's files start with a title row for the same
+    reason.
+
+    A header row is one containing the PO column, which is the one column the
+    import cannot work without. Falls back to row 1 so the existing error
+    ("Missing required column: 'PO#'") still fires on a genuinely bad file.
+    """
+    for row_idx in range(1, min(HEADER_SEARCH_LIMIT, sheet.max_row) + 1):
+        for col_idx in range(1, sheet.max_column + 1):
+            v = sheet.cell(row_idx, col_idx).value
+            if not v:
+                continue
+            h = str(v).strip().upper()
+            # "PO#" / "PO NUMBER" / "CHINA PO#", but not "SL SYSTEM PO#",
+            # which is a different column and can appear without the first.
+            if "SYSTEM PO" in h:
+                continue
+            if h in ("PO#", "PO NO", "PO NUMBER", "PO") or h.endswith(" PO#"):
+                return row_idx
+    return 1
+
+
 def _build_column_map(sheet) -> Dict[str, int]:
     """Build a mapping of field names to column indices"""
     col_map = {}
 
-    print("Building column map from headers...")
+    header_row = _find_header_row(sheet)
+    print(f"Building column map from headers (row {header_row})...")
 
-    # Check row 1 for headers
     for col_idx in range(1, sheet.max_column + 1):
-        header = sheet.cell(1, col_idx).value
+        header = sheet.cell(header_row, col_idx).value
         if not header:
             continue
 
@@ -1035,10 +1067,12 @@ def _build_column_map(sheet) -> Dict[str, int]:
         elif header_str == "LATE" or header_str == "STATUS":
             col_map["status"] = col_idx
 
-    # Handle size columns - check row 2 for size labels if row 1 has "SIZE RANGE"
+    # Size columns: the labels can sit one row below the headers when the
+    # header itself just says "SIZE RANGE". Relative to the header row, not
+    # to row 1.
     for col_idx in range(1, sheet.max_column + 1):
-        header1 = str(sheet.cell(1, col_idx).value or "").strip().upper()
-        header2 = str(sheet.cell(2, col_idx).value or "").strip().upper()
+        header1 = str(sheet.cell(header_row, col_idx).value or "").strip().upper()
+        header2 = str(sheet.cell(header_row + 1, col_idx).value or "").strip().upper()
 
         if "SIZE RANGE" in header1 or header2 in ["2XS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]:
             size_label = header2 if header2 else header1
