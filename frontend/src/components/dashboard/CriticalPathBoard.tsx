@@ -19,10 +19,10 @@ import { dashboardBoardApi, type BoardResponse, type BoardGate, type BoardGateSt
  */
 
 const CELL: Record<BoardGateState, string> = {
-  done:   'bg-teal-50 text-teal-700',
-  flight: 'bg-blue-50 text-blue-700',
-  late:   'bg-amber-50 text-amber-700',
-  crit:   'bg-rose-50 text-rose-700',
+  done:   'bg-teal-100 text-teal-800 ring-1 ring-teal-200',
+  flight: 'bg-blue-100 text-blue-800 ring-1 ring-blue-200',
+  late:   'bg-amber-200 text-amber-900 ring-1 ring-amber-300',
+  crit:   'bg-rose-500 text-white ring-1 ring-rose-600',
   idle:   'text-gray-300',
   na:     'text-gray-300',
 };
@@ -45,8 +45,8 @@ function Cell({ gate, onClick }: { gate: BoardGate; onClick?: () => void }) {
       onClick={onClick}
       title={title}
       className={cn(
-        'inline-grid place-items-center w-[27px] h-[27px] rounded-full font-mono',
-        'text-[10px] font-semibold leading-none transition-transform',
+        'inline-grid place-items-center w-[30px] h-[30px] rounded-full font-mono',
+        'text-[11.5px] font-bold leading-none transition-transform',
         onClick && 'hover:scale-110 cursor-pointer',
         CELL[gate.state],
       )}
@@ -88,8 +88,9 @@ function RollupCell({ styles, gateKey, onClick }: {
     <button
       onClick={onClick}
       title={`${behind.length} of ${gates.length} behind · worst ${worst} business days`}
-      className="inline-flex items-center gap-0.5 px-1.5 h-[27px] rounded-full font-mono
-                 text-[10px] font-semibold bg-rose-50 text-rose-700 hover:scale-105 transition-transform"
+      className="inline-flex items-center gap-0.5 px-2 h-[30px] rounded-full font-mono
+                 text-[11.5px] font-bold bg-rose-500 text-white ring-1 ring-rose-600
+                 hover:scale-105 transition-transform"
     >
       {worst}d<span className="text-rose-400">×{behind.length}</span>
     </button>
@@ -183,39 +184,43 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
         <span className="text-[11px] text-gray-400">Business days waiting · sorted by risk</span>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[62vh] relative">
         <table className="w-full border-collapse min-w-[880px]">
-          <thead>
+          <thead className="sticky top-0 z-30 bg-white">
             <tr>
-              <th className="text-left pl-3.5 pb-2 pt-2.5 w-[268px] border-b border-gray-200
-                             font-mono text-[9.5px] font-medium uppercase tracking-[0.06em]
-                             text-gray-400 align-bottom">
+              <th className="text-left pl-3.5 pb-2 pt-2.5 w-[268px] border-b-2 border-gray-300
+                             text-[10.5px] font-bold uppercase tracking-wide
+                             text-gray-500 align-bottom
+                             sticky left-0 z-40 bg-white
+                             after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
                 Style
               </th>
               {data.gates.map(g => {
                 const t = data.totals[g.key];
                 return (
-                  <th key={g.key} className="pb-2 pt-2.5 px-1 border-b border-gray-200 align-bottom
-                                             font-mono text-[9.5px] font-medium uppercase
-                                             tracking-[0.06em] text-gray-400 whitespace-nowrap">
+                  <th key={g.key} className="pb-2 pt-2.5 px-1 border-b-2 border-gray-300 align-bottom
+                                             border-l border-gray-100
+                                             text-[10.5px] font-bold uppercase
+                                             tracking-wide text-gray-500 whitespace-nowrap">
                     {g.label}
                     {/* Label the number. Showing a bare count coloured by
                         meaning made "4 done" and "4 late" look identical. */}
                     <span className={cn(
-                      'block mt-0.5 text-[12.5px] font-bold font-sans normal-case tracking-normal',
+                      'block mt-0.5 text-[13.5px] font-bold font-sans normal-case tracking-normal',
                       t.late > 0 ? 'text-amber-700' : 'text-gray-400 font-semibold',
                     )}>
                       {t.late > 0 ? t.late : t.done}
-                      <span className="ml-1 text-[9px] font-medium uppercase tracking-[0.06em]">
+                      <span className="ml-1 text-[9.5px] font-semibold uppercase tracking-wide">
                         {t.late > 0 ? 'late' : 'done'}
                       </span>
                     </span>
                   </th>
                 );
               })}
-              <th className="text-right pr-3.5 pb-2 pt-2.5 w-[118px] border-b border-gray-200
-                             font-mono text-[9.5px] font-medium uppercase tracking-[0.06em]
-                             text-gray-400 align-bottom">
+              <th className="text-right pr-3.5 pb-2 pt-2.5 w-[118px] border-b-2 border-gray-300
+                             border-l border-gray-100
+                             text-[10.5px] font-bold uppercase tracking-wide
+                             text-gray-500 align-bottom">
                 Ex-factory
               </th>
             </tr>
@@ -229,7 +234,11 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                     onClick={() => togglePO(po)}
                     className={cn('group cursor-pointer', open ? 'bg-primary-50/40' : 'hover:bg-gray-50/70')}
                   >
-                    <td className="pl-3.5 border-b border-gray-100 h-[42px]">
+                    <td className={cn(
+                      'pl-3.5 border-b border-gray-200 h-[46px] sticky left-0 z-10',
+                      'after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200',
+                      open ? 'bg-primary-50' : 'bg-white group-hover:bg-gray-50',
+                    )}>
                       <span className="flex items-center gap-1.5 max-w-[250px]">
                         <ChevronRight className={cn('w-3 h-3 text-gray-400 flex-shrink-0 transition-transform',
                           open && 'rotate-90')} />
@@ -246,18 +255,22 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                       </span>
                     </td>
                     {data.gates.map(g => (
-                      <td key={g.key} className="text-center px-1 border-b border-gray-100">
+                      <td key={g.key} className="text-center px-1 border-b border-gray-200 border-l border-gray-100">
                         <RollupCell styles={styles} gateKey={g.key} onClick={() => togglePO(po)} />
                       </td>
                     ))}
-                    <td className="text-right pr-3.5 border-b border-gray-100">
+                    <td className="text-right pr-3.5 border-b border-gray-200 border-l border-gray-100">
                       <ExFactory s={first} />
                     </td>
                   </tr>
 
                   {open && styles.map(s => (
-                    <tr key={s.order_id} className="bg-gray-50/60 hover:bg-gray-100/70">
-                      <td className="pl-3.5 border-b border-gray-100 h-[38px]">
+                    <tr key={s.order_id} className="group/style bg-gray-50 hover:bg-gray-100">
+                      <td className={cn(
+                        'pl-3.5 border-b border-gray-100 h-[40px] sticky left-0 z-10',
+                        'after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200',
+                        'bg-gray-50 group-hover/style:bg-gray-100',
+                      )}>
                         <button
                           onClick={(e) => { e.stopPropagation(); onStyleClick(s.po_number, s.style_code || undefined); }}
                           className="text-left block max-w-[250px] pl-[18px]"
@@ -271,14 +284,14 @@ export function CriticalPathBoard({ onStyleClick }: Props) {
                         </button>
                       </td>
                       {data.gates.map(g => (
-                        <td key={g.key} className="text-center px-1 border-b border-gray-100">
+                        <td key={g.key} className="text-center px-1 border-b border-gray-100 border-l border-gray-100">
                           <Cell
                             gate={s.gates[g.key]}
                             onClick={() => onStyleClick(s.po_number, s.style_code || undefined)}
                           />
                         </td>
                       ))}
-                      <td className="text-right pr-3.5 border-b border-gray-100" />
+                      <td className="text-right pr-3.5 border-b border-gray-100 border-l border-gray-100" />
                     </tr>
                   ))}
                 </Fragment>

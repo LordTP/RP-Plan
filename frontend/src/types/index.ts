@@ -240,6 +240,10 @@ export interface DateHistory {
 }
 
 export interface DashboardStats {
+  /** PO counts per live status, keyed by the status engine's own values. */
+  by_status?: Record<string, number>;
+  /** Those statuses in pipeline order — NEW ORDER first, SHIPPED last. */
+  status_order?: string[];
   total_orders: number;
   orders_in_production: number;
   orders_pending_approval: number;

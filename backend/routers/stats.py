@@ -12,6 +12,7 @@ from models import (
 )
 from auth import get_current_user, get_current_internal_user
 from supplier_access import apply_supplier_filter, supplier_filter_clause
+from order_status import STATUS_ORDER
 
 
 router = APIRouter()
@@ -39,18 +40,34 @@ async def get_dashboard_stats(
         total_query = total_query.filter(f)
     total_orders = total_query.scalar() or 0
 
-    orders_in_production = count_by_status(["In Production", "QC Passed"])
-    orders_shipped = count_by_status(["Shipped", "In Transit"])
-    orders_delivered = count_by_status(["Delivered to UK", "Delivered to Customer"])
-    orders_pending_approval = count_by_status(["Pending", "Confirmed"])
-    orders_cancelled = count_by_status(["Cancelled"])
-    orders_on_hold = count_by_status(["On Hold"])
+    # Counts per live status, keyed off the status engine's own list so this
+    # cannot drift from it again. The previous version counted "In Production",
+    # "Delivered to UK", "QC Passed" and friends — none of which the engine has
+    # ever written, so every card but Total read zero.
+    by_status = {}
+    rows = db.query(
+        func.upper(func.trim(PurchaseOrder.status)),
+        func.count(func.distinct(PurchaseOrder.po_number)),
+    )
+    for f in base_filter:
+        rows = rows.filter(f)
+    counted = dict(rows.group_by(func.upper(func.trim(PurchaseOrder.status))).all())
+    for st in STATUS_ORDER:
+        by_status[st] = counted.get(st, 0)
+
+    orders_in_production = by_status.get('IN PRODUCTION', 0)
+    orders_shipped = by_status.get('SHIPPED', 0)
+    # Nothing writes a delivered status any more — the pipeline ends at
+    # SHIPPED — so this stays for the old response shape and reads zero.
+    orders_delivered = 0
+    orders_pending_approval = by_status.get('CONFIRMED', 0)
+    orders_cancelled = count_by_status(["Cancelled", "CANCELLED"])
+    orders_on_hold = count_by_status(["On Hold", "ON HOLD"])
 
     overdue_query = db.query(func.count(func.distinct(PurchaseOrder.po_number))).filter(
-        or_(
-            PurchaseOrder.is_late == True,
-            PurchaseOrder.status == "Delayed"
-        )
+        # is_late is the only signal now — there is no "Delayed" status in
+        # the engine's vocabulary.
+        PurchaseOrder.is_late == True
     )
     for f in base_filter:
         overdue_query = overdue_query.filter(f)
@@ -101,6 +118,9 @@ async def get_dashboard_stats(
 
     return {
         "total_orders": total_orders,
+        # PO counts for every status the engine can produce, in pipeline order.
+        "by_status": by_status,
+        "status_order": list(STATUS_ORDER),
         "active_orders": active_orders,
         "late_orders": late_orders,
         "orders_in_production": orders_in_production,

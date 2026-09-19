@@ -165,16 +165,39 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* KPI strip — flat, divided by hairlines, no card chrome */}
-      <div className="grid grid-cols-5 border-y border-gray-200 mb-10 bg-white">
-        <KPI label="Total"          value={formatNumber(stats?.total_orders || 0)}              onClick={() => handleStatusClick()} border />
-        <KPI label="In Production"  value={formatNumber(stats?.orders_in_production || 0)}      onClick={() => handleStatusClick('In Production')} border />
-        <KPI label="Shipped"        value={formatNumber(stats?.orders_shipped || 0)}            onClick={() => handleStatusClick('Shipped')} border />
-        {/* Was "Open Value". Costing came out of the app, so it rendered a
-            permanent $0.00 — the one dead number on the dashboard. Everyone
-            gets Delivered instead. */}
-        <KPI label="Delivered"      value={formatNumber(stats?.orders_delivered || 0)}          onClick={() => handleStatusClick('Delivered')} border />
-        <KPI label="Overdue"        value={formatNumber(stats?.overdue_orders || 0)}            onClick={() => handleStatusClick('Delayed')} tone="red" />
+      {/* KPI strip — the pipeline, in order, plus what is late.
+          It used to count "In Production", "Shipped" and "Delivered" as
+          title-case strings that the status engine has never written, so
+          every card but Total sat on zero. It now reads the counts the
+          engine itself produces, so the two cannot drift apart. */}
+      <div className="border-y border-gray-200 mb-10 bg-white">
+        <div className="flex items-stretch overflow-x-auto">
+          <KPI
+            label="POs"
+            value={formatNumber(stats?.total_orders || 0)}
+            onClick={() => handleStatusClick()}
+            border
+            wide
+          />
+          {(stats?.status_order || []).map((st) => (
+            <KPI
+              key={st}
+              label={st}
+              value={formatNumber(stats?.by_status?.[st] ?? 0)}
+              onClick={() => handleStatusClick(st)}
+              muted={(stats?.by_status?.[st] ?? 0) === 0}
+              border
+            />
+          ))}
+          <KPI
+            label="Late"
+            value={formatNumber(stats?.overdue_orders || 0)}
+            onClick={() => handleStatusClick()}
+            tone={(stats?.overdue_orders || 0) > 0 ? 'red' : undefined}
+            muted={(stats?.overdue_orders || 0) === 0}
+            wide
+          />
+        </div>
       </div>
 
       {/* Supplier-only: my date-change submissions.
@@ -315,25 +338,32 @@ function DashboardContent() {
   );
 }
 
-function KPI({ label, value, onClick, border, tone }: {
+function KPI({ label, value, onClick, border, tone, muted, wide }: {
   label: string;
   value: string | number;
   onClick?: () => void;
   border?: boolean;
   tone?: 'red';
+  /** Nothing in this stage — greyed rather than dropped, so the pipeline
+   *  keeps its shape and you can see which stages are empty. */
+  muted?: boolean;
+  wide?: boolean;
 }) {
   const labelClass = tone === 'red' ? 'text-red-500' : 'text-gray-400';
-  const valueClass = tone === 'red' ? 'text-red-600' : 'text-gray-900';
+  const valueClass = tone === 'red'
+    ? 'text-red-600'
+    : muted ? 'text-gray-300' : 'text-gray-900';
   return (
     <div
       className={cn(
-        'px-5 py-3.5 hover:bg-gray-50/40 transition-colors',
+        'px-4 py-3.5 flex-1 min-w-[112px] hover:bg-gray-50/40 transition-colors',
+        wide && 'min-w-[96px] flex-none',
         border && 'border-r border-gray-200',
         onClick && 'cursor-pointer'
       )}
       onClick={onClick}
     >
-      <div className={cn('text-[10px] font-semibold uppercase tracking-wider', labelClass)}>{label}</div>
+      <div className={cn('text-[9.5px] font-semibold uppercase tracking-wider truncate', labelClass)}>{label}</div>
       <div className={cn('text-2xl font-bold mt-0.5 tabular-nums', valueClass)}>{value}</div>
     </div>
   );
