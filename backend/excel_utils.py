@@ -14,6 +14,7 @@ from sqlalchemy import and_
 from sqlalchemy.exc import SQLAlchemyError
 
 from models import PurchaseOrder, User, DateChangeHistory, PendingDateChange, ORDER_STATUSES
+from order_status import refresh_all
 from date_notes import DATE_NOTE_FIELDS, apply_date_field
 from schemas import ExcelUploadResponse
 
@@ -552,6 +553,22 @@ def import_excel_to_database(file_bytes: bytes, db: Session, user: User, import_
             rows_updated=0,
             errors=errors
         )
+
+    # Status is derived from the fields, and an import moves a lot of them at
+    # once — a vessel and its dates make a style BOOKED, a P-number makes it
+    # SHIPPED. Without this the book sits on stale statuses until somebody
+    # happens to open /orders, which is what recomputes them. Same reason the
+    # shipment confirm endpoint runs it.
+    #
+    # Deliberately AFTER the import has committed: a failure here must cost
+    # the user a status refresh, never their import. Statuses are derived, so
+    # the next /orders load puts them right anyway.
+    try:
+        if refresh_all(db):
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        errors.append(f"Rows imported fine, but statuses were not recalculated: {e}")
 
     # Truncate the list, but never the count. A run that reported ten problems
     # while silently having two hundred is how a bad import looks survivable.
