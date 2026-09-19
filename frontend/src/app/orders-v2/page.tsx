@@ -1233,7 +1233,7 @@ function OrdersV2Content() {
           {/* Order table — contained in a card so the list reads as a
               deliberate surface rather than bleeding to the page edge,
               with the mono status bar closing it off underneath. */}
-          <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-200 rounded-t-xl">
+          <div className="flex-1 min-h-0 overflow-auto [scrollbar-gutter:stable] bg-white border border-gray-200 rounded-t-xl">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">

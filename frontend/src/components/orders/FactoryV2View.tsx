@@ -1235,7 +1235,7 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
           </div>
 
           {/* Order table */}
-          <div className="flex-1 min-h-0 overflow-auto bg-white border border-gray-200 rounded-t-xl">
+          <div className="flex-1 min-h-0 overflow-auto [scrollbar-gutter:stable] bg-white border border-gray-200 rounded-t-xl">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">

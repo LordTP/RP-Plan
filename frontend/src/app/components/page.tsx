@@ -631,7 +631,7 @@ function CanonicalDetailPanel({
             )}
           </div>
         </div>
-        <div className="divide-y divide-slate-100 text-[12px] max-h-[calc(100vh-460px)] overflow-y-auto">
+        <div className="divide-y divide-slate-100 text-[12px] max-h-[calc(100vh-460px)] overflow-y-auto [scrollbar-gutter:stable]">
           {detail.instances.length === 0 && (
             <div className="text-center text-slate-400 py-8 text-xs">Nothing using this yet. It'll show up here once added to a style.</div>
           )}
