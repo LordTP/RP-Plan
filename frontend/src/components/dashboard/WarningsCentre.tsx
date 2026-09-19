@@ -270,17 +270,50 @@ export function FloatingWarningsCentre() {
     .reduce((s, w) => s + (w.count || 0), 0);
   const theirCount = total - ourCount;
 
+  // Light up only when the work is ours. Everything here is "a warning", so
+  // reacting to all of it would mean reacting permanently and saying nothing
+  // — 130 of the 135 are sitting with the factories. Our own court is what
+  // the team can clear today.
+  const onUs = ourCount > 0;
+
+  // Name the actual work rather than just counting it. "3 lab dips, 2 PPS"
+  // tells you what to open; "5 warnings" tells you to go and look.
+  const ourBreakdown = warnings
+    .filter(w => WAITING_ON_SOURCE_LAB.has(w.key) && w.count > 0)
+    .sort((a, b) => b.count - a.count);
+  // Count trails the title — the titles are already sentences ("Strike off
+  // needs approval"), so putting a number in front of one reads as broken
+  // English.
+  const breakdownText = ourBreakdown
+    .slice(0, 3)
+    .map(w => `${w.title} \u00d7${w.count}`)
+    .join('  ·  ')
+    + (ourBreakdown.length > 3 ? ` · +${ourBreakdown.length - 3} more` : '');
+
   return (
     <FloatingCentre
-      icon={<AlertTriangle className="w-5 h-5 text-amber-600" />}
-      tone="alert"
-      title="Warnings Centre"
+      icon={<AlertTriangle className={cn('w-5 h-5', onUs ? 'text-white' : 'text-amber-600')} />}
+      tone={onUs ? 'urgent' : 'alert'}
+      badge={onUs ? (
+        <span className="flex items-baseline gap-1 flex-shrink-0">
+          <span className="text-[30px] font-extrabold text-red-600 leading-none tabular-nums">
+            {ourCount}
+          </span>
+        </span>
+      ) : undefined}
+      title={onUs ? 'Waiting on Source Lab' : 'Warnings Centre'}
       subtitle={
         search
           ? `Filtering on "${search}"`
-          : `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
-            + (ourCount ? ` · ${ourCount} on us` : '')
-            + (theirCount ? ` · ${theirCount} on the factories` : '')
+          : onUs
+            ? <>
+                <span className="font-semibold">{breakdownText}</span>
+                {theirCount > 0 && (
+                  <span className="text-red-400"> · {theirCount} sitting with the factories</span>
+                )}
+              </>
+            : `${total} ${total === 1 ? 'item needs' : 'items need'} attention`
+              + (theirCount ? ` · ${theirCount} on the factories` : '')
       }
       actions={<SearchInput value={search} onChange={setSearch} />}
       panelClassName="h-[min(520px,calc(100vh-240px))]"

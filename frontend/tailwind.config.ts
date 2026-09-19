@@ -67,11 +67,18 @@ const config: Config = {
           '0%': { opacity: '0', transform: 'scale(0.96)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        // A slow red breath for something that needs attention but is not an
+        // emergency — the Warnings Centre when work is sitting with us.
+        'alert-glow': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(239, 68, 68, 0.10), 0 0 14px 0 rgba(239, 68, 68, 0.10)' },
+          '50%':      { boxShadow: '0 0 0 4px rgba(239, 68, 68, 0.13), 0 0 22px 3px rgba(239, 68, 68, 0.20)' },
+        },
       },
       animation: {
         'fade-in-up': 'fade-in-up 0.5s ease-out forwards',
         'fade-in': 'fade-in 0.2s ease-out forwards',
         'scale-in': 'scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'alert-glow': 'alert-glow 2.8s ease-in-out infinite',
       },
     },
   },
