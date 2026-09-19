@@ -235,6 +235,43 @@ export function FactoryComponentModal({
               </>
             )}
 
+            {/* Every style this component covers. The library card that opens
+                this modal no longer lists them -- it is one click target, not a
+                list -- so the list belongs here, where each one carries its own
+                status and dates. */}
+            {(detail?.instances?.length ?? 0) > 1 && (
+              <>
+                <SectionLabel>Styles using this ({detail.instances.length})</SectionLabel>
+                <ul className="space-y-1">
+                  {detail.instances.map((i: any) => (
+                    <li
+                      key={i.instance_id}
+                      className={cn('rounded-lg px-3 py-2 ring-1',
+                        i.order_id === order.id
+                          ? 'bg-primary-50 ring-primary-200'
+                          : 'bg-gray-50 ring-gray-200')}
+                    >
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="font-mono text-[12px] font-semibold text-gray-900">{i.style_code}</span>
+                        {i.order_id === order.id && (
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider text-primary-700">this one</span>
+                        )}
+                        <span className="ml-auto text-[11px] text-gray-500 whitespace-nowrap">
+                          {fmt(i.approved) || fmt(i.received) || '—'}
+                        </span>
+                      </div>
+                      <p className="text-[11.5px] text-gray-500 truncate mt-0.5">
+                        {[i.description, i.colour].filter(Boolean).join(' · ')}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11.5px] text-gray-500 mt-1.5">
+                  One submission covers all {detail.instances.length}.
+                </p>
+              </>
+            )}
+
             {comments.length > 0 && (
               <>
                 {/* Comments belong to the style, not to this component -- the
