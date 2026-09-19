@@ -445,7 +445,7 @@ function POGroupRows({
         </td>
         <td className="px-3 py-2 min-w-0">
           <button onClick={onToggle} className="flex items-center gap-2 text-left w-full min-w-0">
-            <span className="text-[11.5px] text-gray-600 truncate">{group.customer}</span>
+            <span className="text-[11.5px] font-bold text-gray-900 truncate">{group.customer}</span>
             {!isSupplier && group.factory && (
               <span className="text-[11px] text-gray-400 truncate flex-shrink-0">· {group.factory}</span>
             )}
