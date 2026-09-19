@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Ship, Plus, Search, Loader2, Truck, X, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Loader2, Truck, X, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
-import { shipmentDraftsApi, factoriesApi, type ShipmentDraftSummary, type ShipmentDraftStatus } from '@/lib/api';
+import { shipmentDraftsApi, factoriesApi, type ShipmentDraftSummary } from '@/lib/api';
 import { getShipmentReadiness, type ShipmentReadinessState } from '@/lib/shipmentReadiness';
 import { cn } from '@/lib/utils';
 
@@ -150,29 +150,21 @@ function DraftsListPage() {
   };
 
   return (
-    <AppShell title="Factory Shipping">
-      <div className="p-6">
-        <div
-          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
-          style={{ height: 'calc(100vh - 100px)' }}
-        >
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Ship className="w-5 h-5 text-teal-600" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-gray-900">Shipments</h3>
-                <p className="text-xs text-gray-500 truncate">
-                  {isLoading ? 'Loading…'
-                    : isSupplier
-                      ? user?.factory_name || '—'
-                      : 'All factories'}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+    <AppShell title="Factory Shipping" fullHeight>
+      <div className="w-full flex flex-col gap-4 h-full min-h-0">
+        {/* Page header — sits on the page, not inside a card, so this reads
+            like the rest of the app rather than a panel floating on it. */}
+        <div className="flex items-center gap-4 flex-wrap flex-shrink-0">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900">Shipments</h1>
+            <span className="text-sm text-gray-500 truncate hidden md:block">
+              {isLoading ? 'Loading…'
+                : isSupplier
+                  ? user?.factory_name || '—'
+                  : 'All factories'}
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -196,9 +188,10 @@ function DraftsListPage() {
                 {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                 New shipment
               </button>
-            </div>
           </div>
+        </div>
 
+        <div className="flex-1 min-h-0 bg-white rounded-xl ring-1 ring-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col">
           {/* Summary tiles — double as the band filter. */}
           <div className="grid grid-cols-4 border-b border-gray-100 flex-shrink-0">
             {BANDS.map((b) => (
@@ -309,11 +302,11 @@ function SummaryTile({
 function BandHeader({ band, count }: { band: (typeof BANDS)[number]; count: number }) {
   return (
     <div className={cn(
-      'px-6 py-1.5 border-y text-[10px] font-bold uppercase tracking-wide flex items-baseline gap-2 sticky top-0 z-10',
+      'px-6 py-2 border-y text-[13px] font-bold uppercase tracking-wide flex items-baseline gap-2.5 sticky top-0 z-10',
       TONE[band.tone].band
     )}>
       {band.title}
-      <span className="font-medium normal-case tracking-normal text-[11px] opacity-70">
+      <span className="font-semibold normal-case tracking-normal text-[12px] opacity-75">
         {count} · {band.hint}
       </span>
     </div>

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft, Search, Loader2, Check, ChevronDown, ChevronRight,
+  ArrowLeft, Search, Loader2, Check,
   AlertTriangle, X, Save, CheckCheck, Edit2, Undo2, Circle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -35,11 +35,9 @@ export default function DraftDetailPage() {
 
 function LoadingShell() {
   return (
-    <AppShell title="Factory Shipping">
-      <div className="p-6">
-        <div className="bg-white rounded-xl ring-1 ring-gray-100 p-12 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
+    <AppShell title="Factory Shipping" fullHeight>
+      <div className="w-full h-full flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
       </div>
     </AppShell>
   );
@@ -524,7 +522,7 @@ function DraftDetail() {
     setDidSeedExpanded(true);
   }, [pos, draft, savedSelection, didSeedExpanded]);
 
-  // Searching opens whatever matched, so results aren't hidden in a
+  // Searching opens whatever matched, so results aren't hidden inside a
   // collapsed PO.
   useEffect(() => {
     if (!search.trim()) return;
@@ -557,12 +555,9 @@ function DraftDetail() {
   }
 
   return (
-    <AppShell title="Factory Shipping">
-      <div className="p-6">
-        <div
-          className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)] ring-1 ring-gray-100 overflow-hidden flex flex-col"
-          style={{ height: 'calc(100vh - 100px)' }}
-        >
+    <AppShell title="Factory Shipping" fullHeight>
+      <div className="w-full flex flex-col h-full min-h-0">
+        <div className="flex-1 min-h-0 bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-gray-100 overflow-hidden flex flex-col">
           {/* Header */}
           <div className={cn(
             'px-6 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0',
@@ -689,28 +684,6 @@ function DraftDetail() {
                     </span>
                   )}
                   <button
-                    onClick={handleDiscard}
-                    disabled={isSaving || !isDirty}
-                    className="px-3 py-1.5 text-xs font-semibold border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1.5"
-                    title="Put everything back to the last saved version"
-                  >
-                    <Undo2 className="w-3.5 h-3.5" />
-                    Discard
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving || !isDirty}
-                    className={cn(
-                      'px-3 py-1.5 text-xs font-semibold rounded-md disabled:opacity-40 flex items-center gap-1.5',
-                      isDirty
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'border border-gray-300 text-gray-700'
-                    )}
-                  >
-                    {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    {isDirty ? 'Save' : 'Saved'}
-                  </button>
-                  <button
                     onClick={openConfirmModal}
                     disabled={isConfirming || blockingChecks.length > 0}
                     title={blockingChecks.length > 0
@@ -732,7 +705,7 @@ function DraftDetail() {
             {/* LEFT: SKU picker (read-only when SKUs are locked — i.e. once
                 the shipment is confirmed; "edit shipping fields" mode unlocks
                 only the right column, never the SKU picker). */}
-            <div className="bg-gray-50/40 flex flex-col min-h-0">
+            <div className="bg-white flex flex-col min-h-0">
               {skusLocked ? (
                 <LockedSkusList draft={draft} />
               ) : (
@@ -755,26 +728,26 @@ function DraftDetail() {
               )}
             </div>
 
-            {/* RIGHT: shared-fields form */}
+            {/* RIGHT: shared-fields form. Each field is a row with a
+                hairline under it rather than a floating input — reads as one
+                record card instead of a stack of loose controls. */}
             <div className="bg-white flex flex-col min-h-0">
-              <div className="px-5 py-4 flex-1 overflow-y-auto">
-                <div className="text-xs font-semibold text-gray-700 mb-1">
-                  {editingConfirmed ? 'Edit shipping fields' : 'Shipment details'}
+              <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                  {editingConfirmed ? 'Edit shipping details' : 'Shipment details'}
                 </div>
-                <p className="text-[11px] text-gray-500 mb-4">
+                <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
                   {editingConfirmed
-                    ? `Update any of the fields below — saving will re-push the new values to all ${stats.total} SKU${stats.total === 1 ? '' : 's'} in this shipment. SKUs and quantities can't be changed.`
+                    ? `Saving re-pushes these to all ${stats.total} style${stats.total === 1 ? '' : 's'}. Styles and quantities can't be changed.`
                     : isLocked
-                    ? 'These fields are locked. They were applied to every SKU on confirmation.'
-                    : `These apply to all ${stats.total} selected style${stats.total === 1 ? '' : 's'} when you confirm.`}
+                    ? 'Locked. These were applied to every style on confirmation.'
+                    : `Applied to all ${stats.total} selected style${stats.total === 1 ? '' : 's'} when you confirm.`}
                 </p>
+              </div>
 
-                <div className="space-y-4">
-                  <FieldLabel>FCL / LCL</FieldLabel>
-                  <div className={cn(
-                    'inline-flex rounded-md border border-gray-300 p-0.5 bg-gray-50 w-full',
-                    changedFields.has('fcl_lcl') && 'ring-2 ring-blue-200 border-blue-400'
-                  )}>
+              <div className="flex-1 overflow-y-auto">
+                <Field label="How it is going" changed={changedFields.has('fcl_lcl')}>
+                  <div className="flex gap-1.5">
                     {(['FCL', 'LCL', 'AIR'] as const).map((opt) => (
                       <button
                         key={opt}
@@ -782,96 +755,106 @@ function DraftDetail() {
                         onClick={() => !isLocked && setFclLcl(opt)}
                         disabled={isLocked}
                         className={cn(
-                          'flex-1 px-3 py-1.5 text-xs font-semibold rounded transition-colors',
-                          fclLcl === opt ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900',
-                          isLocked && 'cursor-default'
+                          'flex-1 px-3 py-1.5 text-[11px] font-bold rounded-md border transition-colors',
+                          fclLcl === opt
+                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                            : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700',
+                          isLocked && 'cursor-default hover:border-gray-200 hover:text-gray-500'
                         )}
                       >
                         {opt}
                       </button>
                     ))}
                   </div>
+                </Field>
 
-                  <div>
-                    <FieldLabel>Vessel name</FieldLabel>
-                    <input
-                      type="text"
-                      value={vesselName}
-                      onChange={(e) => setVesselName(e.target.value)}
+                <Field label="Vessel name" changed={changedFields.has('vessel_name')}>
+                  <input
+                    type="text"
+                    value={vesselName}
+                    onChange={(e) => setVesselName(e.target.value)}
+                    disabled={isLocked}
+                    className={cn(
+                      'w-full px-2.5 py-1.5 text-[11.5px] border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-700',
+                      changedFields.has('vessel_name')
+                        ? 'border-blue-300 bg-blue-50/40 font-semibold'
+                        : 'border-gray-200'
+                    )}
+                    placeholder="e.g. OOCL VALENCIA 011W"
+                  />
+                </Field>
+
+                <Field label="Vessel ETD" changed={changedFields.has('vessel_etd')}>
+                  <div className={cn('rounded-md', changedFields.has('vessel_etd') && 'ring-1 ring-blue-300')}>
+                    <DatePickerInput
+                      value={vesselEtd}
+                      onChange={setVesselEtd}
                       disabled={isLocked}
-                      className={cn(
-                        'w-full px-3 py-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-700',
-                        changedFields.has('vessel_name') && 'ring-2 ring-blue-200 border-blue-400 bg-blue-50/40'
-                      )}
-                      placeholder="e.g. OOCL VALENCIA 011W"
+                      variant="block"
                     />
                   </div>
+                </Field>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <FieldLabel>Vessel ETD</FieldLabel>
-                      <div className={cn('rounded-md', changedFields.has('vessel_etd') && 'ring-2 ring-blue-200')}>
-                        <DatePickerInput
-                          value={vesselEtd}
-                          onChange={setVesselEtd}
-                          disabled={isLocked}
-                          variant="block"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>ETA to port</FieldLabel>
-                      <div className={cn(
-                        'rounded-md',
-                        datesImpossible ? 'ring-2 ring-red-300' : changedFields.has('vessel_eta_to_port') && 'ring-2 ring-blue-200'
-                      )}>
-                        <DatePickerInput
-                          value={vesselEtaToPort}
-                          onChange={setVesselEtaToPort}
-                          disabled={isLocked}
-                          variant="block"
-                        />
-                      </div>
-                    </div>
+                <Field
+                  label="ETA to port"
+                  changed={changedFields.has('vessel_eta_to_port')}
+                  error={datesImpossible}
+                >
+                  <div className={cn(
+                    'rounded-md',
+                    datesImpossible
+                      ? 'ring-1 ring-red-400'
+                      : changedFields.has('vessel_eta_to_port') && 'ring-1 ring-blue-300'
+                  )}>
+                    <DatePickerInput
+                      value={vesselEtaToPort}
+                      onChange={setVesselEtaToPort}
+                      disabled={isLocked}
+                      variant="block"
+                    />
                   </div>
-
                   {datesImpossible && (
-                    <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-[11px] text-red-900 flex items-start gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
-                      <span>The ETA is before the ETD — the ship would arrive before it leaves. Fix one of the dates before saving.</span>
-                    </div>
+                    <p className="mt-1 text-[10.5px] text-red-700 leading-snug">
+                      This lands before the vessel leaves. Fix one of the dates before saving.
+                    </p>
                   )}
+                </Field>
 
-                  <div>
-                    <FieldLabel>Tracking number (P-number)</FieldLabel>
-                    <input
-                      type="text"
-                      value={trackingReference}
-                      onChange={(e) => setTrackingReference(e.target.value)}
-                      disabled={isLocked}
-                      className={cn(
-                        'w-full px-3 py-2 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 font-mono disabled:bg-gray-50 disabled:text-gray-700',
-                        changedFields.has('tracking_reference') && 'ring-2 ring-blue-200 border-blue-400 bg-blue-50/40'
-                      )}
-                      placeholder="P260256"
-                    />
-                  </div>
+                <Field
+                  label="Tracking number (P-number)"
+                  changed={changedFields.has('tracking_reference')}
+                  hint="optional"
+                >
+                  <input
+                    type="text"
+                    value={trackingReference}
+                    onChange={(e) => setTrackingReference(e.target.value)}
+                    disabled={isLocked}
+                    className={cn(
+                      'w-full px-2.5 py-1.5 text-[11.5px] font-mono border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-700',
+                      changedFields.has('tracking_reference')
+                        ? 'border-blue-300 bg-blue-50/40 font-semibold'
+                        : 'border-gray-200'
+                    )}
+                    placeholder="P260256"
+                  />
+                </Field>
 
+                <div className="p-3">
                   {!isLocked && !editingConfirmed && (
                     <ReadinessChecklist checks={checklist} blocking={blockingChecks.length} />
                   )}
                   {editingConfirmed && (
                     <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-[11px] text-red-900 leading-relaxed">
-                      <strong>Saving will overwrite the current values on every SKU in this shipment.</strong> Use this when something genuinely changed (e.g. vessel switched, ETA delayed). The change is logged in each order's history.
+                      <strong>Saving overwrites the current values on every style in this shipment.</strong> Use this when something genuinely changed (vessel switched, ETA delayed). The change is logged in each order&apos;s history.
                     </div>
                   )}
-
-                  <div className="text-[11px] text-gray-500 leading-relaxed border-t border-gray-100 pt-3 mt-3">
-                    Estimated delivery to customer auto-calculates per-row from ETA + FCL/LCL (FCL +5d / LCL +7d / AIR +2d).
-                  </div>
+                  <p className="text-[10.5px] text-gray-400 leading-relaxed mt-3">
+                    Estimated delivery to customer auto-calculates per style from
+                    ETA + container type (FCL +5d / LCL +7d / AIR +2d).
+                  </p>
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -994,8 +977,32 @@ function ReadinessChecklist({
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1.5 block">{children}</label>;
+/** One labelled row in the shipment-details column. Hairline underneath, so
+ *  the column reads as a single record rather than loose inputs. */
+function Field({
+  label, children, changed, hint, error,
+}: {
+  label: string;
+  children: React.ReactNode;
+  changed?: boolean;
+  hint?: string;
+  error?: boolean;
+}) {
+  return (
+    <div className={cn(
+      'px-3 py-2 border-b border-gray-100',
+      error ? 'bg-red-50/40' : changed && 'bg-blue-50/30'
+    )}>
+      <div className="flex items-baseline gap-1.5 mb-1">
+        <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">{label}</label>
+        {hint && <span className="text-[9px] text-gray-400 lowercase tracking-normal">{hint}</span>}
+        {changed && (
+          <span className="ml-auto text-[9px] font-bold text-blue-600 uppercase tracking-wide">edited</span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 function ConfirmedPill({ draft }: { draft: ShipmentDraftDetail }) {
@@ -1035,12 +1042,9 @@ function PickerColumn({
 }) {
   return (
     <>
-      <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-semibold text-gray-700">Select SKUs to include</div>
-          <div className="text-[10px] text-gray-500">
-            {selectedCount} selected · {selectedUnits.toLocaleString()} units
-          </div>
+      <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+          Select SKUs to include
         </div>
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1048,19 +1052,22 @@ function PickerColumn({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by PO# or style code…"
+            placeholder="Filter by PO, style code, description or colour…"
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
           />
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+
+      {/* Flat list: a PO strip, then its styles directly under it. No nested
+          cards — the picker is a table you scan, not a stack of panels. */}
+      <div className="flex-1 overflow-y-auto bg-white">
         {pos.length === 0 ? (
           <div className="text-center py-12 text-xs text-gray-500">
-            {search ? 'No POs match your filter' : 'No orders for this factory'}
+            {search ? 'Nothing matches your filter' : 'No orders for this factory'}
           </div>
         ) : (
           pos.map((po) => (
-            <PoCard
+            <PoGroup
               key={po.po_number}
               po={po}
               expanded={expandedPo.has(po.po_number)}
@@ -1080,11 +1087,21 @@ function PickerColumn({
           ))
         )}
       </div>
+
+      {/* Running total, pinned under the list. */}
+      <div className="px-4 py-2.5 border-t border-gray-200 bg-[#fafbfc] flex items-center gap-2 flex-shrink-0">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 tabular-nums">
+          {selectedCount} selected · {selectedUnits.toLocaleString()} units
+        </span>
+        <span className="ml-auto text-[11px] font-semibold text-gray-500">
+          Part-shipping is fine — set the quantity per style
+        </span>
+      </div>
     </>
   );
 }
 
-function PoCard({
+function PoGroup({
   po, expanded, onToggleExpand,
   linkedOrderIds, linkedQuantityById, stagedOrderIds,
   currentDraftId,
@@ -1105,58 +1122,57 @@ function PoCard({
   const total = po.styles.length;
   const allSelected = selectedCount === total && total > 0;
   const someSelected = selectedCount > 0 && !allSelected;
-
-  const cardClass = allSelected
-    ? 'bg-white rounded-md border border-blue-300 ring-1 ring-blue-100'
-    : someSelected
-    ? 'bg-white rounded-md border border-blue-200'
-    : 'bg-white rounded-md border border-gray-200';
-
-  const totalUnitsAcrossPo = po.styles.reduce((s, st) => s + (st.total_quantity || 0), 0);
+  const selectedUnits = po.styles.reduce(
+    (sum, st) => sum + (linkedOrderIds.has(st.order_id) ? (linkedQuantityById.get(st.order_id) || 0) : 0), 0,
+  );
 
   return (
-    <div className={cardClass}>
-      <div className={cn(
-        'px-3 py-2 flex items-center gap-2 cursor-pointer',
-        allSelected || someSelected ? 'bg-blue-50/40 border-b border-blue-100' : 'hover:bg-gray-50',
-        expanded && 'border-b border-gray-100'
-      )} onClick={onToggleExpand}>
+    <div>
+      {/* PO strip — sticky so you always know which PO you're scrolling in. */}
+      <div
+        className={cn(
+          'px-4 py-2 flex items-center gap-2.5 cursor-pointer border-b sticky top-0 z-10 transition-colors',
+          selectedCount > 0
+            ? 'bg-[#fbfcfe] border-gray-100 hover:bg-blue-50/50'
+            : 'bg-white border-gray-100 hover:bg-gray-50'
+        )}
+        onClick={onToggleExpand}
+      >
         <input
           type="checkbox"
           checked={allSelected}
           ref={(el) => { if (el) el.indeterminate = someSelected; }}
-          onChange={(e) => { e.stopPropagation(); onTogglePo(po); }}
+          onChange={() => onTogglePo(po)}
           onClick={(e) => e.stopPropagation()}
-          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0 cursor-pointer"
+          title={allSelected ? 'Remove every style on this PO' : 'Add every style on this PO'}
         />
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-xs text-gray-900">
-            {po.po_number}
-            {po.china_orderbook_ref && <span className="text-gray-500 font-normal"> — {po.china_orderbook_ref}</span>}
-          </div>
-          <div className="text-[10px] text-gray-500">
-            {po.customer || '—'} · {total} style{total === 1 ? '' : 's'} · {totalUnitsAcrossPo.toLocaleString()} units
-            {selectedCount > 0 && <span className="text-blue-700 font-semibold"> · {selectedCount} of {total} selected</span>}
-          </div>
-        </div>
-        {expanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+        <span className="font-mono text-[13px] font-bold text-gray-900 flex-shrink-0">{po.po_number}</span>
+        <span className="text-[12px] text-gray-500 truncate min-w-0 flex-1">
+          {[po.customer, po.china_orderbook_ref].filter(Boolean).join(' · ') || '—'}
+        </span>
+        <span className={cn(
+          'text-[12px] font-mono tabular-nums flex-shrink-0',
+          selectedCount > 0 ? 'text-gray-600' : 'text-gray-400'
+        )}>
+          {selectedCount > 0
+            ? `${selectedCount} of ${total} · ${selectedUnits.toLocaleString()}`
+            : `${selectedCount} of ${total}`}
+        </span>
       </div>
-      {expanded && (
-        <div className="divide-y divide-gray-100">
-          {po.styles.map((s) => (
-            <StyleRow
-              key={s.order_id}
-              style={s}
-              isSelected={linkedOrderIds.has(s.order_id)}
-              isStaged={stagedOrderIds.has(s.order_id)}
-              currentDraftId={currentDraftId}
-              quantityInDraft={linkedQuantityById.get(s.order_id) ?? null}
-              onToggle={() => onToggleStyle(s.order_id)}
-              onQuantityChange={(qty) => onQuantityChange(s.order_id, qty)}
-            />
-          ))}
-        </div>
-      )}
+
+      {expanded && po.styles.map((s) => (
+        <StyleRow
+          key={s.order_id}
+          style={s}
+          isSelected={linkedOrderIds.has(s.order_id)}
+          isStaged={stagedOrderIds.has(s.order_id)}
+          currentDraftId={currentDraftId}
+          quantityInDraft={linkedQuantityById.get(s.order_id) ?? null}
+          onToggle={() => onToggleStyle(s.order_id)}
+          onQuantityChange={(qty) => onQuantityChange(s.order_id, qty)}
+        />
+      ))}
     </div>
   );
 }
@@ -1167,8 +1183,8 @@ function StyleRow({
 }: {
   style: PickerStyle;
   isSelected: boolean;
-  /** Ticked or re-quantified since the last save — drawn so the user can see
-   *  exactly which rows Save is going to write. */
+  /** Ticked, unticked or re-quantified since the last save — drawn so the
+   *  user can see exactly which rows Save is going to write. */
   isStaged: boolean;
   currentDraftId: number;
   quantityInDraft: number | null;
@@ -1185,93 +1201,107 @@ function StyleRow({
   useEffect(() => { setLocalQty(quantityInDraft != null ? String(quantityInDraft) : ''); }, [quantityInDraft]);
 
   const total = style.total_quantity || 0;
+  const isPartial = isSelected && quantityInDraft != null && total > 0 && quantityInDraft < total;
+  const isOver = isSelected && quantityInDraft != null && total > 0 && quantityInDraft > total;
 
   return (
-    <div className={cn(
-      'px-3 pl-9 py-1.5 text-xs relative',
-      isStaged && 'border-l-2 border-amber-400 pl-[34px]',
-      isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'
-    )}>
-      {/* Whole row toggles selection — checkbox is tiny and was annoying to
-          aim at. The qty input below stops propagation so editing the
-          number doesn't accidentally untick the row. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(); } }}
-        className="flex items-center gap-2 cursor-pointer select-none"
-      >
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggle}
-          onClick={(e) => e.stopPropagation()}
-          className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-        />
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="font-mono text-[11px] text-gray-700 flex-shrink-0">{style.style_code || `#${style.order_id}`}</span>
-          <span className="text-gray-500 truncate flex-1">{style.description || '—'}</span>
-          {style.colour && (
-            <span className="text-gray-500 flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] font-medium uppercase tracking-wide">
-              {style.colour}
-            </span>
-          )}
-        </div>
-        {isSelected ? (
-          <div
-            className="flex items-center gap-1 flex-shrink-0"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <input
-              type="number"
-              min={1}
-              value={localQty}
-              onChange={(e) => setLocalQty(e.target.value)}
-              onBlur={() => {
-                // No upper cap — factories sometimes ship over the PO line
-                // (overage runs, replacements). Backend allows any qty > 0.
-                const num = parseInt(localQty, 10);
-                if (!isNaN(num) && num !== quantityInDraft && num > 0) {
-                  onQuantityChange(num);
-                } else if (isNaN(num) || num <= 0) {
-                  setLocalQty(quantityInDraft != null ? String(quantityInDraft) : '');
-                }
-              }}
-              className="w-16 px-1.5 py-0.5 text-[11px] text-right border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-            />
-            <span className="text-[10px] text-gray-400 whitespace-nowrap">of {total.toLocaleString()}</span>
-            {isStaged && (
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" title="Not saved yet" />
-            )}
-          </div>
-        ) : (
-          <span className="text-[10px] text-gray-400 flex-shrink-0">{total.toLocaleString()}</span>
-        )}
-      </div>
-      {/* Conflict sub-line — sits indented below the row when applicable. */}
-      {(inConfirmed || inOtherDraft) && (
-        <div className="pl-[22px] mt-0.5">
-          {inConfirmed ? (
-            <span
-              title={`Confirmed in ${inConfirmed.reference}. Confirming this draft will overwrite those values.`}
-              className="text-[10px] font-medium text-red-600 inline-flex items-center gap-1"
-            >
-              <AlertTriangle className="w-2.5 h-2.5" />
-              Will overwrite {inConfirmed.reference}
-            </span>
-          ) : inOtherDraft ? (
-            <span
-              title={`Also in draft ${inOtherDraft.reference}`}
-              className="text-[10px] font-medium text-amber-600 inline-flex items-center gap-1"
-            >
-              <span className="w-1 h-1 rounded-full bg-amber-500" />
-              Already in {inOtherDraft.reference}
-            </span>
-          ) : null}
-        </div>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(); } }}
+      className={cn(
+        'grid grid-cols-[18px_minmax(0,1fr)_auto] gap-3 items-center py-1.5 pr-0 pl-8',
+        'cursor-pointer select-none border-b border-gray-100 transition-colors',
+        isSelected ? 'bg-blue-50 hover:bg-blue-100/60' : 'hover:bg-gray-50'
       )}
+    >
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+      />
+
+      <div className="min-w-0 flex items-baseline gap-2">
+        <span className={cn(
+          'font-mono text-[12.5px] flex-shrink-0',
+          isSelected ? 'text-gray-900 font-semibold' : 'text-gray-700'
+        )}>
+          {style.style_code || `#${style.order_id}`}
+        </span>
+        <span className="text-gray-500 truncate text-[12.5px] min-w-0">
+          {style.description || '—'}
+          {style.colour && <span className="text-gray-500"> · {style.colour}</span>}
+        </span>
+        {/* Inline, not a second line — a sub-line made these rows twice the
+            height of every other one. */}
+        {inConfirmed ? (
+          <span
+            title={`Confirmed on ${inConfirmed.reference}. Confirming this shipment overwrites those values.`}
+            className="text-[12px] font-bold text-red-600 flex-shrink-0"
+          >
+            · already on {inConfirmed.reference}
+          </span>
+        ) : inOtherDraft ? (
+          <span
+            title={`Also on ${inOtherDraft.reference}`}
+            className="text-[12px] font-bold text-blue-600 flex-shrink-0"
+          >
+            · also on {inOtherDraft.reference}
+          </span>
+        ) : null}
+      </div>
+
+      {/* Quantity has its own column and stops click propagation, so
+          clipping the input's edge can't untick the style. No separate
+          background — that cut the row's tint in half. */}
+      <div
+        className="flex items-center gap-2 flex-shrink-0 pr-4"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {(isPartial || isOver) && (
+          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+            {isPartial ? 'part' : 'over'}
+          </span>
+        )}
+        <span className="text-[11px] font-mono text-gray-400 tabular-nums">
+          of {total.toLocaleString()}
+        </span>
+        {isSelected ? (
+          <input
+            type="number"
+            min={1}
+            value={localQty}
+            onChange={(e) => setLocalQty(e.target.value)}
+            onBlur={() => {
+              // No upper cap — factories sometimes ship over the PO line
+              // (overage runs, replacements). Backend allows any qty > 0.
+              const num = parseInt(localQty, 10);
+              if (!isNaN(num) && num !== quantityInDraft && num > 0) {
+                onQuantityChange(num);
+              } else if (isNaN(num) || num <= 0) {
+                setLocalQty(quantityInDraft != null ? String(quantityInDraft) : '');
+              }
+            }}
+            className={cn(
+              'w-[74px] px-2 py-1 text-[12px] text-right border rounded font-mono tabular-nums',
+              'focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400',
+              isPartial || isOver ? 'border-amber-300 bg-amber-50/60 text-amber-900' : 'border-gray-300'
+            )}
+          />
+        ) : (
+          <span className="w-[74px] px-2 py-1 text-[12px] text-right text-gray-300 border border-gray-200 rounded font-mono">
+            —
+          </span>
+        )}
+        <span
+          className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isStaged ? 'bg-amber-500' : 'bg-transparent')}
+          title={isStaged ? 'Not saved yet' : undefined}
+        />
+      </div>
     </div>
   );
 }
@@ -1524,31 +1554,74 @@ function ConfirmShipmentModal({
 }
 
 function LockedSkusList({ draft }: { draft: ShipmentDraftDetail }) {
+  // Group by PO so a confirmed shipment reads the same way it was built.
+  const groups = useMemo(() => {
+    const map = new Map<string, ShipmentDraftDetail['orders']>();
+    for (const o of draft.orders) {
+      const key = o.po_number || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
+    }
+    return Array.from(map.entries()).map(([po_number, orders]) => ({
+      po_number,
+      orders,
+      units: orders.reduce((s, o) => s + (o.quantity || 0), 0),
+    }));
+  }, [draft.orders]);
+
+  const totalUnits = draft.orders.reduce((s, o) => s + (o.quantity || 0), 0);
+
   return (
     <>
-      <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold text-gray-700">SKUs in this shipment</div>
-          <div className="text-[10px] text-gray-500">
-            {draft.orders.length} SKU{draft.orders.length === 1 ? '' : 's'} ·{' '}
-            {draft.orders.reduce((s, o) => s + (o.quantity || 0), 0).toLocaleString()} units
-          </div>
+      <div className="px-4 py-2.5 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="text-xs font-semibold text-gray-700">Styles on this shipment</div>
+        <div className="text-[11px] text-gray-500 mt-0.5">
+          Locked — these shipped. Vessel details can still be corrected.
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-        {draft.orders.map((o) => (
-          <div key={o.link_id} className="bg-white rounded-md border border-gray-200 px-3 py-2 flex items-center gap-2 text-xs">
-            <span className="font-mono text-[11px] text-gray-700">{o.po_number || `#${o.order_id}`}</span>
-            {o.style_code && <span className="font-mono text-[11px] text-gray-700">· {o.style_code}</span>}
-            <span className="text-gray-500 truncate flex-1">{o.description || '—'}</span>
-            {o.colour && <span className="text-gray-400 truncate max-w-[80px]">{o.colour}</span>}
-            <span className="text-emerald-600 text-[11px] flex items-center gap-1 flex-shrink-0">
-              <Check className="w-3 h-3" />
-              {(o.quantity || 0).toLocaleString()}
-              <span className="text-gray-400">/{(o.total_quantity || 0).toLocaleString()}</span>
-            </span>
+
+      <div className="flex-1 overflow-y-auto bg-white">
+        {groups.map((g) => (
+          <div key={g.po_number}>
+            <div className="px-4 py-1.5 flex items-center gap-2.5 bg-gray-50 border-y border-gray-100 sticky top-0 z-10">
+              <span className="font-mono text-xs font-bold text-gray-900">{g.po_number}</span>
+              <span className="text-[11px] text-gray-500 ml-auto tabular-nums">
+                {g.orders.length} style{g.orders.length === 1 ? '' : 's'} · {g.units.toLocaleString()}
+              </span>
+            </div>
+            {g.orders.map((o) => {
+              const isPartial = o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity;
+              return (
+                <div key={o.link_id} className="grid grid-cols-[16px_minmax(0,1fr)_auto] gap-2.5 items-center pl-9 pr-4 py-1.5 border-b border-gray-100 text-xs">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="font-mono text-[11px] font-semibold text-gray-900 flex-shrink-0">
+                      {o.style_code || `#${o.order_id}`}
+                    </span>
+                    <span className="text-gray-500 truncate text-[11.5px]">{o.description || '—'}</span>
+                    {o.colour && (
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 flex-shrink-0">
+                        {o.colour}
+                      </span>
+                    )}
+                  </div>
+                  <span className={cn('tabular-nums flex-shrink-0', isPartial ? 'text-amber-700' : 'text-gray-700')}>
+                    {(o.quantity || 0).toLocaleString()}
+                    <span className="text-gray-400">/{(o.total_quantity || 0).toLocaleString()}</span>
+                    {isPartial && <span className="text-[9px] uppercase tracking-wide font-bold ml-1">part</span>}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ))}
+      </div>
+
+      <div className="px-4 py-2 border-t border-gray-200 bg-white flex items-center gap-2 flex-shrink-0">
+        <span className="text-xs font-bold text-gray-900 tabular-nums">
+          {draft.orders.length} style{draft.orders.length === 1 ? '' : 's'}
+        </span>
+        <span className="text-xs text-gray-500 tabular-nums">· {totalUnits.toLocaleString()} units</span>
       </div>
     </>
   );

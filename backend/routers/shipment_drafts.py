@@ -19,6 +19,7 @@ from models import (
     DateChangeHistory,
 )
 from auth import get_current_user, get_current_internal_user
+from order_status import refresh_all
 
 
 router = APIRouter()
@@ -82,6 +83,35 @@ def _next_reference(db: Session, today: datetime) -> str:
         ShipmentDraft.reference.like(f'{prefix}%'),
     ).scalar() or 0
     return f'{prefix}{count + 1:03d}'
+
+
+def _resync_statuses(db, orders, current_user, role_label):
+    """Re-derive order status through the engine and log anything that moved.
+
+    Status is derived from the fields, so writing one by hand here would be a
+    second source of truth — which is exactly how the old code ended up
+    writing 'Shipped' while the engine wrote 'SHIPPED'. Running the engine
+    also means BOOKED lands the instant a vessel and its dates are confirmed,
+    rather than whenever someone next loads /orders.
+    """
+    before = {o.id: o.status for o in orders}
+    db.flush()  # make the field writes visible to the engine's query
+    refresh_all(db)
+    moved = 0
+    for o in orders:
+        old = before.get(o.id)
+        if o.status == old:
+            continue
+        db.add(DateChangeHistory(
+            po_id=o.id,
+            user_id=current_user.id,
+            field_name='status',
+            old_value=str(old) if old is not None else None,
+            new_value=str(o.status) if o.status is not None else None,
+            source=role_label,
+        ))
+        moved += 1
+    return moved
 
 
 def _check_sailing_dates(etd, eta):
@@ -514,10 +544,12 @@ async def update_confirmed_shipping(
         'tracking_reference': draft.tracking_reference,
     }
     links = db.query(ShipmentDraftOrder).filter(ShipmentDraftOrder.draft_id == draft.id).all()
+    touched = []
     for link in links:
         order = db.query(PurchaseOrder).filter(PurchaseOrder.id == link.order_id).first()
         if order is None:
             continue
+        touched.append(order)
         for field, new_value in fields_to_apply.items():
             old_value = getattr(order, field, None)
             if old_value != new_value:
@@ -537,22 +569,7 @@ async def update_confirmed_shipping(
             days = 7 if mode == 'LCL' else 2 if mode == 'AIR' else 5
             order.estimated_del_to_customer = vessel_eta + timedelta(days=days)
 
-        # Auto-flip status to 'Shipped' whenever tracking_reference is applied.
-        # Same guard as /confirm — keeps status in sync with the Shipped tab
-        # filter (which is purely tracking_reference IS NOT NULL).
-        _TERMINAL_STATUSES = {'Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled'}
-        _tr = draft.tracking_reference
-        if _tr and str(_tr).strip() and order.status not in _TERMINAL_STATUSES:
-            _old_status = order.status
-            db.add(DateChangeHistory(
-                po_id=order.id,
-                user_id=current_user.id,
-                field_name='status',
-                old_value=str(_old_status) if _old_status is not None else None,
-                new_value='Shipped',
-                source=role_label,
-            ))
-            order.status = 'Shipped'
+    _resync_statuses(db, touched, current_user, role_label)
 
     db.commit()
     db.refresh(draft)
@@ -605,10 +622,12 @@ async def confirm_draft(
         'tracking_reference': draft.tracking_reference,
     }
 
+    touched = []
     for link in links:
         order = db.query(PurchaseOrder).filter(PurchaseOrder.id == link.order_id).first()
         if order is None:
             continue
+        touched.append(order)
         for field, new_value in fields_to_apply.items():
             if new_value is None:
                 continue  # leave the order's existing value alone if the draft didn't set it
@@ -635,22 +654,8 @@ async def confirm_draft(
             days = 7 if mode == 'LCL' else 2 if mode == 'AIR' else 5
             order.estimated_del_to_customer = vessel_eta + timedelta(days=days)
 
-        # Auto-flip status to 'Shipped' whenever the draft pushed a
-        # tracking_reference onto the order. The /orders Shipped tab filters
-        # purely on tracking_reference IS NOT NULL, so status must follow.
-        _TERMINAL_STATUSES = {'Shipped', 'Delivered', 'Complete', 'Completed', 'Cancelled'}
-        _tr = draft.tracking_reference
-        if _tr and str(_tr).strip() and order.status not in _TERMINAL_STATUSES:
-            _old_status = order.status
-            db.add(DateChangeHistory(
-                po_id=order.id,
-                user_id=current_user.id,
-                field_name='status',
-                old_value=str(_old_status) if _old_status is not None else None,
-                new_value='Shipped',
-                source=role_label,
-            ))
-            order.status = 'Shipped'
+
+    _resync_statuses(db, touched, current_user, role_label)
 
     draft.status = 'confirmed'
     draft.confirmed_at = now
