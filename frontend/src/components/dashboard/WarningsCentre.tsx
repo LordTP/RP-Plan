@@ -203,42 +203,152 @@ export function WarningsCentre({
               {selectedWarning.count} flagged
             </span>
           </div>
-          <div className="space-y-1">
-            {selectedWarning.items.map((item: any, i: number) => (
-              <Link
-                key={i}
-                href={
-                  item.order_id
-                    ? `/design?openStyle=${item.order_id}`
-                    : `/design?expandPO=${encodeURIComponent(item.po_number)}`
-                }
-                className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors group"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', selStyle.dot)} />
-                  <span className="text-sm font-bold text-gray-900 flex-shrink-0">{item.po_number}</span>
-                  {item.style_code && <span className="text-xs text-gray-500 flex-shrink-0">{item.style_code}</span>}
-                  {item.component && <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">{item.component}</span>}
-                  <span className="text-xs text-gray-400 truncate">{item.customer} · {item.factory}</span>
-                  {item.style_count > 1 && !item.style_code && <span className="text-[10px] text-gray-400 flex-shrink-0">{item.style_count} styles</span>}
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {item.days_since != null && (
-                    <span className={cn(
-                      'text-[10px] font-bold px-1.5 py-0.5 rounded-full',
-                      item.days_since >= 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                    )}>
-                      {item.days_since}d
-                    </span>
-                  )}
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 transition-colors" />
-                </div>
-              </Link>
-            ))}
-          </div>
+          <PoGroupedItems items={selectedWarning.items} dotClass={selStyle.dot} />
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The detail pane, grouped by PO.
+ *
+ * Flat, one fit-sample warning was 109 rows -- 34 of them on PO 5279 alone,
+ * every one identical apart from the style code: same customer, same factory,
+ * same 37 days. That is 34 rows carrying one fact. Grouped it is 15 rows, and
+ * the styles are a click away for when you want them.
+ *
+ * A PO holding a single item is drawn as that item, not as a band wrapping
+ * one row -- a heading, a count and a chevron around one line is three levels
+ * of furniture for nothing.
+ */
+function PoGroupedItems({ items, dotClass }: { items: any[]; dotClass: string }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const groups = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const it of items) {
+      const key = it.po_number || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(it);
+    }
+    return Array.from(map.entries())
+      .map(([po, rows]) => ({
+        po,
+        rows,
+        first: rows[0],
+        worst: Math.max(...rows.map(r => r.days_since ?? 0)),
+        // Styles on one PO usually share a trigger date, so a spread is worth
+        // saying out loud rather than hiding behind the maximum.
+        spread: new Set(rows.map(r => r.days_since ?? 0)).size > 1,
+      }))
+      // Longest-waiting first — the reason anyone opens this panel.
+      .sort((a, b) => b.worst - a.worst || b.rows.length - a.rows.length);
+  }, [items]);
+
+  const toggle = (po: string) => {
+    const next = new Set(open);
+    if (next.has(po)) next.delete(po); else next.add(po);
+    setOpen(next);
+  };
+
+  return (
+    <div className="space-y-1">
+      {groups.map(g => {
+        // One item on this PO: draw the item itself, no band.
+        if (g.rows.length === 1) {
+          return <ItemRow key={g.po} item={g.first} dotClass={dotClass} />;
+        }
+        const isOpen = open.has(g.po);
+        return (
+          <div key={g.po} className={cn('rounded-lg', isOpen && 'bg-gray-50/70 ring-1 ring-gray-100')}>
+            <button
+              onClick={() => toggle(g.po)}
+              className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors group"
+            >
+              <span className="flex items-center gap-2.5 min-w-0 flex-1">
+                <ChevronRight className={cn('w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform',
+                  isOpen && 'rotate-90')} />
+                <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', dotClass)} />
+                <span className="text-sm font-bold text-gray-900 flex-shrink-0">{g.po}</span>
+                <span className="text-xs text-gray-400 truncate">
+                  {g.first.customer} · {g.first.factory}
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5 flex-shrink-0">
+                <span className="text-[11px] font-semibold text-gray-500 tabular-nums">
+                  {g.rows.length} styles
+                </span>
+                <DaysPill days={g.worst} suffix={g.spread ? '+' : ''} />
+              </span>
+            </button>
+
+            {isOpen && (
+              <div className="pb-1">
+                {g.rows.map((item: any, i: number) => (
+                  <ItemRow key={item.order_id ?? i} item={item} dotClass={dotClass} indented />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DaysPill({ days, suffix = '' }: { days: number | null | undefined; suffix?: string }) {
+  if (days == null) return null;
+  return (
+    <span className={cn(
+      'text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums',
+      days >= 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700',
+    )}>
+      {days}d{suffix}
+    </span>
+  );
+}
+
+function ItemRow({ item, dotClass, indented }: { item: any; dotClass: string; indented?: boolean }) {
+  return (
+    <Link
+      href={
+        item.order_id
+          ? `/design?openStyle=${item.order_id}`
+          : `/design?expandPO=${encodeURIComponent(item.po_number)}`
+      }
+      className={cn(
+        'flex items-center justify-between px-3 py-2 hover:bg-gray-100/70 rounded-lg transition-colors group',
+        indented && 'pl-9',
+      )}
+    >
+      <span className="flex items-center gap-2.5 min-w-0 flex-1">
+        {!indented && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', dotClass)} />}
+        {indented ? (
+          <span className="text-xs font-mono text-gray-700 flex-shrink-0">{item.style_code}</span>
+        ) : (
+          <>
+            <span className="text-sm font-bold text-gray-900 flex-shrink-0">{item.po_number}</span>
+            {item.style_code && <span className="text-xs text-gray-500 flex-shrink-0">{item.style_code}</span>}
+          </>
+        )}
+        {item.component && (
+          <span className="text-[10px] bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">
+            {item.component}
+          </span>
+        )}
+        {!indented && (
+          <span className="text-xs text-gray-400 truncate">{item.customer} · {item.factory}</span>
+        )}
+        {item.style_count > 1 && !item.style_code && (
+          <span className="text-[10px] text-gray-400 flex-shrink-0">{item.style_count} styles</span>
+        )}
+      </span>
+      <span className="flex items-center gap-1.5 flex-shrink-0">
+        <DaysPill days={item.days_since} />
+        <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 transition-colors" />
+      </span>
+    </Link>
   );
 }
 
