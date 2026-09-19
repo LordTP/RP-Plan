@@ -486,6 +486,8 @@ export interface FamilyInstance {
   order_id: number;
   po_number: string;
   customer: string | null;
+  /** The orderbook ref — what the team calls the order in conversation. */
+  china_orderbook_ref: string | null;
   style_code: string | null;
   description: string | null;
   colour: string | null;

@@ -1126,6 +1126,9 @@ async def get_component_library_family(
             "order_id": po.id,
             "po_number": po.po_number,
             "customer": po.customer,
+            # The orderbook ref is how the team names an order out loud
+            # ("the bubble one"), so the library cards show it too.
+            "china_orderbook_ref": po.china_orderbook_ref,
             "style_code": po.style_code,
             "description": po.description,
             "colour": po.colour,
@@ -1150,7 +1153,8 @@ async def get_component_library_family(
             return True
         haystacks = [c.name, c.colour, c.description]
         for i in instances:
-            haystacks += [i["po_number"], i["style_code"], i["customer"], i["description"]]
+            haystacks += [i["po_number"], i["style_code"], i["customer"],
+                          i["description"], i["china_orderbook_ref"]]
         return any(needle in (h or "").lower() for h in haystacks)
 
     entries = []

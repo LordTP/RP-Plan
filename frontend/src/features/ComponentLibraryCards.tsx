@@ -471,35 +471,63 @@ function EntryBlock({ entry, index, onOpen, onOpenInstance }: {
       {/* One card, one click target. The header used to be a button and every
           style row another, so a single card carried up to five separate things
           to hit -- it read as a list wearing a card's clothes. */}
-      <div className="px-3 py-2.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
-            sampleTypeChipBg(entry.sample_type))}>
-            {sampleTypeLabel(entry.sample_type)}
-          </span>
-          {entry.spec_url && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono bg-gray-100 text-gray-600">
-              {entry.spec_url}
+      <div className="px-3 py-2.5 flex gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
+              sampleTypeChipBg(entry.sample_type))}>
+              {sampleTypeLabel(entry.sample_type)}
             </span>
-          )}
-          {entry.out_of_step && (
-            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white bg-amber-600 inline-flex items-center gap-1">
-              <AlertTriangle className="w-2.5 h-2.5" /> out of step
-            </span>
-          )}
+            {entry.spec_url && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono bg-gray-100 text-gray-600">
+                {entry.spec_url}
+              </span>
+            )}
+            {entry.out_of_step && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white bg-amber-600 inline-flex items-center gap-1">
+                <AlertTriangle className="w-2.5 h-2.5" /> out of step
+              </span>
+            )}
+          </div>
+
+          {/* The colour is the title here: the name is already the rail item you
+              clicked, so what distinguishes one entry from the next is colour. */}
+          <div className="text-[14px] font-bold text-gray-900 truncate mt-1">
+            {entry.colour || <span className="font-semibold text-gray-400">No colour</span>}
+          </div>
+          <div className="text-[11px] text-gray-500 tabular-nums mt-0.5 truncate">
+            <b className="text-gray-700">{entry.styles_count}</b> {entry.styles_count === 1 ? 'style' : 'styles'}
+          </div>
         </div>
 
-        {/* The colour is the title here: the name is already the rail item you
-            clicked, so what distinguishes one entry from the next is colour. */}
-        <div className="text-[14px] font-bold text-gray-900 truncate mt-1">
-          {entry.colour || <span className="font-semibold text-gray-400">No colour</span>}
-        </div>
-        <div className="text-[11px] text-gray-500 tabular-nums mt-0.5 truncate">
-          <b className="text-gray-700">{entry.styles_count}</b> {entry.styles_count === 1 ? 'style' : 'styles'}
-          {entry.po_numbers.length > 0 && (
-            <> · {entry.po_numbers.length === 1 ? `PO ${entry.po_numbers[0]}` : `${entry.po_numbers.length} POs`}</>
+        {/* Order identity, stacked top-right: PO first and big enough to read
+            across a desk, then who it is for, then the orderbook ref — which
+            is what the team actually calls an order out loud. */}
+        <div className="flex-shrink-0 text-right max-w-[44%] min-w-0">
+          {entry.po_numbers.length === 1 ? (
+            <div className="font-mono text-[15px] font-bold text-gray-900 leading-tight tabular-nums">
+              {entry.po_numbers[0]}
+            </div>
+          ) : entry.po_numbers.length > 1 ? (
+            <div
+              className="font-mono text-[15px] font-bold text-gray-900 leading-tight tabular-nums truncate"
+              title={entry.po_numbers.join(', ')}
+            >
+              {entry.po_numbers.length} POs
+            </div>
+          ) : (
+            <div className="text-[13px] font-semibold text-gray-300 leading-tight">No PO</div>
           )}
-          {entry.instances[0]?.customer && <> · {entry.instances[0].customer}</>}
+          {entry.instances[0]?.customer && (
+            <div className="text-[11.5px] font-semibold text-gray-600 truncate mt-0.5">
+              {entry.instances[0].customer}
+            </div>
+          )}
+          {entry.instances[0]?.china_orderbook_ref && (
+            <div className="text-[11px] text-gray-400 truncate" title={entry.instances[0].china_orderbook_ref}>
+              {entry.instances[0].china_orderbook_ref}
+            </div>
+          )}
         </div>
       </div>
 
