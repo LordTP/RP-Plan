@@ -335,7 +335,10 @@ export function OrderTableV2({
           )}
           <SortableTh label="Style" sortKey="style" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[150px]" />
           <SortableTh label="Description" sortKey="description" currentSort={sortKey} currentDir={sortDir} onSort={onSort} />
-          <SortableTh label="Colour" sortKey="colour" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[110px]" />
+          {/* 150, not 110: under table-fixed the column can no longer grow to fit,
+              and real colour names — CAMEO BROWN, PERSIAN JEWEL, GLACIER MARL —
+              were being cut off. Description has the slack to give. */}
+          <SortableTh label="Colour" sortKey="colour" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[150px]" />
           <SortableTh label="Status" sortKey="status" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[150px]" />
           <SortableTh label="Ex-factory" sortKey="exfac" currentSort={sortKey} currentDir={sortDir} onSort={onSort} className="w-[120px]" />
           <SortableTh label="Qty" sortKey="qty" currentSort={sortKey} currentDir={sortDir} onSort={onSort} align="right" className="w-[85px]" />
