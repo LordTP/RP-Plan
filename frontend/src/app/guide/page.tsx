@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect} from 'react';
 import {
   BookOpen,
   LayoutDashboard,
@@ -19,6 +19,8 @@ import {
   X,
   ArrowLeft,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useStore } from '@/store/useStore';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { cn } from '@/lib/utils';
@@ -760,10 +762,27 @@ const GUIDE_SECTIONS: GuideSection[] = [
   },
 ];
 
+/** This guide is written for Source Lab and describes the whole system --
+ *  roles, pricing, admin, what each role can and cannot see. It is not linked
+ *  from a supplier's nav, but nothing stopped one typing the URL, and it
+ *  rendered in full. Suppliers get their own guide instead. */
+function GuideGate() {
+  const { user } = useStore();
+  const router = useRouter();
+  const isSupplier = user?.role === 'supplier';
+
+  useEffect(() => {
+    if (isSupplier) router.replace('/factory-guide');
+  }, [isSupplier, router]);
+
+  if (isSupplier) return null;
+  return <GuideContent />;
+}
+
 export default function GuidePage() {
   return (
     <AuthProvider>
-      <GuideContent />
+      <GuideGate />
     </AuthProvider>
   );
 }
