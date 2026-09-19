@@ -439,16 +439,29 @@ function POGroupRows({
           </button>
         </td>
         <td className="px-3 py-2 min-w-0">
-          <button onClick={onToggle} className="flex items-center gap-2 text-left w-full min-w-0">
-            <span className="text-[11.5px] text-gray-600 truncate">{group.customer}</span>
+          {/* Customer, factory and orderbook ref used to sit in one line at
+              near-identical size and colour, separated only by a "·" and a
+              "—". The ref also floated horizontally with the length of the
+              customer name, so it could not be scanned down the page. The
+              customer now leads, the factory is plainly secondary, and the
+              ref is a chip in a fixed slot so every one lines up. */}
+          <button onClick={onToggle} className="flex items-center gap-2.5 text-left w-full min-w-0">
+            <span className="text-[12.5px] font-semibold text-gray-900 truncate">{group.customer}</span>
             {!isSupplier && group.factory && (
-              <span className="text-[11px] text-gray-400 truncate flex-shrink-0">· {group.factory}</span>
+              <span className="text-[11px] text-gray-400 truncate flex-shrink-0">{group.factory}</span>
             )}
             {group.styles[0]?.china_orderbook_ref && (
-              <span className="text-[11px] text-gray-400 truncate flex-shrink-0">— {group.styles[0].china_orderbook_ref}</span>
+              <span
+                className="ml-auto px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]
+                           font-semibold uppercase tracking-wide truncate flex-shrink-0 max-w-[190px]"
+                title={group.styles[0].china_orderbook_ref}
+              >
+                {group.styles[0].china_orderbook_ref}
+              </span>
             )}
             {group.unreadComments > 0 && (
-              <span className="inline-flex items-center gap-1 text-primary-500 flex-shrink-0">
+              <span className={cn('inline-flex items-center gap-1 text-primary-500 flex-shrink-0',
+                !group.styles[0]?.china_orderbook_ref && 'ml-auto')}>
                 <MessageSquare className="w-3 h-3 fill-current" />
                 <span className="text-[10px] font-bold">{group.unreadComments}</span>
               </span>
