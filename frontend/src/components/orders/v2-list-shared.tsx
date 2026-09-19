@@ -312,8 +312,13 @@ export function OrderTableV2({
 }) {
   const showValue = SHOW_COSTING && !isSupplier && !isDesigner;
 
+  // table-fixed: every column below already declares a width, but without it
+  // those are only hints the browser overrides from content. Expanding a PO
+  // injects style rows whose Colour cells hold real colour names instead of
+  // "34 styles", so the table re-measured and every column jumped ~8px on each
+  // expand and collapse.
   return (
-    <table className="w-full text-sm border-collapse min-w-[1040px]">
+    <table className="w-full table-fixed text-sm border-collapse min-w-[1040px]">
       <thead className="sticky top-0 bg-gray-50 z-10">
         <tr className="text-left text-[10.5px] uppercase tracking-wider text-gray-500">
           <th className="px-3 py-2.5 border-b border-gray-200 w-9">

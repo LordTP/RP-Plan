@@ -1217,7 +1217,10 @@ function FactoryV2Content({ viewType }: { viewType: FactoryViewType }) {
                 onClick={() => setExpandedPOs(prev =>
                   prev.size ? new Set() : new Set(poGroups.map(g => g.po_number))
                 )}
-                className="text-[11px] text-gray-500 hover:text-gray-800 px-1.5"
+                // Fixed width: "Collapse all" is wider than "Expand all", so
+                // without it the button resized on every click and nudged its
+                // neighbours along the toolbar.
+                className="text-[11px] text-gray-500 hover:text-gray-800 px-1.5 w-[74px] text-center"
               >
                 {expandedPOs.size ? 'Collapse all' : 'Expand all'}
               </button>
