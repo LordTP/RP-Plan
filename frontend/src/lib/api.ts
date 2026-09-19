@@ -1521,6 +1521,8 @@ export interface ShipmentDraftSummary {
   updated_at: string;
   order_count: number;
   unit_count: number;
+  /** Distinct PO numbers covered by this shipment — the list searches these. */
+  po_numbers: string[];
   created_by: { username: string | null; full_name: string | null } | null;
   confirmed_by: { username: string; full_name: string | null } | null;
 }

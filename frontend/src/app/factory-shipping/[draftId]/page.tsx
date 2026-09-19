@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Search, Loader2, Check, ChevronDown, ChevronRight,
-  AlertTriangle, X, Save, CheckCheck, Edit2,
+  AlertTriangle, X, Save, CheckCheck, Edit2, Undo2, Circle,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -15,10 +15,12 @@ import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import {
   shipmentDraftsApi,
   type ShipmentDraftDetail,
+  type ShipmentDraftOrderRow,
   type PickerPO,
   type PickerStyle,
   type ShipmentDraftStatus,
 } from '@/lib/api';
+import { getShipmentChecklist, sailingDatesImpossible } from '@/lib/shipmentReadiness';
 import { cn } from '@/lib/utils';
 
 export default function DraftDetailPage() {
@@ -50,6 +52,14 @@ function DraftDetail() {
   const [vesselEtaToPort, setVesselEtaToPort] = useState('');
   const [trackingReference, setTrackingReference] = useState('');
 
+  // Staged SKU selection — orderId -> quantity. Everything the user does on
+  // the left column edits THIS, not the server. `savedSelection` is what the
+  // server currently holds, so Save can diff the two and Discard can put it
+  // back. Before this, ticking a style wrote immediately while the fields
+  // beside it waited for Save, which made the one Save button a lie.
+  const [selection, setSelection] = useState<Map<number, number>>(new Map());
+  const [savedSelection, setSavedSelection] = useState<Map<number, number>>(new Map());
+
   // Picker UI state
   const [search, setSearch] = useState('');
   const [expandedPo, setExpandedPo] = useState<Set<string>>(new Set());
@@ -66,12 +76,12 @@ function DraftDetail() {
   const isConfirmed = draft?.status === 'confirmed';
   const isLocked = draft?.status !== 'draft' && !editingConfirmed;
   const skusLocked = draft?.status !== 'draft';
-  const linkedOrderIds = useMemo(() => new Set((draft?.orders || []).map(o => o.order_id)), [draft]);
+  const linkedOrderIds = useMemo(() => new Set(selection.keys()), [selection]);
   const linkedQuantityById = useMemo(() => {
     const map = new Map<number, number | null>();
-    for (const o of (draft?.orders || [])) map.set(o.order_id, o.quantity);
+    selection.forEach((qty, id) => map.set(id, qty));
     return map;
-  }, [draft]);
+  }, [selection]);
 
   // Initial load — shows the page spinner. Run once on mount.
   const loadAll = useCallback(async () => {
@@ -96,6 +106,10 @@ function DraftDetail() {
       setVesselEtd(d.vessel_etd ? d.vessel_etd.slice(0, 10) : '');
       setVesselEtaToPort(d.vessel_eta_to_port ? d.vessel_eta_to_port.slice(0, 10) : '');
       setTrackingReference(d.tracking_reference || '');
+      const sel = new Map<number, number>();
+      for (const o of d.orders || []) sel.set(o.order_id, o.quantity ?? o.total_quantity ?? 0);
+      setSelection(new Map(sel));
+      setSavedSelection(new Map(sel));
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to load draft');
     } finally {
@@ -111,6 +125,12 @@ function DraftDetail() {
     try {
       const d = await shipmentDraftsApi.get(draftId);
       setDraft(d);
+      // Only ever called straight after a successful save, so the server is
+      // now the truth for both sides of the diff.
+      const sel = new Map<number, number>();
+      for (const o of d.orders || []) sel.set(o.order_id, o.quantity ?? o.total_quantity ?? 0);
+      setSelection(new Map(sel));
+      setSavedSelection(new Map(sel));
     } catch {
       // Silent — the action that triggered this refresh already toasts errors.
     }
@@ -123,10 +143,140 @@ function DraftDetail() {
   // so we still want a draft refetch — but quietly.
   const refresh = refreshDraft;
 
-  const handleSave = async () => {
+  // Default ship quantity for a newly ticked style — the whole PO line,
+  // which is what the backend used to pick on its own.
+  const totalQtyByOrderId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const p of pos) for (const st of p.styles) map.set(st.order_id, st.total_quantity || 0);
+    return map;
+  }, [pos]);
+
+  // ---- Staged edits. None of these touch the server. --------------------
+
+  const handleToggleStyle = (orderId: number) => {
+    if (isLocked) return;
+    setSelection((prev) => {
+      const next = new Map(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.set(orderId, totalQtyByOrderId.get(orderId) || 0);
+      return next;
+    });
+  };
+
+  const handleTogglePo = (po: PickerPO) => {
+    if (isLocked) return;
+    setSelection((prev) => {
+      const next = new Map(prev);
+      const allSelected = po.styles.every(st => next.has(st.order_id));
+      for (const st of po.styles) {
+        if (allSelected) next.delete(st.order_id);
+        else if (!next.has(st.order_id)) next.set(st.order_id, totalQtyByOrderId.get(st.order_id) || 0);
+      }
+      return next;
+    });
+  };
+
+  const handleQuantityChange = (orderId: number, qty: number) => {
+    if (isLocked) return;
+    setSelection((prev) => {
+      if (!prev.has(orderId)) return prev;
+      const next = new Map(prev);
+      next.set(orderId, qty);
+      return next;
+    });
+  };
+
+  // ---- What is actually outstanding ------------------------------------
+
+  const selectionDiff = useMemo(() => {
+    const added: number[] = [];
+    const removed: number[] = [];
+    const requantified: Array<[number, number]> = [];
+    selection.forEach((qty, id) => {
+      if (!savedSelection.has(id)) added.push(id);
+      else if (savedSelection.get(id) !== qty) requantified.push([id, qty]);
+    });
+    savedSelection.forEach((_qty, id) => { if (!selection.has(id)) removed.push(id); });
+    return { added, removed, requantified };
+  }, [selection, savedSelection]);
+
+  const fieldsDirty = useMemo(() => {
+    if (!draft) return false;
+    return (
+      reference !== draft.reference ||
+      (name || '') !== (draft.name || '') ||
+      (fclLcl || '') !== (draft.fcl_lcl || '') ||
+      (vesselName || '') !== (draft.vessel_name || '') ||
+      vesselEtd !== (draft.vessel_etd ? draft.vessel_etd.slice(0, 10) : '') ||
+      vesselEtaToPort !== (draft.vessel_eta_to_port ? draft.vessel_eta_to_port.slice(0, 10) : '') ||
+      (trackingReference || '') !== (draft.tracking_reference || '')
+    );
+  }, [draft, reference, name, fclLcl, vesselName, vesselEtd, vesselEtaToPort, trackingReference]);
+
+  const selectionDirty =
+    selectionDiff.added.length > 0 ||
+    selectionDiff.removed.length > 0 ||
+    selectionDiff.requantified.length > 0;
+
+  const isDirty = !isLocked && (fieldsDirty || selectionDirty);
+
+  // Plain-English list of what Save is about to do, shown in the footer.
+  const pendingSummary = useMemo(() => {
+    const parts: string[] = [];
+    const { added, removed, requantified } = selectionDiff;
+    if (added.length) parts.push(`${added.length} style${added.length === 1 ? '' : 's'} added`);
+    if (removed.length) parts.push(`${removed.length} removed`);
+    if (requantified.length) parts.push(`${requantified.length} quantity change${requantified.length === 1 ? '' : 's'}`);
+    if (fieldsDirty) parts.push('shipment details edited');
+    return parts.join(' · ');
+  }, [selectionDiff, fieldsDirty]);
+
+  const datesImpossible = sailingDatesImpossible(vesselEtd, vesselEtaToPort);
+
+  const handleDiscard = () => {
     if (!draft) return;
+    setReference(draft.reference);
+    setName(draft.name || '');
+    setFclLcl(draft.fcl_lcl || '');
+    setVesselName(draft.vessel_name || '');
+    setVesselEtd(draft.vessel_etd ? draft.vessel_etd.slice(0, 10) : '');
+    setVesselEtaToPort(draft.vessel_eta_to_port ? draft.vessel_eta_to_port.slice(0, 10) : '');
+    setTrackingReference(draft.tracking_reference || '');
+    setSelection(new Map(savedSelection));
+    toast.success('Changes discarded');
+  };
+
+  /** Writes everything staged. Returns false if anything failed, so callers
+   *  (Confirm) know not to carry on. */
+  const handleSave = async (): Promise<boolean> => {
+    if (!draft) return false;
+    if (datesImpossible) {
+      toast.error('ETA to port is before the vessel ETD — check the dates');
+      return false;
+    }
     setIsSaving(true);
     try {
+      // Removals first: if a style is being swapped the link table has a
+      // uniqueness constraint per (draft, order), and removing before adding
+      // keeps that clean.
+      for (const orderId of selectionDiff.removed) {
+        await shipmentDraftsApi.removeOrder(draft.id, orderId);
+      }
+      if (selectionDiff.added.length > 0) {
+        await shipmentDraftsApi.addOrders(draft.id, selectionDiff.added);
+      }
+      // Added styles land on the full PO quantity, so only push a quantity
+      // where the staged value differs from that default.
+      const qtyWrites: Array<[number, number]> = [...selectionDiff.requantified];
+      for (const orderId of selectionDiff.added) {
+        const staged = selection.get(orderId);
+        if (staged != null && staged !== (totalQtyByOrderId.get(orderId) || 0)) {
+          qtyWrites.push([orderId, staged]);
+        }
+      }
+      for (const [orderId, qty] of qtyWrites) {
+        await shipmentDraftsApi.updateOrderQuantity(draft.id, orderId, qty);
+      }
       await shipmentDraftsApi.update(draft.id, {
         reference,
         name: name || null,
@@ -138,66 +288,22 @@ function DraftDetail() {
       });
       toast.success('Saved');
       await refresh();
+      return true;
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to save');
+      // Something may have gone through before the failure — pull the server
+      // state back so the page isn't showing a diff that no longer exists.
+      await refresh();
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleToggleStyle = async (orderId: number) => {
-    if (!draft || isLocked) return;
-    if (linkedOrderIds.has(orderId)) {
-      try {
-        await shipmentDraftsApi.removeOrder(draft.id, orderId);
-        await refresh();
-      } catch (err: any) {
-        toast.error(err?.response?.data?.detail || 'Failed to remove');
-      }
-    } else {
-      try {
-        await shipmentDraftsApi.addOrders(draft.id, [orderId]);
-        await refresh();
-      } catch (err: any) {
-        toast.error(err?.response?.data?.detail || 'Failed to add');
-      }
-    }
-  };
-
-  const handleTogglePo = async (po: PickerPO) => {
-    if (!draft || isLocked) return;
-    const allSelected = po.styles.every(s => linkedOrderIds.has(s.order_id));
-    try {
-      if (allSelected) {
-        // Remove all
-        await Promise.all(po.styles.map(s =>
-          shipmentDraftsApi.removeOrder(draft.id, s.order_id)
-        ));
-      } else {
-        // Add all not yet selected
-        const toAdd = po.styles.filter(s => !linkedOrderIds.has(s.order_id)).map(s => s.order_id);
-        if (toAdd.length > 0) await shipmentDraftsApi.addOrders(draft.id, toAdd);
-      }
-      await refresh();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to update');
-    }
-  };
-
-  const handleQuantityChange = async (orderId: number, qty: number) => {
-    if (!draft) return;
-    try {
-      await shipmentDraftsApi.updateOrderQuantity(draft.id, orderId, qty);
-      await refresh();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to update quantity');
-    }
-  };
-
   const openConfirmModal = () => {
     if (!draft) return;
-    if ((draft.orders || []).length === 0) {
-      toast.error('Add at least one SKU before confirming');
+    if (blockingChecks.length > 0) {
+      toast.error(`Still needed: ${blockingChecks.map(c => c.label).join(', ')}`);
       return;
     }
     setShowConfirmModal(true);
@@ -205,12 +311,16 @@ function DraftDetail() {
 
   const handleConfirm = async () => {
     if (!draft) return;
-    // Save first to capture pending edits, then push.
-    await handleSave();
+    // Save first to capture pending edits, then push. If the save fails,
+    // stop — confirming would otherwise push values the user never saved.
+    if (isDirty) {
+      const saved = await handleSave();
+      if (!saved) { setShowConfirmModal(false); return; }
+    }
     setIsConfirming(true);
     try {
       await shipmentDraftsApi.confirm(draft.id);
-      toast.success('Shipment confirmed and pushed to all SKUs');
+      toast.success('Shipment confirmed and pushed to every style');
       router.push('/factory-shipping');
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to confirm');
@@ -241,23 +351,98 @@ function DraftDetail() {
   }, [pos, search]);
 
   const stats = useMemo(() => {
-    const total = (draft?.orders || []).length;
-    const totalUnits = (draft?.orders || []).reduce((s, o) => s + (o.quantity || 0), 0);
-    return { total, totalUnits };
-  }, [draft]);
+    let totalUnits = 0;
+    selection.forEach((qty) => { totalUnits += qty || 0; });
+    return { total: selection.size, totalUnits };
+  }, [selection]);
 
-  // Auto-expand POs that have any selected styles or that match search
-  useEffect(() => {
-    const newExpanded = new Set<string>();
+  // The readiness checklist, computed from what is on screen rather than
+  // what is saved — so it responds as you type.
+  const checklist = useMemo(() => getShipmentChecklist({
+    order_count: stats.total,
+    unit_count: stats.totalUnits,
+    fcl_lcl: fclLcl,
+    vessel_name: vesselName,
+    vessel_etd: vesselEtd,
+    vessel_eta_to_port: vesselEtaToPort,
+    tracking_reference: trackingReference,
+  }), [stats, fclLcl, vesselName, vesselEtd, vesselEtaToPort, trackingReference]);
+  const blockingChecks = useMemo(
+    () => checklist.filter(c => !c.done && !c.optional),
+    [checklist],
+  );
+
+  // Confirm saves first, so the modal has to preview the STAGED selection —
+  // previewing draft.orders would miss anything ticked since the last save.
+  const stagedOrders = useMemo<ShipmentDraftOrderRow[]>(() => {
+    const savedByOrderId = new Map((draft?.orders || []).map(o => [o.order_id, o]));
+    const rows: ShipmentDraftOrderRow[] = [];
     for (const p of pos) {
-      const hasSelected = p.styles.some(s => linkedOrderIds.has(s.order_id));
-      if (hasSelected) newExpanded.add(p.po_number);
+      for (const st of p.styles) {
+        if (!selection.has(st.order_id)) continue;
+        const saved = savedByOrderId.get(st.order_id);
+        rows.push({
+          link_id: saved?.link_id ?? -st.order_id,
+          order_id: st.order_id,
+          po_number: p.po_number,
+          china_orderbook_ref: p.china_orderbook_ref,
+          style_code: st.style_code,
+          description: st.description,
+          colour: st.colour,
+          customer: p.customer,
+          total_quantity: st.total_quantity,
+          quantity: selection.get(st.order_id) ?? null,
+        });
+      }
     }
-    if (search.trim()) {
-      for (const p of filteredPos) newExpanded.add(p.po_number);
+    return rows;
+  }, [pos, selection, draft]);
+
+  // Which rows differ from what the server holds — drawn on the picker so
+  // you can see your own pending edits at a glance.
+  const stagedOrderIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const id of selectionDiff.added) ids.add(id);
+    for (const id of selectionDiff.removed) ids.add(id);
+    for (const [id] of selectionDiff.requantified) ids.add(id);
+    return ids;
+  }, [selectionDiff]);
+
+  // Open the POs that already have styles on the shipment, once, when the
+  // picker first loads. Deliberately NOT keyed on the selection: it used to
+  // recompute on every tick, which threw away whatever the user had opened
+  // or collapsed by hand mid-edit.
+  const [didSeedExpanded, setDidSeedExpanded] = useState(false);
+  useEffect(() => {
+    if (didSeedExpanded || pos.length === 0 || !draft) return;
+    const seeded = new Set<string>();
+    const savedIds = new Set(savedSelection.keys());
+    for (const p of pos) {
+      if (p.styles.some(st => savedIds.has(st.order_id))) seeded.add(p.po_number);
     }
-    setExpandedPo(newExpanded);
-  }, [pos, linkedOrderIds, search, filteredPos]);
+    setExpandedPo(seeded);
+    setDidSeedExpanded(true);
+  }, [pos, draft, savedSelection, didSeedExpanded]);
+
+  // Searching opens whatever matched, so results aren't hidden in a
+  // collapsed PO.
+  useEffect(() => {
+    if (!search.trim()) return;
+    setExpandedPo(new Set(filteredPos.map(p => p.po_number)));
+  }, [search, filteredPos]);
+
+  // Warn on a hard navigation away (refresh, close tab) with staged edits.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  const leavePage = () => {
+    if (isDirty && !confirm('You have unsaved changes. Leave without saving?')) return;
+    router.push('/factory-shipping');
+  };
 
   if (isLoading || !draft) {
     return (
@@ -285,9 +470,9 @@ function DraftDetail() {
           )}>
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <button
-                onClick={() => router.push('/factory-shipping')}
+                onClick={leavePage}
                 className="text-gray-400 hover:text-gray-600 p-1 -ml-1"
-                title="Back to drafts"
+                title="Back to shipments"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -377,21 +562,48 @@ function DraftDetail() {
               ) : (
                 /* Draft mode — original Save / Confirm buttons */
                 <>
-                  <span className="text-[11px] text-gray-500">
-                    {stats.total} SKU{stats.total === 1 ? '' : 's'} · {stats.totalUnits.toLocaleString()} units
-                  </span>
+                  {isDirty ? (
+                    <span
+                      className="text-[11px] font-semibold text-amber-700 inline-flex items-center gap-1.5"
+                      title={pendingSummary}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      Unsaved changes
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-500">
+                      {stats.total} style{stats.total === 1 ? '' : 's'} · {stats.totalUnits.toLocaleString()} units
+                    </span>
+                  )}
+                  <button
+                    onClick={handleDiscard}
+                    disabled={isSaving || !isDirty}
+                    className="px-3 py-1.5 text-xs font-semibold border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1.5"
+                    title="Put everything back to the last saved version"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    Discard
+                  </button>
                   <button
                     onClick={handleSave}
-                    disabled={isSaving}
-                    className="px-3 py-1.5 text-xs font-semibold border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"
+                    disabled={isSaving || !isDirty}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-semibold rounded-md disabled:opacity-40 flex items-center gap-1.5',
+                      isDirty
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'border border-gray-300 text-gray-700'
+                    )}
                   >
                     {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    Save draft
+                    {isDirty ? 'Save' : 'Saved'}
                   </button>
                   <button
                     onClick={openConfirmModal}
-                    disabled={isConfirming || stats.total === 0}
-                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
+                    disabled={isConfirming || blockingChecks.length > 0}
+                    title={blockingChecks.length > 0
+                      ? `Still needed: ${blockingChecks.map(c => c.label).join(', ')}`
+                      : 'Push the shipping details onto every style'}
+                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
                     {isConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
                     Confirm shipment
@@ -417,6 +629,7 @@ function DraftDetail() {
                   setExpandedPo={setExpandedPo}
                   linkedOrderIds={linkedOrderIds}
                   linkedQuantityById={linkedQuantityById}
+                  stagedOrderIds={stagedOrderIds}
                   search={search}
                   setSearch={setSearch}
                   draftId={draft.id}
@@ -496,6 +709,13 @@ function DraftDetail() {
                     </div>
                   </div>
 
+                  {datesImpossible && (
+                    <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-[11px] text-red-900 flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+                      <span>The ETA is before the ETD — the ship would arrive before it leaves. Fix one of the dates before saving.</span>
+                    </div>
+                  )}
+
                   <div>
                     <FieldLabel>Tracking number (P-number)</FieldLabel>
                     <input
@@ -509,9 +729,7 @@ function DraftDetail() {
                   </div>
 
                   {!isLocked && !editingConfirmed && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-[11px] text-amber-900 leading-relaxed">
-                      <strong>Confirming will write these 5 fields onto every selected SKU.</strong> Once confirmed the draft is locked. Create a new draft if you need to update again.
-                    </div>
+                    <ReadinessChecklist checks={checklist} blocking={blockingChecks.length} />
                   )}
                   {editingConfirmed && (
                     <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-[11px] text-red-900 leading-relaxed">
@@ -524,6 +742,43 @@ function DraftDetail() {
                   </div>
                 </div>
               </div>
+
+              {/* Sticky save strip — the left column is long, and Save should
+                  never be somewhere you have to go looking for. */}
+              {!isLocked && !editingConfirmed && (
+                <div className={cn(
+                  'px-4 py-2.5 border-t flex items-center gap-2 flex-shrink-0',
+                  isDirty ? 'bg-amber-50/70 border-amber-200' : 'bg-gray-50/60 border-gray-200'
+                )}>
+                  <div className="min-w-0 flex-1">
+                    {isDirty ? (
+                      <>
+                        <div className="text-[11px] font-semibold text-amber-800">Not saved yet</div>
+                        <div className="text-[10px] text-amber-700 truncate">{pendingSummary}</div>
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-gray-500">
+                        Everything on this page is saved.
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleDiscard}
+                    disabled={isSaving || !isDirty}
+                    className="px-2.5 py-1 text-[11px] font-semibold border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={isSaving || !isDirty}
+                    className="px-2.5 py-1 text-[11px] font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-40 flex items-center gap-1.5"
+                  >
+                    {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -532,6 +787,7 @@ function DraftDetail() {
       {showConfirmModal && draft && (
         <ConfirmShipmentModal
           draft={draft}
+          orders={stagedOrders}
           pos={pos}
           editedFields={{
             reference,
@@ -548,6 +804,54 @@ function DraftDetail() {
         />
       )}
     </AppShell>
+  );
+}
+
+function ReadinessChecklist({
+  checks, blocking,
+}: {
+  checks: ReturnType<typeof getShipmentChecklist>;
+  blocking: number;
+}) {
+  return (
+    <div className="border border-gray-200 rounded-md overflow-hidden">
+      <div className={cn(
+        'px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide border-b',
+        blocking === 0
+          ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
+          : 'bg-gray-50 text-gray-600 border-gray-100'
+      )}>
+        {blocking === 0
+          ? 'Ready to confirm'
+          : `${blocking} thing${blocking === 1 ? '' : 's'} still needed`}
+      </div>
+      <div className="divide-y divide-gray-100">
+        {checks.map((c) => (
+          <div key={c.key} className="px-3 py-1.5 flex items-start gap-2 text-[11px]">
+            {c.done ? (
+              <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-px" />
+            ) : c.optional ? (
+              <Circle className="w-3 h-3 text-gray-300 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-px" />
+            )}
+            <span className={cn(
+              'flex-1 min-w-0',
+              c.done ? 'text-gray-600' : c.optional ? 'text-gray-400' : 'text-amber-900 font-semibold'
+            )}>
+              {c.label}
+              {c.detail && (
+                <span className="text-gray-400 font-normal"> — {c.detail}</span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="px-3 py-2 bg-gray-50/60 border-t border-gray-100 text-[10.5px] text-gray-500 leading-relaxed">
+        Confirming writes the shipping details onto every style above and locks
+        this shipment. Vessel details can still be corrected afterwards.
+      </div>
+    </div>
   );
 }
 
@@ -569,7 +873,7 @@ function ConfirmedPill({ draft }: { draft: ShipmentDraftDetail }) {
 
 function PickerColumn({
   pos, expandedPo, setExpandedPo,
-  linkedOrderIds, linkedQuantityById,
+  linkedOrderIds, linkedQuantityById, stagedOrderIds,
   search, setSearch,
   draftId,
   onToggleStyle, onTogglePo, onQuantityChange,
@@ -580,6 +884,7 @@ function PickerColumn({
   setExpandedPo: (s: Set<string>) => void;
   linkedOrderIds: Set<number>;
   linkedQuantityById: Map<number, number | null>;
+  stagedOrderIds: Set<number>;
   search: string;
   setSearch: (s: string) => void;
   draftId: number;
@@ -627,6 +932,7 @@ function PickerColumn({
               }}
               linkedOrderIds={linkedOrderIds}
               linkedQuantityById={linkedQuantityById}
+              stagedOrderIds={stagedOrderIds}
               currentDraftId={draftId}
               onToggleStyle={onToggleStyle}
               onTogglePo={onTogglePo}
@@ -641,7 +947,7 @@ function PickerColumn({
 
 function PoCard({
   po, expanded, onToggleExpand,
-  linkedOrderIds, linkedQuantityById,
+  linkedOrderIds, linkedQuantityById, stagedOrderIds,
   currentDraftId,
   onToggleStyle, onTogglePo, onQuantityChange,
 }: {
@@ -650,6 +956,7 @@ function PoCard({
   onToggleExpand: () => void;
   linkedOrderIds: Set<number>;
   linkedQuantityById: Map<number, number | null>;
+  stagedOrderIds: Set<number>;
   currentDraftId: number;
   onToggleStyle: (orderId: number) => void;
   onTogglePo: (po: PickerPO) => void;
@@ -702,6 +1009,7 @@ function PoCard({
               key={s.order_id}
               style={s}
               isSelected={linkedOrderIds.has(s.order_id)}
+              isStaged={stagedOrderIds.has(s.order_id)}
               currentDraftId={currentDraftId}
               quantityInDraft={linkedQuantityById.get(s.order_id) ?? null}
               onToggle={() => onToggleStyle(s.order_id)}
@@ -715,11 +1023,14 @@ function PoCard({
 }
 
 function StyleRow({
-  style, isSelected, currentDraftId, quantityInDraft,
+  style, isSelected, isStaged, currentDraftId, quantityInDraft,
   onToggle, onQuantityChange,
 }: {
   style: PickerStyle;
   isSelected: boolean;
+  /** Ticked or re-quantified since the last save — drawn so the user can see
+   *  exactly which rows Save is going to write. */
+  isStaged: boolean;
   currentDraftId: number;
   quantityInDraft: number | null;
   onToggle: () => void;
@@ -729,7 +1040,8 @@ function StyleRow({
   const inOtherDraft = otherDrafts.find(d => d.status === 'draft');
   const inConfirmed = otherDrafts.find(d => d.status === 'confirmed');
 
-  // Local qty state — only commits on blur to avoid spamming the API on every keystroke.
+  // Local text state so a half-typed number isn't parsed; commits into the
+  // staged selection on blur. Nothing here reaches the server until Save.
   const [localQty, setLocalQty] = useState<string>(quantityInDraft != null ? String(quantityInDraft) : '');
   useEffect(() => { setLocalQty(quantityInDraft != null ? String(quantityInDraft) : ''); }, [quantityInDraft]);
 
@@ -737,7 +1049,8 @@ function StyleRow({
 
   return (
     <div className={cn(
-      'px-3 pl-9 py-1.5 text-xs',
+      'px-3 pl-9 py-1.5 text-xs relative',
+      isStaged && 'border-l-2 border-amber-400 pl-[34px]',
       isSelected ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'
     )}>
       {/* Whole row toggles selection — checkbox is tiny and was annoying to
@@ -790,6 +1103,9 @@ function StyleRow({
               className="w-16 px-1.5 py-0.5 text-[11px] text-right border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
             />
             <span className="text-[10px] text-gray-400 whitespace-nowrap">of {total.toLocaleString()}</span>
+            {isStaged && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" title="Not saved yet" />
+            )}
           </div>
         ) : (
           <span className="text-[10px] text-gray-400 flex-shrink-0">{total.toLocaleString()}</span>
@@ -823,6 +1139,7 @@ function StyleRow({
 
 function ConfirmShipmentModal({
   draft,
+  orders,
   pos,
   editedFields,
   isConfirming,
@@ -830,6 +1147,9 @@ function ConfirmShipmentModal({
   onConfirm,
 }: {
   draft: ShipmentDraftDetail;
+  /** The staged selection — what Confirm is about to write, which may differ
+   *  from draft.orders if the user has ticked styles since the last save. */
+  orders: ShipmentDraftOrderRow[];
   pos: PickerPO[];
   editedFields: {
     reference: string;
@@ -847,7 +1167,7 @@ function ConfirmShipmentModal({
   // Group orders by PO for the summary list.
   const groups = useMemo(() => {
     const map = new Map<string, ShipmentDraftDetail['orders']>();
-    for (const o of draft.orders) {
+    for (const o of orders) {
       const key = o.po_number || '—';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(o);
@@ -857,16 +1177,16 @@ function ConfirmShipmentModal({
       orders,
       units: orders.reduce((s, o) => s + (o.quantity || 0), 0),
     }));
-  }, [draft.orders]);
+  }, [orders]);
 
-  const totalSkus = draft.orders.length;
-  const totalUnits = draft.orders.reduce((s, o) => s + (o.quantity || 0), 0);
+  const totalSkus = orders.length;
+  const totalUnits = orders.reduce((s, o) => s + (o.quantity || 0), 0);
 
-  const partials = draft.orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity);
+  const partials = orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity < o.total_quantity);
   // Over-line SKUs — ship qty exceeds the PO line total. Factories do this
   // legitimately (overage / replacements) but flagging it gives the user a
   // sanity-check before they confirm.
-  const overs = draft.orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity > o.total_quantity);
+  const overs = orders.filter(o => o.quantity != null && o.total_quantity != null && o.quantity > o.total_quantity);
 
   // Cross-reference picker data to find SKUs in this draft that are ALSO already
   // confirmed in another shipment — confirming this draft will overwrite the
@@ -885,7 +1205,7 @@ function ConfirmShipmentModal({
     }
     return map;
   }, [pos, draft.id]);
-  const overwriteCount = draft.orders.filter(o => overwriteByOrderId.has(o.order_id)).length;
+  const overwriteCount = orders.filter(o => overwriteByOrderId.has(o.order_id)).length;
 
   let etd = '—', eta = '—';
   try { if (editedFields.vessel_etd) etd = format(parseISO(editedFields.vessel_etd), 'd MMM yyyy'); } catch {}

@@ -80,6 +80,17 @@ def _next_reference(db: Session, today: datetime) -> str:
     return f'{prefix}{count + 1:03d}'
 
 
+def _check_sailing_dates(etd, eta):
+    """A ship cannot arrive before it leaves. The UI blocks this too, but the
+    endpoint is the one that has to hold — one test record on the system
+    sails on 22 May and lands on 20 May, which came in through here."""
+    if etd and eta and eta < etd:
+        raise HTTPException(
+            400,
+            "ETA to port is before the vessel ETD — check the dates.",
+        )
+
+
 def _supplier_owns(draft: ShipmentDraft, current_user: User) -> bool:
     if current_user.role != UserRole.SUPPLIER:
         return True
@@ -114,6 +125,17 @@ def _serialize_draft(db: Session, draft: ShipmentDraft, include_orders: bool = F
         'unit_count': db.query(func.coalesce(func.sum(ShipmentDraftOrder.quantity), 0)).filter(
             ShipmentDraftOrder.draft_id == draft.id,
         ).scalar() or 0,
+        # The POs this shipment covers. The list page searches on these and
+        # shows them under the reference — a factory looks for "the 5220
+        # shipment", not for a draft ID.
+        'po_numbers': [
+            r[0] for r in db.query(PurchaseOrder.po_number).join(
+                ShipmentDraftOrder, ShipmentDraftOrder.order_id == PurchaseOrder.id,
+            ).filter(
+                ShipmentDraftOrder.draft_id == draft.id,
+                PurchaseOrder.po_number.isnot(None),
+            ).distinct().order_by(PurchaseOrder.po_number).all()
+        ],
     }
     if include_orders:
         rows = db.query(ShipmentDraftOrder, PurchaseOrder).join(
@@ -254,6 +276,8 @@ async def update_draft(
     if body.vessel_etd is not None: draft.vessel_etd = _coerce_iso_date(body.vessel_etd)
     if body.vessel_eta_to_port is not None: draft.vessel_eta_to_port = _coerce_iso_date(body.vessel_eta_to_port)
     if body.tracking_reference is not None: draft.tracking_reference = body.tracking_reference or None
+
+    _check_sailing_dates(draft.vessel_etd, draft.vessel_eta_to_port)
 
     db.commit()
     return _serialize_draft(db, draft, include_orders=True)
@@ -473,6 +497,8 @@ async def update_confirmed_shipping(
     draft.vessel_eta_to_port = _coerce_iso_date(body.vessel_eta_to_port) if body.vessel_eta_to_port is not None else draft.vessel_eta_to_port
     draft.tracking_reference = (body.tracking_reference or None) if body.tracking_reference is not None else draft.tracking_reference
 
+    _check_sailing_dates(draft.vessel_etd, draft.vessel_eta_to_port)
+
     # Re-push to every linked order — same logic as confirm, but no status flip.
     role_label = 'Supplier' if current_user.role == UserRole.SUPPLIER else 'Sourcelab'
     fields_to_apply = {
@@ -549,6 +575,20 @@ async def confirm_draft(
     links = db.query(ShipmentDraftOrder).filter(ShipmentDraftOrder.draft_id == draft.id).all()
     if not links:
         raise HTTPException(400, "Add at least one SKU before confirming")
+
+    # Confirming writes these onto every linked order and flips them to
+    # SHIPPED, so they have to actually be filled in. ETA in particular
+    # drives the estimated-delivery calc downstream. Tracking is the one
+    # that legitimately arrives later.
+    missing = [label for value, label in (
+        (draft.fcl_lcl, 'container type (FCL/LCL/AIR)'),
+        (draft.vessel_name, 'vessel name'),
+        (draft.vessel_etd, 'vessel ETD'),
+        (draft.vessel_eta_to_port, 'ETA to port'),
+    ) if not value]
+    if missing:
+        raise HTTPException(400, "Fill in the " + ", ".join(missing) + " before confirming")
+    _check_sailing_dates(draft.vessel_etd, draft.vessel_eta_to_port)
 
     now = datetime.utcnow()
     role_label = 'Supplier' if current_user.role == UserRole.SUPPLIER else 'Sourcelab'

@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Ship, Plus, Search, Loader2, Truck, X, ArrowRight, Trash2 } from 'lucide-react';
+import { Ship, Plus, Search, Loader2, Truck, X, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/components/layout/AuthProvider';
 import { useStore } from '@/store/useStore';
 import { shipmentDraftsApi, factoriesApi, type ShipmentDraftSummary, type ShipmentDraftStatus } from '@/lib/api';
+import { getShipmentReadiness, type ShipmentReadinessState } from '@/lib/shipmentReadiness';
 import { cn } from '@/lib/utils';
 
 export default function FactoryShippingPage() {
@@ -19,12 +20,28 @@ export default function FactoryShippingPage() {
   );
 }
 
+// The bands the list is grouped into, in the order you'd work through them.
+// Confirmed sits last because it's a record rather than a task.
+type BandKey = 'ready' | 'incomplete' | 'empty' | 'confirmed';
+
+const BANDS: Array<{
+  key: BandKey;
+  title: string;
+  hint: string;
+  tone: 'green' | 'amber' | 'gray' | 'blue';
+}> = [
+  { key: 'ready', title: 'Ready to confirm', hint: 'everything filled in', tone: 'green' },
+  { key: 'incomplete', title: 'Needs details', hint: 'styles added, something missing', tone: 'amber' },
+  { key: 'empty', title: 'Nothing added yet', hint: 'started, no styles on them', tone: 'gray' },
+  { key: 'confirmed', title: 'Confirmed', hint: 'pushed to every style', tone: 'blue' },
+];
+
 function DraftsListPage() {
   const { user } = useStore();
   const router = useRouter();
   const [drafts, setDrafts] = useState<ShipmentDraftSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'all' | ShipmentDraftStatus>('all');
+  const [bandFilter, setBandFilter] = useState<'all' | BandKey>('all');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [factoryPicker, setFactoryPicker] = useState<{ factories: string[]; loading: boolean } | null>(null);
@@ -32,14 +49,14 @@ function DraftsListPage() {
   const isSupplier = user?.role === 'supplier';
   // For suppliers their factory is locked. Internal/admin can create on
   // behalf of any factory by entering the name on the next page (we ask
-  // for confirmation when they hit "+ New draft" without a known factory).
+  // for confirmation when they hit "+ New shipment" without a known factory).
   const factoryForCreate = isSupplier ? user?.factory_name || '' : '';
 
   const refresh = () => {
     setIsLoading(true);
     shipmentDraftsApi.list()
       .then((res) => setDrafts(res.drafts))
-      .catch(() => toast.error('Failed to load shipment drafts'))
+      .catch(() => toast.error('Failed to load shipments'))
       .finally(() => setIsLoading(false));
   };
 
@@ -48,25 +65,49 @@ function DraftsListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Each draft carries its band and its readiness so the row, the count and
+  // the filter all agree without recomputing.
+  const scored = useMemo(() => {
+    return drafts.map((d) => {
+      const readiness = getShipmentReadiness(d);
+      const band: BandKey = d.status === 'confirmed'
+        ? 'confirmed'
+        : d.status === 'cancelled'
+        ? 'empty'
+        : (readiness.state as ShipmentReadinessState as BandKey);
+      return { draft: d, readiness, band };
+    });
+  }, [drafts]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return drafts.filter((d) => {
-      if (statusFilter !== 'all' && d.status !== statusFilter) return false;
+    return scored.filter(({ draft: d, band }) => {
+      if (bandFilter !== 'all' && band !== bandFilter) return false;
       if (!q) return true;
-      const fields = [d.reference, d.name, d.factory, d.vessel_name, d.tracking_reference];
+      const fields = [
+        d.reference, d.name, d.factory, d.vessel_name, d.tracking_reference,
+        ...(d.po_numbers || []),
+      ];
       return fields.some((v) => (v || '').toLowerCase().includes(q));
     });
-  }, [drafts, statusFilter, search]);
+  }, [scored, bandFilter, search]);
 
   const counts = useMemo(() => {
-    let draft = 0, confirmed = 0, cancelled = 0;
-    for (const d of drafts) {
-      if (d.status === 'draft') draft++;
-      else if (d.status === 'confirmed') confirmed++;
-      else cancelled++;
+    const c: Record<BandKey, number> = { ready: 0, incomplete: 0, empty: 0, confirmed: 0 };
+    const units: Record<BandKey, number> = { ready: 0, incomplete: 0, empty: 0, confirmed: 0 };
+    for (const { draft, band } of scored) {
+      c[band]++;
+      units[band] += draft.unit_count || 0;
     }
-    return { draft, confirmed, cancelled, all: drafts.length };
-  }, [drafts]);
+    return { c, units, all: scored.length };
+  }, [scored]);
+
+  const grouped = useMemo(() => {
+    return BANDS.map((b) => ({
+      ...b,
+      rows: filtered.filter((r) => r.band === b.key),
+    })).filter((b) => b.rows.length > 0);
+  }, [filtered]);
 
   const createForFactory = async (factory: string) => {
     if (!factory) return;
@@ -75,7 +116,7 @@ function DraftsListPage() {
       const draft = await shipmentDraftsApi.create({ factory });
       router.push(`/factory-shipping/${draft.id}`);
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to create draft');
+      toast.error(err?.response?.data?.detail || 'Failed to create shipment');
       setCreating(false);
     }
   };
@@ -104,7 +145,7 @@ function DraftsListPage() {
     if (!confirm(`Delete ${draft.reference}? This cannot be undone.`)) return;
     try {
       await shipmentDraftsApi.remove(draft.id);
-      toast.success('Draft deleted');
+      toast.success('Shipment deleted');
       refresh();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to delete');
@@ -129,8 +170,8 @@ function DraftsListPage() {
                 <p className="text-xs text-gray-500 truncate">
                   {isLoading ? 'Loading…'
                     : isSupplier
-                      ? `${user?.factory_name || '—'} · ${counts.draft} draft${counts.draft === 1 ? '' : 's'} · ${counts.confirmed} confirmed`
-                      : `${counts.draft} draft${counts.draft === 1 ? '' : 's'} · ${counts.confirmed} confirmed across all factories`}
+                      ? user?.factory_name || '—'
+                      : 'All factories'}
                 </p>
               </div>
             </div>
@@ -141,7 +182,7 @@ function DraftsListPage() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search reference, vessel, tracking…"
+                  placeholder="Search P-number, PO, vessel…"
                   className="pl-9 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg w-72 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
                 />
                 {search && (
@@ -156,58 +197,65 @@ function DraftsListPage() {
                 className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
               >
                 {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                New draft
+                New shipment
               </button>
             </div>
           </div>
 
-          {/* Filter pills */}
-          <div className="px-6 py-2 border-b border-gray-100 bg-gray-50/40 flex items-center gap-2 text-xs flex-shrink-0">
-            <span className="text-gray-500 mr-1">Show:</span>
-            <FilterPill active={statusFilter === 'all'} label={`All · ${counts.all}`} onClick={() => setStatusFilter('all')} />
-            <FilterPill active={statusFilter === 'draft'} label={`Drafts · ${counts.draft}`} onClick={() => setStatusFilter('draft')} />
-            <FilterPill active={statusFilter === 'confirmed'} label={`Confirmed · ${counts.confirmed}`} onClick={() => setStatusFilter('confirmed')} />
+          {/* Summary tiles — double as the band filter. */}
+          <div className="grid grid-cols-4 border-b border-gray-100 flex-shrink-0">
+            {BANDS.map((b) => (
+              <SummaryTile
+                key={b.key}
+                band={b}
+                count={counts.c[b.key]}
+                units={counts.units[b.key]}
+                active={bandFilter === b.key}
+                onClick={() => setBandFilter(bandFilter === b.key ? 'all' : b.key)}
+              />
+            ))}
           </div>
 
-          {/* Table */}
+          {bandFilter !== 'all' && (
+            <div className="px-6 py-1.5 bg-blue-50/50 border-b border-blue-100 flex items-center gap-2 text-[11px] text-blue-800 flex-shrink-0">
+              Showing <strong>{BANDS.find((b) => b.key === bandFilter)?.title.toLowerCase()}</strong> only
+              <button onClick={() => setBandFilter('all')} className="ml-auto font-semibold hover:underline">
+                Show everything
+              </button>
+            </div>
+          )}
+
+          {/* Banded list */}
           <div className="flex-1 overflow-y-auto">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
               </div>
-            ) : filtered.length === 0 ? (
+            ) : grouped.length === 0 ? (
               <EmptyState
                 hasAny={drafts.length > 0}
                 onCreate={handleCreate}
                 creating={creating}
               />
             ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 border-b border-gray-200 sticky top-0">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-semibold">Reference</th>
-                    <th className="text-left px-4 py-2 font-semibold">Status</th>
-                    {!isSupplier && <th className="text-left px-4 py-2 font-semibold">Factory</th>}
-                    <th className="text-left px-4 py-2 font-semibold">Vessel</th>
-                    <th className="text-left px-4 py-2 font-semibold">ETD → ETA</th>
-                    <th className="text-left px-4 py-2 font-semibold">Tracking</th>
-                    <th className="text-center px-4 py-2 font-semibold">SKUs · Units</th>
-                    <th className="text-left px-4 py-2 font-semibold">Last edited</th>
-                    <th className="px-4 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filtered.map((d) => (
-                    <DraftRow
-                      key={d.id}
-                      draft={d}
-                      isSupplier={isSupplier}
-                      onOpen={() => router.push(`/factory-shipping/${d.id}`)}
-                      onDelete={() => handleDelete(d)}
-                    />
-                  ))}
-                </tbody>
-              </table>
+              grouped.map((band) => (
+                <div key={band.key}>
+                  <BandHeader band={band} count={band.rows.length} />
+                  <div className="divide-y divide-gray-100">
+                    {band.rows.map(({ draft: d, readiness }) => (
+                      <DraftRow
+                        key={d.id}
+                        draft={d}
+                        readiness={readiness}
+                        band={band.key}
+                        isSupplier={isSupplier}
+                        onOpen={() => router.push(`/factory-shipping/${d.id}`)}
+                        onDelete={() => handleDelete(d)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -222,6 +270,56 @@ function DraftsListPage() {
         />
       )}
     </AppShell>
+  );
+}
+
+const TONE = {
+  green: { tile: 'text-emerald-700', band: 'bg-emerald-50/60 border-emerald-100 text-emerald-800' },
+  amber: { tile: 'text-amber-700', band: 'bg-amber-50/60 border-amber-100 text-amber-800' },
+  gray: { tile: 'text-gray-500', band: 'bg-gray-50 border-gray-100 text-gray-600' },
+  blue: { tile: 'text-blue-700', band: 'bg-blue-50/50 border-blue-100 text-blue-800' },
+} as const;
+
+function SummaryTile({
+  band, count, units, active, onClick,
+}: {
+  band: (typeof BANDS)[number];
+  count: number;
+  units: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-4 py-2.5 text-left border-r border-gray-100 last:border-r-0 transition-colors',
+        active ? 'bg-blue-50/70' : 'hover:bg-gray-50/70',
+        count === 0 && 'opacity-55'
+      )}
+    >
+      <div className="text-[9px] font-bold uppercase tracking-wide text-gray-500">{band.title}</div>
+      <div className={cn('text-xl font-bold tabular-nums leading-tight', count === 0 ? 'text-gray-400' : TONE[band.tone].tile)}>
+        {count}
+      </div>
+      <div className="text-[10px] text-gray-500 truncate">
+        {count === 0 ? '—' : units > 0 ? `${units.toLocaleString()} units` : band.hint}
+      </div>
+    </button>
+  );
+}
+
+function BandHeader({ band, count }: { band: (typeof BANDS)[number]; count: number }) {
+  return (
+    <div className={cn(
+      'px-6 py-1.5 border-y text-[10px] font-bold uppercase tracking-wide flex items-baseline gap-2 sticky top-0 z-10',
+      TONE[band.tone].band
+    )}>
+      {band.title}
+      <span className="font-medium normal-case tracking-normal text-[11px] opacity-70">
+        {count} · {band.hint}
+      </span>
+    </div>
   );
 }
 
@@ -262,9 +360,9 @@ function FactoryPickerModal({
               <Truck className="w-5 h-5 text-blue-600" />
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 mb-0.5">New shipment draft</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 mb-0.5">New shipment</div>
               <h3 className="text-base font-bold text-gray-900">Choose a factory</h3>
-              <p className="text-[11px] text-gray-500">Drafts are scoped to a single factory. Pick which one this shipment is for.</p>
+              <p className="text-[11px] text-gray-500">A shipment covers one factory. Pick which one this is for.</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg flex-shrink-0">
@@ -313,22 +411,6 @@ function FactoryPickerModal({
   );
 }
 
-function FilterPill({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'px-2.5 py-0.5 rounded-full font-medium transition-colors',
-        active
-          ? 'bg-blue-100 text-blue-700 border border-blue-200'
-          : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
 function EmptyState({
   hasAny,
   onCreate,
@@ -344,12 +426,12 @@ function EmptyState({
         <Truck className="w-8 h-8 text-teal-600" />
       </div>
       <h4 className="text-base font-bold text-gray-900 mb-1">
-        {hasAny ? 'No drafts match your filter' : 'No shipment drafts yet'}
+        {hasAny ? 'Nothing matches your search' : 'No shipments yet'}
       </h4>
       <p className="text-sm text-gray-500 max-w-sm mb-4">
         {hasAny
-          ? 'Try a different filter or clear the search.'
-          : 'Build a draft by selecting SKUs and entering vessel info. Confirm to push to all selected orders in one go.'}
+          ? 'Try a different search, or clear it to see everything.'
+          : 'Build a shipment by picking the styles going on it and entering the vessel details. Confirm to push those details onto every style in one go.'}
       </p>
       {!hasAny && (
         <button
@@ -358,7 +440,7 @@ function EmptyState({
           className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
         >
           {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          Create your first draft
+          Create your first shipment
         </button>
       )}
     </div>
@@ -367,11 +449,15 @@ function EmptyState({
 
 function DraftRow({
   draft,
+  readiness,
+  band,
   isSupplier,
   onOpen,
   onDelete,
 }: {
   draft: ShipmentDraftSummary;
+  readiness: ReturnType<typeof getShipmentReadiness>;
+  band: BandKey;
   isSupplier: boolean;
   onOpen: () => void;
   onDelete: () => void;
@@ -381,74 +467,130 @@ function DraftRow({
   const editor = draft.confirmed_by?.full_name || draft.confirmed_by?.username || draft.created_by?.full_name || draft.created_by?.username || '—';
   let lastEdited = '';
   try { lastEdited = formatDistanceToNow(parseISO(draft.updated_at), { addSuffix: true }); } catch {}
-  let etdShort = '—', etaShort = '—';
+  let etdShort = '', etaShort = '';
   try { if (draft.vessel_etd) etdShort = format(parseISO(draft.vessel_etd), 'd MMM'); } catch {}
   try { if (draft.vessel_eta_to_port) etaShort = format(parseISO(draft.vessel_eta_to_port), 'd MMM'); } catch {}
-  const fclLabel = draft.fcl_lcl || '—';
+
+  const pos = draft.po_numbers || [];
+  // Subtitle carries the POs — what they actually look a shipment up by —
+  // falling back to whatever name was typed.
+  const subtitle = pos.length > 0
+    ? `PO ${pos.slice(0, 3).join(', ')}${pos.length > 3 ? ` +${pos.length - 3}` : ''}${draft.name ? ` · ${draft.name}` : ''}`
+    : draft.name || '';
+
+  // The middle column is the one that used to be four columns of em-dashes.
+  // It now either describes the sailing or says what is stopping it.
+  const sailing = [draft.vessel_name, draft.fcl_lcl, etdShort && etaShort ? `${etdShort} → ${etaShort}` : '']
+    .filter(Boolean).join(' · ');
 
   return (
-    <tr
-      className={cn(
-        'cursor-pointer transition-colors',
-        isConfirmed ? 'bg-emerald-50/20 hover:bg-emerald-50/40' : 'hover:bg-blue-50/30'
-      )}
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-    >
-      <td className="px-4 py-3">
-        <div className="font-semibold text-gray-900 text-xs">{draft.reference}</div>
-        {draft.name && <div className="text-[11px] text-gray-500 truncate max-w-[260px]">{draft.name}</div>}
-      </td>
-      <td className="px-4 py-3">
-        <StatusPill status={draft.status} />
-      </td>
-      {!isSupplier && (
-        <td className="px-4 py-3 text-xs text-gray-700 truncate max-w-[160px]">{draft.factory}</td>
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}
+      className={cn(
+        'grid items-center gap-4 px-6 py-2.5 cursor-pointer transition-colors text-xs',
+        isSupplier
+          ? 'grid-cols-[minmax(0,1.1fr)_130px_minmax(0,1fr)_120px_86px]'
+          : 'grid-cols-[minmax(0,1.1fr)_130px_minmax(0,1fr)_120px_130px_86px]',
+        isConfirmed ? 'hover:bg-blue-50/30' : 'hover:bg-gray-50'
       )}
-      <td className="px-4 py-3 text-xs text-gray-700">
-        {draft.vessel_name || <span className="text-gray-400 italic">—</span>}
-        <span className="text-gray-400"> · {fclLabel}</span>
-      </td>
-      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
-        {etdShort} → {etaShort}
-      </td>
-      <td className="px-4 py-3 font-mono text-[11px] text-gray-700">
-        {draft.tracking_reference || <span className="text-gray-400 italic">—</span>}
-      </td>
-      <td className="px-4 py-3 text-center">
-        <div className="text-xs font-semibold text-gray-700">{draft.order_count}</div>
-        <div className="text-[10px] text-gray-500">{draft.unit_count.toLocaleString()} units</div>
-      </td>
-      <td className="px-4 py-3 text-[11px] text-gray-500">
-        {lastEdited} · {editor}
-      </td>
-      <td className="px-4 py-3 text-right whitespace-nowrap">
-        {isDraft && (
+    >
+      <div className="min-w-0">
+        <div className="font-mono font-bold text-gray-900 text-[12.5px] truncate">{draft.reference}</div>
+        {subtitle && <div className="text-[11px] text-gray-500 truncate">{subtitle}</div>}
+      </div>
+
+      <div>
+        <ReadinessPill band={band} readiness={readiness} />
+      </div>
+
+      <div className="min-w-0">
+        {band === 'confirmed' ? (
+          <span className="text-gray-600 truncate block">
+            {sailing || <span className="text-gray-400 italic">no vessel recorded</span>}
+          </span>
+        ) : band === 'empty' ? (
+          <span className="text-gray-400">Started {lastEdited}, no styles on it</span>
+        ) : readiness.datesImpossible ? (
+          <span className="text-red-600 font-medium inline-flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            ETA is before the ETD
+          </span>
+        ) : readiness.missing.length > 0 ? (
+          <span className="text-amber-700">
+            {capitalise(readiness.missing.join(', '))} not set
+          </span>
+        ) : (
+          <span className="text-gray-600 truncate block">{sailing}</span>
+        )}
+      </div>
+
+      <div className="text-gray-700 tabular-nums">
+        {draft.order_count > 0 ? (
+          <>
+            <span className="font-semibold">{draft.order_count}</span>
+            <span className="text-gray-500"> style{draft.order_count === 1 ? '' : 's'}</span>
+            <div className="text-[10px] text-gray-500">{draft.unit_count.toLocaleString()} units</div>
+          </>
+        ) : (
+          <span className="text-gray-300">—</span>
+        )}
+      </div>
+
+      {!isSupplier && (
+        <div className="text-[11px] text-gray-600 truncate">{draft.factory}</div>
+      )}
+
+      <div className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+        {isDraft && draft.order_count === 0 && (
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors mr-1"
-            title="Delete draft"
+            onClick={onDelete}
+            className="px-2 py-1 text-[11px] font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex items-center gap-1"
+            title="Delete this empty shipment"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3 h-3" />
+            Delete
           </button>
         )}
-        <span className="text-blue-600 hover:text-blue-700 text-xs font-semibold inline-flex items-center gap-1">
-          {isConfirmed ? 'View' : 'Open'}
-          <ArrowRight className="w-3 h-3" />
-        </span>
-      </td>
-    </tr>
+        {(!isDraft || draft.order_count > 0) && (
+          <button
+            onClick={onOpen}
+            className="text-blue-600 hover:text-blue-700 text-[11px] font-semibold inline-flex items-center gap-1"
+          >
+            {isConfirmed ? 'View' : 'Open'}
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
-function StatusPill({ status }: { status: ShipmentDraftStatus }) {
-  const cfg = status === 'draft'
-    ? { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-500', label: 'Draft' }
-    : status === 'confirmed'
-    ? { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-500', label: 'Confirmed' }
-    : { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200', dot: 'bg-gray-400', label: 'Cancelled' };
+function capitalise(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function ReadinessPill({
+  band, readiness,
+}: {
+  band: BandKey;
+  readiness: ReturnType<typeof getShipmentReadiness>;
+}) {
+  const cfg = band === 'confirmed'
+    ? { cls: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500', label: 'Confirmed' }
+    : band === 'empty'
+    ? { cls: 'bg-gray-50 text-gray-500 border-gray-200', dot: 'bg-gray-300', label: 'Empty' }
+    : readiness.datesImpossible
+    ? { cls: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500', label: 'Check dates' }
+    : band === 'ready'
+    ? { cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500', label: 'Ready' }
+    : { cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500', label: readiness.label };
+
   return (
-    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border', cfg.bg, cfg.text, cfg.border)}>
-      <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
+    <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap', cfg.cls)}>
+      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', cfg.dot)} />
       {cfg.label}
     </span>
   );
