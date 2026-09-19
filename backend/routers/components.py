@@ -987,6 +987,16 @@ async def list_component_library(
                 | (PurchaseOrder.customer.ilike(like))
                 | (PurchaseOrder.factory.ilike(like))
                 | (PurchaseOrder.description.ilike(like))
+                # The orderbook ref is what an order gets called out loud
+                # ("the bubble one", "camo"), so it is the first thing anyone
+                # types — and it was not searched at all. The customer's own
+                # PO number, the season and the garment colour were missing
+                # for the same reason: the panel prints them, so the rail has
+                # to find them.
+                | (PurchaseOrder.china_orderbook_ref.ilike(like))
+                | (PurchaseOrder.customer_po_number.ilike(like))
+                | (PurchaseOrder.season.ilike(like))
+                | (PurchaseOrder.colour.ilike(like))
             )
             .distinct()
             .subquery()
@@ -1153,8 +1163,10 @@ async def get_component_library_family(
             return True
         haystacks = [c.name, c.colour, c.description]
         for i in instances:
+            # Has to cover whatever the rail matches on, or the rail finds an
+            # entry and the panel then shows nothing for it.
             haystacks += [i["po_number"], i["style_code"], i["customer"],
-                          i["description"], i["china_orderbook_ref"]]
+                          i["description"], i["china_orderbook_ref"], i["colour"]]
         return any(needle in (h or "").lower() for h in haystacks)
 
     entries = []

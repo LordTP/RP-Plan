@@ -204,7 +204,7 @@ export function ComponentLibraryCards({ reloadKey, openCanonicalId, onOpenEntry 
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search anything — name, colour, spec, PO, customer, factory, style or product…"
+            placeholder="Search anything — name, colour, spec, PO, order ref, customer, factory, style, season or product…"
             className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
