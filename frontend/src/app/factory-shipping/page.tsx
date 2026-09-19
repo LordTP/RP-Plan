@@ -109,16 +109,13 @@ function DraftsListPage() {
     })).filter((b) => b.rows.length > 0);
   }, [filtered]);
 
-  const createForFactory = async (factory: string) => {
+  // Opens the editor on an unsaved shipment. Nothing is written until the
+  // user presses Save — pressing "New shipment" used to create the record
+  // there and then, which is how ten empty ones ended up on the list.
+  const createForFactory = (factory: string) => {
     if (!factory) return;
     setCreating(true);
-    try {
-      const draft = await shipmentDraftsApi.create({ factory });
-      router.push(`/factory-shipping/${draft.id}`);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to create shipment');
-      setCreating(false);
-    }
+    router.push(`/factory-shipping/new?factory=${encodeURIComponent(factory)}`);
   };
 
   const handleCreate = async () => {

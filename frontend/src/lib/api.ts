@@ -1580,6 +1580,7 @@ export const shipmentDraftsApi = {
   create: async (body: {
     factory: string;
     name?: string | null;
+    reference?: string | null;
     fcl_lcl?: string | null;
     vessel_name?: string | null;
     vessel_etd?: string | null;

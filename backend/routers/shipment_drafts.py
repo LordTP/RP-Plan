@@ -29,6 +29,10 @@ router = APIRouter()
 class DraftCreateRequest(BaseModel):
     factory: str
     name: Optional[str] = None
+    # Factories name a shipment after its P-number, so let the first save
+    # carry one rather than forcing a rename straight afterwards. Blank falls
+    # back to the generated DRAFT-<date>-<n>.
+    reference: Optional[str] = None
     # Optional initial shipping fields. All editable later.
     fcl_lcl: Optional[str] = None
     vessel_name: Optional[str] = None
@@ -222,7 +226,7 @@ async def create_draft(
 
     now = datetime.utcnow()
     draft = ShipmentDraft(
-        reference=_next_reference(db, now),
+        reference=(body.reference or '').strip() or _next_reference(db, now),
         name=(body.name or None),
         factory=factory,
         status='draft',
@@ -233,6 +237,7 @@ async def create_draft(
         tracking_reference=body.tracking_reference,
         created_by_id=current_user.id,
     )
+    _check_sailing_dates(draft.vessel_etd, draft.vessel_eta_to_port)
     db.add(draft)
     db.flush()  # populate draft.id
 
