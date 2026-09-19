@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
+from order_status import refresh_all
 from models import (
     User, PurchaseOrder, ImportBatch, DateChangeHistory,
 )
@@ -403,10 +404,23 @@ async def undo_last_import(
             detail=f"Failed to undo import: {str(e)}"
         )
 
+    # An import recalculates status, so an undo has to as well — otherwise
+    # reverting a vessel and its dates leaves the style sitting on BOOKED
+    # until somebody happens to open /orders. After the commit, deliberately:
+    # a failure here must not cost the user their undo.
+    statuses_changed = 0
+    try:
+        statuses_changed = refresh_all(db)
+        if statuses_changed:
+            db.commit()
+    except Exception:
+        db.rollback()
+
     return {
         "success": True,
         "orders_deleted": orders_deleted,
         "orders_reverted": orders_reverted,
+        "statuses_changed": statuses_changed,
         "batch_id": batch_id,
         # Empty in normal operation. Non-empty means a history row named
         # something that is no longer a column, and the UI should say so
